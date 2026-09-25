@@ -12,7 +12,7 @@ from collections import defaultdict
 HEADER = re.compile(r"^round (\d+): bot (\d+) \(team ([AB])\) stdout:")
 STAT = re.compile(r"^LOG STAT (\d+)")
 DEATH = re.compile(r"^round (\d+): bot (\d+) \(team ([AB])\) died: (.+)")
-RESULT = re.compile(r"^(team [AB] wins|draw) .*")
+RESULT = re.compile(r"^(team [AB] wins|draw)\b")
 
 # (team, round) -> {bot: length}
 lengths = defaultdict(dict)

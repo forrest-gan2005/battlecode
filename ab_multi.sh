@@ -13,8 +13,19 @@ rm -rf _ab_l _ab_r
 cp -r "$left" _ab_l
 cp -r "$right" _ab_r
 
+# 没有 TIE_SEED 的老版本换不了种子，几个种子会跑出一模一样的对局
+for f in _ab_l/main.cpp _ab_r/main.cpp; do
+    if ! grep -q 'constexpr int TIE_SEED = ' "$f"; then
+        echo "!! $f 里没有 TIE_SEED，无法换种子" >&2
+        rm -rf _ab_l _ab_r
+        exit 1
+    fi
+done
+
 for s in $(seq 0 $((seeds-1))); do
-    sed -i '' "s/constexpr int TIE_SEED = .*/constexpr int TIE_SEED = $s;/" _ab_l/main.cpp _ab_r/main.cpp
+    # -i.bak 在 macOS 和 GNU sed 上都能用；sed -i '' 只有 BSD sed 认
+    sed -i.bak "s/constexpr int TIE_SEED = .*/constexpr int TIE_SEED = $s;/" _ab_l/main.cpp _ab_r/main.cpp
+    rm -f _ab_l/main.cpp.bak _ab_r/main.cpp.bak
     echo "=== seed $s ==="
     ./ab.sh _ab_l _ab_r | tail -1
 done
