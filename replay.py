@@ -2,8 +2,9 @@
 """解析 .replay 文件（gzip + packed Cap'n Proto），输出可统计的事件流。
 
 用法:
-    ./replay.py 文件.replay            打印整局摘要
+    ./replay.py 文件.replay            打印整局摘要（死因、头撞头归因、开局曲线、分裂长度）
     ./replay.py 文件.replay --json     输出逐回合 JSON
+    ./replay.py 文件.replay --map      把地图画成 ASCII（#=海草边，数字=传送门边）
 """
 import gzip
 import json
@@ -61,6 +62,11 @@ class Message:
             start += 8 * size
 
     def root(self):
+        # 按 Cap'n Proto 规范根指针在第 0 个字；本地引擎写出的文件多一个前导字，根指针在第 1 个字。
+        for word_index in (0, 1):
+            ptr = self.word(0, word_index)
+            if ptr & 3 == 0 and (ptr >> 48) & 0xFFFF >= 5:
+                return follow(self, 0, word_index)
         return Struct(self, 0, 0, 1, 1).pointer(0)
 
     def word(self, seg, index):
@@ -218,12 +224,16 @@ def parse(path):
 
     events = []
     round_no = 0
+    turn_of = -1
     for event in root.pointer(3):
         which = event.u16(0)
         payload = event.pointer(0)
         kind = EVENT_NAMES[which] if which < len(EVENT_NAMES) else str(which)
         if kind == "roundStart":
             round_no = payload.i32(0)
+            events.append({"round": round_no, "kind": "round"})
+        elif kind == "turnStart":
+            turn_of = payload.i32(0)
         elif kind == "dragonUpdate":
             did = payload.i32(0)
             head = point(payload.pointer(0))
@@ -254,7 +264,9 @@ def parse(path):
             events.append({"round": round_no, "kind": "death", "id": did,
                            "team": team_of.get(did, "?"),
                            "length": len(bodies.get(did, ())),
-                           "reason": DEATH_REASONS[reason] if reason < 5 else "?"})
+                           "reason": DEATH_REASONS[reason] if reason < 5 else "?",
+                           "turn": turn_of,
+                           "turnLength": len(bodies.get(turn_of, ()))})
             bodies.pop(did, None)
         elif kind == "dragonAction":
             did = payload.i32(0)
@@ -293,6 +305,8 @@ def summarise(path):
     turns = defaultdict(int)
     previous = {}
     for e in events:
+        if e["kind"] == "round":
+            continue
         team = team_of.get(e["id"], "?")
         if e["kind"] == "update":
             length_at[e["round"]][e["id"]] = e["length"]
@@ -327,7 +341,106 @@ def summarise(path):
         if big:
             print("   死掉的最长的龙: " + ", ".join(
                 f"r{d['round']} #{d['id']} {d['length']}节({d['reason']})" for d in big))
+
+    # 头撞头归因：同一回合同一个行动者的死亡事件为一组，行动者是撞的一方
+    groups = defaultdict(list)
+    for e in events:
+        if e["kind"] == "death" and e["reason"] == "头撞头":
+            groups[(e["round"], e["turn"])].append(e)
+    exchange = defaultdict(lambda: [0, 0, 0])   # (撞方队, 被撞方队) -> [次数, 撞方付出, 换掉]
+    for (_, mover), rows in groups.items():
+        victims = [e for e in rows if e["id"] != mover]
+        if not victims:
+            continue
+        v = victims[0]
+        key = (team_of.get(mover, "?"), v["team"])
+        exchange[key][0] += 1
+        exchange[key][1] += rows[0]["turnLength"]
+        exchange[key][2] += v["length"]
+    print()
+    print("头撞头归因（行动顺序按 id，撞上去的一方叫撞方）:")
+    for (m, v), (n, paid, got) in sorted(exchange.items()):
+        print(f"   {m} 撞 {v} 的头 {n} 次: 撞方付出 {paid} 节，换掉 {got} 节")
+
+    # 开局曲线：每 10 回合的 存活 / 累计分裂 / 累计吃珠 / 总长
+    print()
+    print("前 60 回合 (存活 / 累计分裂 / 累计吃珠 / 总长)   A | B")
+    counts = {"A": [0, 0], "B": [0, 0]}   # [splits, pearls]
+    latest = {}
+    prev_len = {}
+    for e in events:
+        if e["kind"] == "round":
+            r = e["round"]
+            if r % 10 == 0 and r <= 60:
+                row = []
+                for t in "AB":
+                    ids = [d for d in latest if team_of.get(d) == t]
+                    row.append(f"{len(ids):3d} / {counts[t][0]:3d} / {counts[t][1]:3d} / {sum(latest[d] for d in ids):3d}")
+                print(f"   r{r:2d}: {row[0]}   |  {row[1]}")
+            if r > 60:
+                break
+        elif e["kind"] == "update":
+            was = prev_len.get(e["id"])
+            if was is not None and e["length"] > was:
+                counts[team_of.get(e["id"], "A")][1] += e["length"] - was
+            prev_len[e["id"]] = e["length"]
+            latest[e["id"]] = e["length"]
+        elif e["kind"] == "split":
+            counts[e["team"]][0] += 1
+            prev_len[e["id"]] = e["parentLength"]
+            prev_len[e["child"]] = e["childLength"]
+            latest[e["id"]] = e["parentLength"]
+            latest[e["child"]] = e["childLength"]
+        elif e["kind"] == "death":
+            latest.pop(e["id"], None)
+            prev_len.pop(e["id"], None)
+
+    print()
+    for side in ("A", "B"):
+        before = defaultdict(int)
+        for e in events:
+            if e["kind"] == "split" and e["team"] == side:
+                before[e["parentLength"] + e["childLength"]] += 1
+        if before:
+            print(f"team {side} 分裂时父龙长度: " + ", ".join(f"{k}节x{v}" for k, v in sorted(before.items())[:10]))
     return info, events, team_of, length_at
+
+
+def render_map(path):
+    info, _, _ = parse(path)
+    lines = info["map"].splitlines()
+    w, h = map(int, lines[0].split()[1:3])
+    stride = w + 1
+    kelp, portal, dragons = set(), {}, {}
+    for l in lines:
+        p = l.split()
+        if p and p[0] == "EDGE":
+            row, col = divmod(int(p[1]), stride)
+            key = ("H" if row % 2 == 0 else "V", col, row // 2)
+            if p[2] == "1":
+                kelp.add(key)
+            elif p[2] == "2":
+                portal[key] = p[3]
+        elif p and p[0] == "DRAGON":
+            mark = "a" if p[1] == "0" else "b"
+            for k in range(int(p[2])):
+                dragons[(int(p[3 + 2 * k]), int(p[4 + 2 * k]))] = mark.upper() if k == 0 else mark
+    print(f"{lines[0]}  {w}x{h}  #=海草边  数字=传送门边  A/B=龙头 a/b=龙身")
+    print("     " + "".join(f"{x % 10}   " for x in range(w)))
+    for y in range(h):
+        top = "    +"
+        for x in range(w):
+            k = ("H", x, y)
+            top += ("###" if k in kelp else f"-{portal[k]}-" if k in portal else "   ") + "+"
+        print(top)
+        mid = f"{y:3d} "
+        for x in range(w):
+            k = ("V", x, y)
+            mid += "#" if k in kelp else portal[k] if k in portal else "|" if x == 0 else " "
+            mid += f" {dragons.get((x, y), ' ')} "
+        mid += "#" if ("V", 0, y) in kelp else "|"
+        print(mid)
+    print("    +" + "".join(("###" if ("H", x, 0) in kelp else "   ") + "+" for x in range(w)))
 
 
 if __name__ == "__main__":
@@ -335,10 +448,12 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(2)
     target = sys.argv[1]
-    if "--json" in sys.argv:
+    if "--map" in sys.argv:
+        render_map(target)
+    elif "--json" in sys.argv:
         info, events, team_of = parse(target)
         json.dump({"info": {k: v for k, v in info.items() if k != "map"},
-                   "events": events, "teams": team_of},
+                   "events": [e for e in events if e["kind"] != "round"], "teams": team_of},
                   sys.stdout, ensure_ascii=False)
     else:
         summarise(target)
