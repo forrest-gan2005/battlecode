@@ -25,8 +25,20 @@ constexpr bool VORONOI_ALLIES = false;
 constexpr bool AVOID_ALLY_HEADS = true;
 constexpr double CONTESTED_SHARE = 0.5;
 constexpr double PENALTY_HEAD_RACE = 450.0;
+// 威胁图：敌头沿空格冲刺能到的格子。对手的自杀冲刺射程等于它的长度，射程按可见节数估，夹在 MIN..MAX 之间。
+constexpr int THREAT_REACH_MIN = 2;
+constexpr int THREAT_REACH_MAX = 6;
+// 被撞的代价按自身长度放大：2 节龙 0.5 倍，30 节龙 7.5 倍。
+constexpr double THREAT_LENGTH_SCALE = 4.0;
+// 短龙（不长于 TRADE_MAX_LENGTH）只躲贴脸的短敌头：躲远了就不吃珠不分裂，被撞也只亏两三节。
+constexpr int SMALL_UNIT_THREAT_REACH = 1;
+// 领队两步冲刺脱身：花 1 节换一个冲刺够不到的落点。
+constexpr int SPRINT_ESCAPE_MIN_LENGTH = 8;
+constexpr double SPRINT_ESCAPE_COST = 400.0;
+constexpr int SPRINT_ESCAPE_MAX_EVALS = 4;
 
-constexpr int SPLIT_LAST_ROUND = 400;
+// 一直分裂到接近终局：被全灭直接输，单位是保险。
+constexpr int SPLIT_LAST_ROUND = 495;
 constexpr int SPLIT_MIN_LENGTH = 4;
 constexpr bool SPLIT_IN_HALF = false;
 constexpr int SPLIT_SOFT_LIMIT = 60;
@@ -34,7 +46,7 @@ constexpr int SPLIT_SOFT_LIMIT = 60;
 constexpr bool USE_FEEDER_SACRIFICE = true;
 constexpr bool USE_SONAR_LEADER = true;
 constexpr int ENDGAME_ROUND = 400;
-constexpr int LEADER_GROW_ROUND = 300;
+constexpr int LEADER_GROW_ROUND = 150;
 constexpr bool LEADER_ZONE_EARLY = true;
 constexpr int FEEDER_KEEP_UNITS = 3;
 constexpr int FEEDER_APPROACH = 15;
@@ -47,13 +59,22 @@ constexpr int LEADER_PEARL_RADIUS = 9;
 constexpr int SONAR_STALE = 25;
 // 自杀前领队情报必须这么新（回合数），否则领队可能已经死了，白送。视野里看到领队也算新。
 constexpr int FEEDER_FRESH_ROUNDS = 5;
+// 投放点够不着时的兜底：领队就在视野里，走到离它这么近、又不挡它正前方的地方就自杀，珍珠掉在它眼皮底下。
+constexpr int FEEDER_DIE_DIST = 3;
+constexpr int FEEDER_FRONT_CLEAR = 3;
+// 残局领队看珍珠的权重倍数：喂食掉下来的珍珠就在旁边，值得绕一下。
+constexpr double LEADER_ENDGAME_PEARL_MULT = 4.0;
 constexpr double FEEDER_REWARD = 3000.0;
 constexpr double FEEDER_DECAY = 60.0;
 constexpr double LEADER_HEAD_MULT = 2.0;
 
 constexpr bool USE_TRADE_ATTACK = true;
-constexpr int TRADE_MAX_LENGTH = 3;
+constexpr int TRADE_MAX_LENGTH = 4;
 constexpr int TRADE_MIN_UNITS = 8;
+// 只撞值得的：可见节数不少于 max(TRADE_TARGET_MIN_PARTS, 2*自身长度)；单位顶到上限后不短于自己就撞。
+constexpr int TRADE_TARGET_MIN_PARTS = 5;
+// 自杀冲刺最多几步（射程还受自身长度限制：n 步扣 n-1 节）。
+constexpr int RAM_MAX_STEPS = 4;
 constexpr double TRADE_REWARD = 2500.0;
 constexpr double TRADE_DECAY = 80.0;
 
@@ -86,10 +107,14 @@ constexpr double TARGET_REWARD = 260.0;
 constexpr double TARGET_DECAY = 16.0;
 constexpr double WEIGHT_PEARL = 1.0;
 constexpr double WEIGHT_SOON = 0.45;
+// 提前多少回合就开始往快刷的珍珠走（走到后等着）。
+constexpr int SOON_SLACK = 6;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
 constexpr double SCORE_PORTAL = -100000.0;
+// 传送门出口看不见，可能站着别的龙，走之前扣一点。
+constexpr double PORTAL_LEAP_PENALTY = 150.0;
 constexpr bool USE_PORTAL_SCOUT = true;
 constexpr double WEIGHT_PORTAL_SCOUT = 0.40;
 constexpr double SCORE_REJECT = -1e15;
@@ -125,6 +150,12 @@ class Bot {
         seen_round.assign(cells, -1);
         enter_time.assign(cells, 0);
         enemy_head_stamp.assign(cells, -1);
+        trade_target_stamp.assign(cells, -1);
+        threat_stamp.assign(cells, 0);
+        threat_depth.assign(cells, 0);
+        threat_depth_small.assign(cells, 0);
+        bfs_parent.assign(cells, -1);
+        bfs_via.assign(cells, 'N');
         rival_dist.assign(cells, 0);
         rival_stamp.assign(cells, 0);
         ally_dist.assign(cells, 0);
@@ -151,13 +182,22 @@ class Bot {
             return;
         }
 
+        // 先算方向：冲刺脱身要拿最好的单步分数来比。
+        Direction const best = pick_direction();
+
+        std::vector<Direction> path;
+        if (ram_path(path)) {
+            ct.make_moves(path);
+            remember_path(path);
+            return;
+        }
+
         int const child = split_child_size();
         if (child > 0) {
             ct.do_split(child);
             return;
         }
 
-        Direction const best = pick_direction();
         int const escape = escape_child_size();
         if (escape > 0) {
             if (DEBUG_SPLIT) {
@@ -166,7 +206,27 @@ class Bot {
             ct.do_split(escape);
             return;
         }
+        if (sprint_escape(path)) {
+            ct.make_moves(path);
+            remember_path(path);
+            return;
+        }
         ct.make_move(best);
+    }
+
+    // 记住这回合冲刺经过的格子，下回合 observe 把它们补进 trail。
+    void remember_path(std::vector<Direction> const& path) {
+        pending_path.clear();
+        Position cell = head;
+        for (Direction const direction : path) {
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                pending_path.clear();
+                return;
+            }
+            cell = position_of(next);
+            pending_path.push_back(cell);
+        }
     }
 
   private:
@@ -184,15 +244,40 @@ class Bot {
         if (!ct.can_split(child)) {
             return 0;
         }
-        // 分裂这一回合原地不动，敌头能踩到我头就先别分。
-        if (can_step_to(enemy_heads, head)) {
+        // 开局长龙看不全自己的身体，不知道尾巴在哪，按老规矩直接分。
+        if (tail_index < 0) {
+            return child;
+        }
+        // 只拦必死的分裂：子龙的头落在我的尾巴上，尾巴一格出口都没有它第一步就死。
+        // 更严的空间检查试过：迷宫里大部分分裂被拦掉，单位数上不去反而输。
+        if (!child_has_exit()) {
             return 0;
         }
-        // 子龙的头落在我的尾巴上，尾巴那边的空地要够它活：一格死角它第一步就死，一条短死胡同也撑不了几步。
-        if (tail_index < 0 || tail_room() < child + 2.0) {
+        // 子龙的身体跨着传送门时它看不见自己另一半，会一头撞回去。
+        if (child_spans_portal(child)) {
             return 0;
         }
         return child;
+    }
+
+    bool child_has_exit() const {
+        Position const tail = trail.back();
+        for (Direction const direction : Direction::get_direction_list()) {
+            int const next = step_index(tail, direction);
+            if (next >= 0 && enter_time[next] == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool child_spans_portal(int child) const {
+        for (int k = length - child; k + 1 < length; k++) {
+            if (manhattan(trail[static_cast<std::size_t>(k)], trail[static_cast<std::size_t>(k) + 1]) != 1) {
+                return true;
+            }
+        }
+        return false;
     }
 
     int escape_child_size() {
@@ -228,7 +313,8 @@ class Bot {
     }
 
     double tail_room() {
-        Survey const survey = survey_from(trail.back(), true);
+        // 不穿过没看见的格子往外扩：看不见的地方可能全是海草，扩出去的空间是假的。
+        Survey const survey = survey_from(trail.back(), true, false);
         return survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen - 1.0;
     }
 
@@ -333,6 +419,16 @@ class Bot {
         length = ct.get_length();
         head = ct.get_position();
 
+        if (!pending_path.empty()) {
+            if (pending_path.back() == head) {
+                for (std::size_t k = 0; k + 1 < pending_path.size(); k++) {
+                    if (trail.empty() || !(trail.front() == pending_path[k])) {
+                        trail.push_front(pending_path[k]);
+                    }
+                }
+            }
+            pending_path.clear();
+        }
         if (trail.empty() || !(trail.front() == head)) {
             trail.push_front(head);
         }
@@ -351,6 +447,7 @@ class Bot {
         seen_ids.clear();
         seen_parts.clear();
         enemy_heads.clear();
+        enemy_head_ids.clear();
         own_parts.clear();
         expire_leader();
         // 自己的长度是精确值，先报自己再听别人。
@@ -375,9 +472,7 @@ class Bot {
             }
             if (part->get_id() != ct.get_id()) {
                 mark_blocked(index);
-                if (part->get_team() == ct.get_team()) {
-                    count_ally_part(part->get_id());
-                }
+                count_part(part->get_id());
             } else {
                 own_parts.push_back(index);
             }
@@ -389,6 +484,7 @@ class Bot {
                     ally_head_dirs.push_back(part->get_dir());
                 } else {
                     enemy_heads.push_back(position);
+                    enemy_head_ids.push_back(part->get_id());
                     enemy_head_stamp[index] = round;
                 }
             }
@@ -419,6 +515,8 @@ class Bot {
         pick_feed_target();
         refresh_leader_zone();
         map_rivals();
+        map_threats();
+        mark_trade_targets();
     }
 
     // trail 只记录见过的头位置，开局和刚分裂出来的子龙都不知道自己身体在哪。
@@ -455,7 +553,7 @@ class Bot {
         }
     }
 
-    void count_ally_part(int id) {
+    void count_part(int id) {
         for (std::size_t slot = 0; slot < seen_ids.size(); slot++) {
             if (seen_ids[slot] == id) {
                 seen_parts[slot]++;
@@ -744,6 +842,23 @@ class Bot {
                 feed_index = cell;
             }
         }
+        if (feed_index < 0) {
+            // 没有投放点（领队前面是墙或它在转弯）：直接朝领队头走，到跟前再决定
+            feed_index = index_of(live_leader_head());
+        }
+    }
+
+    // 领队正前方 FEEDER_FRONT_CLEAR 格以内不能死在那里，会挡住它。
+    bool blocks_leader_front(Position cell) const {
+        Position const origin = live_leader_head();
+        Direction const facing = live_leader_dir();
+        int const along = forward_along(cell, origin, facing);
+        return across_axis(cell, origin, facing) == 0 && along > 0 && along <= FEEDER_FRONT_CLEAR;
+    }
+
+    bool beside_visible_leader() const {
+        return leader_in_vision() && manhattan(head, live_leader_head()) <= FEEDER_DIE_DIST &&
+               !blocks_leader_front(head);
     }
 
     void refresh_leader_zone() {
@@ -826,7 +941,171 @@ class Bot {
         enter_time[index] = BLOCKED_FOREVER;
     }
 
-    Survey survey_from(Position start, bool strict_bodies = false) {
+    // 敌头沿空格冲刺能到的格子。深度 = 射程 - 距离 + 1，越大越危险；0 表示够不到。
+    // 冲刺发生在我走完之后，所以我的尾巴格那时已经空了。
+    // 两张图：threat_depth 算所有敌头；threat_depth_small 只算短敌头。长龙从不撞小龙（不划算），
+    // 所以短龙只需要躲短敌头，遇到长敌头反而该去撞。
+    void map_threats() {
+        threat_mark++;
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const parts = visible_parts(enemy_head_ids[k]);
+            bool const small = parts < TRADE_TARGET_MIN_PARTS;
+            int const reach = std::clamp(parts, THREAT_REACH_MIN, THREAT_REACH_MAX);
+            visit_mark++;
+            int queue_head = 0;
+            int queue_tail = 0;
+            int const origin = index_of(enemy_heads[k]);
+            visit_stamp[origin] = visit_mark;
+            step_count[origin] = 0;
+            bfs_queue[queue_tail++] = enemy_heads[k];
+            while (queue_head < queue_tail) {
+                Position const position = bfs_queue[queue_head++];
+                int const steps = step_count[index_of(position)];
+                if (steps >= reach) {
+                    continue;
+                }
+                for (Direction const direction : Direction::get_direction_list()) {
+                    int const next = step_index(position, direction);
+                    if (next < 0 || visit_stamp[next] == visit_mark) {
+                        continue;
+                    }
+                    if (enter_time[next] != 0 && enter_time[next] != 2) {
+                        continue;
+                    }
+                    visit_stamp[next] = visit_mark;
+                    step_count[next] = steps + 1;
+                    int const depth = reach - steps;
+                    if (threat_stamp[next] != threat_mark) {
+                        threat_stamp[next] = threat_mark;
+                        threat_depth[next] = 0;
+                        threat_depth_small[next] = 0;
+                    }
+                    threat_depth[next] = std::max(threat_depth[next], depth);
+                    if (small && steps + 1 <= SMALL_UNIT_THREAT_REACH) {
+                        threat_depth_small[next] = std::max(threat_depth_small[next], 1);
+                    }
+                    bfs_queue[queue_tail++] = position_of(next);
+                }
+            }
+        }
+    }
+
+    int threat_at(int index) const {
+        if (threat_stamp[index] != threat_mark) {
+            return 0;
+        }
+        return length <= TRADE_MAX_LENGTH ? threat_depth_small[index] : threat_depth[index];
+    }
+
+    void mark_trade_targets() {
+        trade_targets = 0;
+        if (!USE_TRADE_ATTACK) {
+            return;
+        }
+        bool const at_cap = ct.get_unit_count() >= std::min(gm.get_unit_limit(), SPLIT_SOFT_LIMIT) - 1;
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const parts = visible_parts(enemy_head_ids[k]);
+            bool const worth = at_cap ? parts >= length : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
+            if (worth) {
+                trade_target_stamp[index_of(enemy_heads[k])] = round;
+                trade_targets++;
+            }
+        }
+    }
+
+    // 自杀冲刺：沿空格 BFS，射程 min(length, RAM_MAX_STEPS)，碰到值得撞的敌头就一路冲过去。
+    bool ram_path(std::vector<Direction>& path) {
+        if (!is_trader()) {
+            return false;
+        }
+        int const reach = std::min(length, RAM_MAX_STEPS);
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        step_count[start] = 0;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const index = index_of(position);
+            int const steps = step_count[index];
+            if (steps >= reach) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                if (is_trade_target_cell(next)) {
+                    path.clear();
+                    path.push_back(direction);
+                    for (int at = index; at != start; at = bfs_parent[at]) {
+                        path.insert(path.begin(), Direction(bfs_via[at]));
+                    }
+                    return true;
+                }
+                if (enter_time[next] != 0) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_parent[next] = index;
+                bfs_via[next] = static_cast<char>(direction.value);
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        return false;
+    }
+
+    // 最好的单步落点仍在敌方冲刺射程内时，找一个两步之外、射程外的落点，花 1 节冲过去。
+    bool sprint_escape(std::vector<Direction>& path) {
+        if (length < SPRINT_ESCAPE_MIN_LENGTH || !chosen_scored || chosen_index < 0 || threat_at(chosen_index) == 0) {
+            return false;
+        }
+        double best = chosen_score;
+        bool found = false;
+        int evals = 0;
+        int const start = index_of(head);
+        for (Direction const first : Direction::get_direction_list()) {
+            if (edge_at(head, first) == EDGE_PORTAL) {
+                continue;
+            }
+            int const c1 = step_index(head, first);
+            if (c1 < 0 || enter_time[c1] > 1) {
+                continue;
+            }
+            Position const p1 = position_of(c1);
+            for (Direction const second : Direction::get_direction_list()) {
+                if (second == first.get_opposite() || edge_at(p1, second) == EDGE_PORTAL) {
+                    continue;
+                }
+                int const c2 = step_index(p1, second);
+                if (c2 < 0 || c2 == start || threat_at(c2) > 0) {
+                    continue;
+                }
+                // 第二步前已经扣掉尾巴、第一步又让身体前移一格，所以尾巴附近两格已经空了；第一步吃到珍珠身体不前移。
+                int const free_at = enter_time[c2];
+                bool const enterable = free_at == 0 || free_at == 2 || (free_at == 3 && !pearl_here[c1]);
+                if (!enterable) {
+                    continue;
+                }
+                if (evals++ >= SPRINT_ESCAPE_MAX_EVALS) {
+                    return found;
+                }
+                double const score = score_step(position_of(c2)) - SPRINT_ESCAPE_COST;
+                if (score > best) {
+                    best = score;
+                    path = {first, second};
+                    found = true;
+                }
+            }
+        }
+        return found;
+    }
+
+    Survey survey_from(Position start, bool strict_bodies = false, bool expand_unseen = true) {
         Survey result;
         visit_mark++;
 
@@ -870,12 +1149,16 @@ class Bot {
             if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
                 !in_leader_pearl_zone(index)) {
                 int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
-                if (spawns_in <= steps + 1) {
-                    result.dist_soon = steps;
+                if (spawns_in <= steps + SOON_SLACK) {
+                    // 走过去还要等的回合数也算进距离
+                    result.dist_soon = steps + std::max(0, spawns_in - steps);
                 }
             }
             if (result.dist_unseen < 0 && seen_round[index] < 0) {
                 result.dist_unseen = steps;
+            }
+            if (!expand_unseen && seen_round[index] < 0) {
+                continue;
             }
 
             for (Direction const direction : Direction::get_direction_list()) {
@@ -894,7 +1177,7 @@ class Bot {
                     if (result.dist_feed < 0 && next_index == feed_index) {
                         result.dist_feed = steps + 1;
                     }
-                    if (result.dist_trade < 0 && is_enemy_head_cell(next_index)) {
+                    if (result.dist_trade < 0 && is_trade_target_cell(next_index)) {
                         result.dist_trade = steps + 1;
                     }
                     continue;
@@ -932,6 +1215,15 @@ class Bot {
 
     bool enemy_can_step_to(Position cell) const { return can_step_to(enemy_heads, cell); }
 
+    bool is_ally_head(Position position) const {
+        for (Position const& ally : ally_heads) {
+            if (ally == position) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool is_enemy_head(Position position) const {
         for (Position const& enemy : enemy_heads) {
             if (enemy == position) {
@@ -942,18 +1234,20 @@ class Bot {
     }
 
     bool is_enemy_head_cell(int index) const { return enemy_head_stamp[index] == round; }
+    bool is_trade_target_cell(int index) const { return trade_target_stamp[index] == round; }
     bool is_leader() const {
         return round > LEADER_GROW_ROUND && known_leader_id == ct.get_id();
     }
 
     bool is_trader() const {
         return USE_TRADE_ATTACK && round <= ENDGAME_ROUND && length <= TRADE_MAX_LENGTH && !is_leader() &&
-               ct.get_unit_count() >= TRADE_MIN_UNITS;
+               ct.get_unit_count() >= TRADE_MIN_UNITS && trade_targets > 0;
     }
 
     bool can_scout_portals() const {
+        // 刚出生看不全自己身体的龙别去探：身体可能就在门那头。
         return USE_PORTALS && USE_PORTAL_SCOUT && length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() &&
-               !is_leader();
+               !is_leader() && tail_index >= 0;
     }
 
     bool leads_to_unknown(Position position, Direction direction) const {
@@ -964,7 +1258,12 @@ class Bot {
         return USE_FEEDER_SACRIFICE && feed_index >= 0;
     }
 
-    bool ready_to_die() const { return is_feeder() && on_drop_cell(head) && leader_info_fresh(); }
+    bool ready_to_die() const {
+        if (!is_feeder()) {
+            return false;
+        }
+        return (on_drop_cell(head) && leader_info_fresh()) || beside_visible_leader();
+    }
 
     double score_step(Position destination) {
         Survey const survey = survey_from(destination);
@@ -988,7 +1287,9 @@ class Bot {
             score -= PENALTY_NO_TAIL;
         }
 
-        last_bonus = std::max({target_bonus(survey.dist_pearl, WEIGHT_PEARL),
+        double const pearl_weight = is_leader() && round > ENDGAME_ROUND ? WEIGHT_PEARL * LEADER_ENDGAME_PEARL_MULT
+                                                                          : WEIGHT_PEARL;
+        last_bonus = std::max({target_bonus(survey.dist_pearl, pearl_weight),
                                target_bonus(survey.dist_soon, WEIGHT_SOON),
                                target_bonus(survey.dist_unseen, WEIGHT_UNSEEN),
                                target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
@@ -997,8 +1298,15 @@ class Bot {
         if (AVOID_ALLY_HEADS && can_step_to(ally_heads, destination)) {
             score -= PENALTY_ENEMY_HEAD;
         }
-        if (!is_trader() && enemy_can_step_to(destination)) {
-            score -= is_leader() ? PENALTY_HEAD_RACE * LEADER_HEAD_MULT : PENALTY_HEAD_RACE;
+        if (!is_trader()) {
+            int const depth = threat_at(index_of(destination));
+            if (depth > 0) {
+                double penalty = PENALTY_HEAD_RACE * std::max(0.5, length / THREAT_LENGTH_SCALE) * (0.5 + 0.5 * depth);
+                if (is_leader()) {
+                    penalty *= LEADER_HEAD_MULT;
+                }
+                score -= penalty;
+            }
         }
 
         if (is_feeder() && survey.dist_feed >= 0) {
@@ -1020,7 +1328,7 @@ class Bot {
         if (exit < 0 || enter_time[exit] > 1) {
             return SCORE_PORTAL;
         }
-        double const score = score_step(position_of(exit));
+        double const score = score_step(position_of(exit)) - PORTAL_LEAP_PENALTY;
         if (length > PORTAL_SCOUT_MAX_LENGTH && last_seen_room < length + PORTAL_SAFETY_MARGIN) {
             return SCORE_PORTAL;
         }
@@ -1034,6 +1342,8 @@ class Bot {
         chosen_room = 0.0;
         chosen_scored = false;
         chosen_reaches_tail = false;
+        chosen_index = -1;
+        chosen_score = SCORE_REJECT * 2.0;
         any_enterable = false;
 
         auto const directions = Direction::get_direction_list();
@@ -1042,6 +1352,8 @@ class Bot {
         std::array<bool, 4> blind{};
         std::array<bool, 4> scored{};   // 真正跑过 score_step，rooms[k] 才有意义
         std::array<bool, 4> reaches{};
+        std::array<int, 4> dests{};
+        dests.fill(-1);
         double best_base = SCORE_REJECT;
         bool const scouting = can_scout_portals();
 
@@ -1055,11 +1367,13 @@ class Bot {
             if (edge == EDGE_PORTAL) {
                 bool usable = false;
                 score = score_portal_step(direction, usable);
+                dests[k] = usable ? portal_exit(head, direction) : -1;
                 scored[k] = usable;
                 any_enterable = any_enterable || usable;
                 blind[k] = scouting && !usable && leads_to_unknown(head, direction);
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
+                dests[k] = index_of(destination);
                 bool const enterable = enter_time[index_of(destination)] <= 1;
                 any_enterable = any_enterable || enterable;
                 if (is_feeder() && (in_leader_keep_off(destination) || on_leader_ray(destination))) {
@@ -1069,7 +1383,11 @@ class Bot {
                     scored[k] = true;
                     best_base = std::max(best_base, score - last_bonus);
                 } else if (is_enemy_head(destination)) {
-                    score = is_trader() ? TRADE_REWARD : SCORE_REJECT * 0.5;
+                    score = is_trader() && is_trade_target_cell(index_of(destination)) ? TRADE_REWARD
+                                                                                      : SCORE_REJECT * 0.5;
+                } else if (is_ally_head(destination)) {
+                    // 反正要死也别拉着队友一起死
+                    score = SCORE_REJECT * 1.5;
                 }
             }
             scores[k] = score;
@@ -1098,6 +1416,8 @@ class Bot {
                 chosen_room = rooms[k];
                 chosen_scored = scored[k];
                 chosen_reaches_tail = reaches[k];
+                chosen_index = dests[k];
+                chosen_score = score;
             }
         }
 
@@ -1145,6 +1465,16 @@ class Bot {
     bool zone_active = false;
     Position zone_head{};
     std::vector<Position> enemy_heads;
+    std::vector<int> enemy_head_ids;
+    std::vector<int> trade_target_stamp;
+    int trade_targets = 0;
+    std::vector<int> threat_stamp;
+    std::vector<int> threat_depth;
+    std::vector<int> threat_depth_small;
+    int threat_mark = 0;
+    std::vector<int> bfs_parent;
+    std::vector<char> bfs_via;
+    std::vector<Position> pending_path;
     std::vector<int> own_parts;
     std::deque<Position> trail;
     int tail_index = -1;
@@ -1157,6 +1487,8 @@ class Bot {
     int ally_mark = 0;
 
     double chosen_room = 0.0;
+    double chosen_score = 0.0;
+    int chosen_index = -1;
     bool chosen_scored = false;
     bool chosen_reaches_tail = false;
     bool any_enterable = false;
