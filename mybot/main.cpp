@@ -33,6 +33,8 @@ constexpr int SPLIT_SOFT_LIMIT = 60;
 constexpr bool USE_FEEDER_SACRIFICE = true;
 constexpr bool USE_SONAR_LEADER = true;
 constexpr int ENDGAME_ROUND = 400;
+constexpr int LEADER_GROW_ROUND = 300;
+constexpr bool LEADER_ZONE_EARLY = true;
 constexpr int FEEDER_KEEP_UNITS = 3;
 constexpr int FEEDER_APPROACH = 15;
 constexpr int FEEDER_DROP_MIN = 4;
@@ -51,9 +53,6 @@ constexpr int TRADE_MAX_LENGTH = 3;
 constexpr int TRADE_MIN_UNITS = 8;
 constexpr double TRADE_REWARD = 2500.0;
 constexpr double TRADE_DECAY = 80.0;
-// 只撞视野里可见节数不少于此值的敌龙；本地敌龙头数超过我方 / TRADE_MIN_RATIO 就不换子。
-constexpr int TRADE_TARGET_MIN_PARTS = 5;
-constexpr double TRADE_MIN_RATIO = 0.7;
 
 constexpr bool USE_ESCAPE_SPLIT = true;
 constexpr int ESCAPE_MIN_LENGTH = 25;
@@ -84,6 +83,8 @@ constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
 constexpr double SCORE_PORTAL = -100000.0;
+constexpr bool USE_PORTAL_SCOUT = true;
+constexpr double WEIGHT_PORTAL_SCOUT = 0.40;
 constexpr double SCORE_REJECT = -1e15;
 
 struct Survey {
@@ -96,6 +97,7 @@ struct Survey {
     int dist_unseen = -1;
     int dist_feed = -1;
     int dist_trade = -1;
+    int dist_portal = -1;
     bool reaches_tail = false;
 };
 
@@ -118,7 +120,6 @@ class Bot {
         ally_body_stamp.assign(cells, -1);
         feed_body_stamp.assign(cells, -1);
         enemy_head_stamp.assign(cells, -1);
-        trade_target_stamp.assign(cells, -1);
         rival_dist.assign(cells, 0);
         rival_stamp.assign(cells, 0);
         ally_dist.assign(cells, 0);
@@ -164,7 +165,10 @@ class Bot {
 
   private:
     int split_child_size() const {
-        if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH) {
+        if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
+            return 0;
+        }
+        if (round > LEADER_GROW_ROUND && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
         if (ct.get_unit_count() >= SPLIT_SOFT_LIMIT) {
@@ -327,8 +331,6 @@ class Bot {
         ally_body_ids.clear();
         ally_body_indices.clear();
         enemy_heads.clear();
-        enemy_head_ids.clear();
-        enemy_head_long.clear();
         own_parts.clear();
         hear_sonar();
         hear_leader(ct.get_id(), length, round, head, ct.get_dir());
@@ -351,8 +353,8 @@ class Bot {
             }
             if (part->get_id() != ct.get_id()) {
                 mark_blocked(index);
-                count_part(part->get_id());
                 if (part->get_team() == ct.get_team()) {
+                    count_ally_part(part->get_id());
                     if (!part->is_head()) {
                         ally_body_stamp[index] = round;
                         ally_body_ids.push_back(part->get_id());
@@ -370,7 +372,6 @@ class Bot {
                     ally_head_dirs.push_back(part->get_dir());
                 } else {
                     enemy_heads.push_back(position);
-                    enemy_head_ids.push_back(part->get_id());
                     enemy_head_stamp[index] = round;
                 }
             }
@@ -392,13 +393,6 @@ class Bot {
         }
 
         tail_index = static_cast<int>(trail.size()) == length ? index_of(trail.back()) : -1;
-        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
-            bool const is_long = visible_parts(enemy_head_ids[k]) >= TRADE_TARGET_MIN_PARTS;
-            enemy_head_long.push_back(is_long);
-            if (is_long) {
-                trade_target_stamp[index_of(enemy_heads[k])] = round;
-            }
-        }
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
             hear_leader(ally_head_ids[k], visible_parts(ally_head_ids[k]), round, ally_heads[k],
                         ally_head_dirs[k]);
@@ -409,7 +403,7 @@ class Bot {
         map_rivals();
     }
 
-    void count_part(int id) {
+    void count_ally_part(int id) {
         for (std::size_t slot = 0; slot < seen_ids.size(); slot++) {
             if (seen_ids[slot] == id) {
                 seen_parts[slot]++;
@@ -639,7 +633,8 @@ class Bot {
 
     void refresh_leader_zone() {
         zone_active = false;
-        if (round <= ENDGAME_ROUND || known_leader_id < 0 || known_leader_id == ct.get_id()) {
+        if (round <= (LEADER_ZONE_EARLY ? LEADER_GROW_ROUND : ENDGAME_ROUND) || known_leader_id < 0 ||
+            known_leader_id == ct.get_id()) {
             return;
         }
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
@@ -740,6 +735,7 @@ class Bot {
         eaten_count[start_index] = pearl_here[start_index];
         bfs_queue[queue_tail++] = start;
 
+        bool const scouting = can_scout_portals();
         while (queue_head < queue_tail) {
             Position const position = bfs_queue[queue_head++];
             int const index = index_of(position);
@@ -781,6 +777,9 @@ class Bot {
             for (Direction const direction : Direction::get_direction_list()) {
                 int const next_index = step_index(position, direction);
                 if (next_index < 0) {
+                    if (scouting && result.dist_portal < 0 && leads_to_unknown(position, direction)) {
+                        result.dist_portal = steps + 1;
+                    }
                     continue;
                 }
                 if (visit_stamp[next_index] == visit_mark) {
@@ -791,7 +790,7 @@ class Bot {
                     if (result.dist_feed < 0 && next_index == feed_index) {
                         result.dist_feed = steps + 1;
                     }
-                    if (result.dist_trade < 0 && is_trade_target_cell(next_index)) {
+                    if (result.dist_trade < 0 && is_enemy_head_cell(next_index)) {
                         result.dist_trade = steps + 1;
                     }
                     continue;
@@ -815,15 +814,11 @@ class Bot {
         return std::max(0.0, weight * (TARGET_REWARD - TARGET_DECAY * distance));
     }
 
-    // spare_targets: 换子者不怕能撞到这一格的长龙，只躲短龙。
-    bool enemy_can_step_to(Position cell, bool spare_targets = false) const {
+    bool enemy_can_step_to(Position cell) const {
         int const dest = index_of(cell);
-        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
-            if (spare_targets && enemy_head_long[k]) {
-                continue;
-            }
+        for (Position const& enemy : enemy_heads) {
             for (Direction const direction : Direction::get_direction_list()) {
-                if (step_index(enemy_heads[k], direction) == dest) {
+                if (step_index(enemy, direction) == dest) {
                     return true;
                 }
             }
@@ -843,15 +838,22 @@ class Bot {
     bool is_ally_body(int index) const { return ally_body_stamp[index] == round; }
     bool is_feed_body(int index) const { return feed_body_stamp[index] == round; }
     bool is_enemy_head_cell(int index) const { return enemy_head_stamp[index] == round; }
-    bool is_trade_target_cell(int index) const { return trade_target_stamp[index] == round; }
     bool is_leader() const {
-        return round > ENDGAME_ROUND && known_leader_id == ct.get_id();
+        return round > LEADER_GROW_ROUND && known_leader_id == ct.get_id();
     }
 
     bool is_trader() const {
-        return USE_TRADE_ATTACK && round <= ENDGAME_ROUND && length <= TRADE_MAX_LENGTH &&
-               ct.get_unit_count() >= TRADE_MIN_UNITS &&
-               static_cast<double>(ally_heads.size() + 1) >= TRADE_MIN_RATIO * static_cast<double>(enemy_heads.size());
+        return USE_TRADE_ATTACK && round <= ENDGAME_ROUND && length <= TRADE_MAX_LENGTH && !is_leader() &&
+               ct.get_unit_count() >= TRADE_MIN_UNITS;
+    }
+
+    bool can_scout_portals() const {
+        return USE_PORTALS && USE_PORTAL_SCOUT && length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() &&
+               !is_leader();
+    }
+
+    bool leads_to_unknown(Position position, Direction direction) const {
+        return edge_at(position, direction) == EDGE_PORTAL && portal_exit(position, direction) < 0;
     }
 
     bool is_feeder() const {
@@ -894,9 +896,11 @@ class Bot {
             score -= PENALTY_NO_TAIL;
         }
 
-        score += std::max({target_bonus(survey.dist_pearl, WEIGHT_PEARL),
-                           target_bonus(survey.dist_soon, WEIGHT_SOON),
-                           target_bonus(survey.dist_unseen, WEIGHT_UNSEEN)});
+        last_bonus = std::max({target_bonus(survey.dist_pearl, WEIGHT_PEARL),
+                               target_bonus(survey.dist_soon, WEIGHT_SOON),
+                               target_bonus(survey.dist_unseen, WEIGHT_UNSEEN),
+                               target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
+        score += last_bonus;
 
         if (AVOID_ALLY_HEADS) {
             for (Position const& ally : ally_heads) {
@@ -905,7 +909,7 @@ class Bot {
                 }
             }
         }
-        if (enemy_can_step_to(destination, is_trader())) {
+        if (!is_trader() && enemy_can_step_to(destination)) {
             score -= is_leader() ? PENALTY_HEAD_RACE * LEADER_HEAD_MULT : PENALTY_HEAD_RACE;
         }
 
@@ -936,41 +940,58 @@ class Bot {
     Direction pick_direction() {
         Direction best = dir_of(Direction::NORTH);
         double best_score = SCORE_REJECT * 2.0;
-        int tie_breaker = 0;
         chosen_room = 0.0;
 
-        for (Direction const direction : Direction::get_direction_list()) {
+        auto const directions = Direction::get_direction_list();
+        std::array<double, 4> scores{};
+        std::array<double, 4> rooms{};
+        std::array<bool, 4> blind{};
+        double best_base = SCORE_REJECT;
+        bool const scouting = can_scout_portals();
+
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            Direction const direction = directions[k];
             std::uint8_t const edge = edge_at(head, direction);
             double score = SCORE_REJECT;
 
             last_room = 0.0;
             if (edge == EDGE_PORTAL) {
                 score = score_portal_step(direction);
+                blind[k] = scouting && score <= SCORE_PORTAL && leads_to_unknown(head, direction);
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
                 if (is_feeder() && (in_leader_keep_off(destination) || on_leader_ray(destination))) {
                     score = SCORE_REJECT;
                 } else if (enter_time[index_of(destination)] <= 1) {
                     score = score_step(destination);
+                    best_base = std::max(best_base, score - last_bonus);
                 } else if (is_enemy_head(destination)) {
-                    score = is_trader() && is_trade_target_cell(index_of(destination)) ? TRADE_REWARD
-                                                                                      : SCORE_REJECT * 0.5;
+                    score = is_trader() ? TRADE_REWARD : SCORE_REJECT * 0.5;
                 }
             }
+            scores[k] = score;
+            rooms[k] = last_room;
+        }
 
-            score += 0.25 * ((TIE_SEED * 101 + ct.get_id() * 31 + round * 17 + tie_breaker * 7) % 5);
-            tie_breaker++;
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            Direction const direction = directions[k];
+            double score = scores[k];
+            if (blind[k] && best_base > SCORE_REJECT * 0.5) {
+                score = best_base + target_bonus(1, WEIGHT_PORTAL_SCOUT);
+            }
+
+            score += 0.25 * ((TIE_SEED * 101 + ct.get_id() * 31 + round * 17 + static_cast<int>(k) * 7) % 5);
 
             if (DEBUG_LOG) {
                 ct.output_log("r", round, "len", length, "trail", static_cast<int>(trail.size()), "dir",
-                              direction, "edge", static_cast<int>(edge), "enter",
+                              direction, "edge", static_cast<int>(edge_at(head, direction)), "enter",
                               enter_time[index_of(head.add_dir(direction))], "score", score);
             }
 
             if (score > best_score) {
                 best_score = score;
                 best = direction;
-                chosen_room = last_room;
+                chosen_room = rooms[k];
             }
         }
 
@@ -1000,7 +1021,6 @@ class Bot {
     std::vector<int> ally_body_stamp;
     std::vector<int> feed_body_stamp;
     std::vector<int> enemy_head_stamp;
-    std::vector<int> trade_target_stamp;
     std::vector<int> dirty;
     std::vector<Position> other_heads;
     std::vector<Position> ally_heads;
@@ -1021,8 +1041,6 @@ class Bot {
     bool zone_active = false;
     Position zone_head{};
     std::vector<Position> enemy_heads;
-    std::vector<int> enemy_head_ids;
-    std::vector<bool> enemy_head_long;
     std::vector<int> own_parts;
     std::deque<Position> trail;
     int tail_index = -1;
@@ -1036,6 +1054,7 @@ class Bot {
 
     double chosen_room = 0.0;
     double last_room = 0.0;
+    double last_bonus = 0.0;
     double last_seen_room = 0.0;
     bool strict_bodies = false;
 
