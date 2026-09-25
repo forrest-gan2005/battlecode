@@ -1,0 +1,8 @@
+# 对局回放太大（800M+），不进仓库
+replays/
+# 编辑器 / 构建产物
+.cache/
+compile_commands.json
+.unswbc-build
+.DS_Store
+__pycache__/
