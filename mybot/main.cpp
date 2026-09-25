@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <deque>
 #include <vector>
 
@@ -44,6 +45,8 @@ constexpr int FEEDER_THROTTLE = 3;
 constexpr int FEEDER_THROTTLE_PERIOD = 5;
 constexpr int LEADER_PEARL_RADIUS = 9;
 constexpr int SONAR_STALE = 25;
+// 自杀前领队情报必须这么新（回合数），否则领队可能已经死了，白送。视野里看到领队也算新。
+constexpr int FEEDER_FRESH_ROUNDS = 5;
 constexpr double FEEDER_REWARD = 3000.0;
 constexpr double FEEDER_DECAY = 60.0;
 constexpr double LEADER_HEAD_MULT = 2.0;
@@ -55,9 +58,13 @@ constexpr double TRADE_REWARD = 2500.0;
 constexpr double TRADE_DECAY = 80.0;
 
 constexpr bool USE_ESCAPE_SPLIT = true;
-constexpr int ESCAPE_MIN_LENGTH = 25;
+// 被困时任何能分裂的长度都逃生：不分裂就是整条没，分裂至少保住尾巴那段。
+constexpr int ESCAPE_MIN_LENGTH = 4;
 constexpr double ESCAPE_ROOM_MAX = 4.0;
 constexpr double ESCAPE_MARGIN = 4.0;
+
+// 声呐消息里坐标各 7 位，地图边长超过这个值就不再用声呐传领队。
+constexpr int SONAR_COORD_MAX = 127;
 
 constexpr bool USE_PORTALS = true;
 constexpr int PORTAL_NONE = -1;
@@ -117,8 +124,6 @@ class Bot {
         pearl_timer.assign(cells, -2);
         seen_round.assign(cells, -1);
         enter_time.assign(cells, 0);
-        ally_body_stamp.assign(cells, -1);
-        feed_body_stamp.assign(cells, -1);
         enemy_head_stamp.assign(cells, -1);
         rival_dist.assign(cells, 0);
         rival_stamp.assign(cells, 0);
@@ -128,7 +133,8 @@ class Bot {
         step_count.assign(cells, 0);
         eaten_count.assign(cells, 0);
         bfs_queue.resize(static_cast<std::size_t>(cells));
-        sonar_tag = controller.get_team().value == unswbc::Team::A ? 0xA : 0x5;
+        sonar_tag = controller.get_team().value == unswbc::Team::A ? 0x2 : 0x1;
+        sonar_enabled = USE_SONAR_LEADER && width <= SONAR_COORD_MAX + 1 && height <= SONAR_COORD_MAX + 1;
     }
 
     void take_turn() {
@@ -164,7 +170,7 @@ class Bot {
     }
 
   private:
-    int split_child_size() const {
+    int split_child_size() {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
@@ -175,32 +181,54 @@ class Bot {
             return 0;
         }
         int const child = SPLIT_IN_HALF ? length / 2 : unswbc::Constants::MIN_SIZE;
-        return ct.can_split(child) ? child : 0;
+        if (!ct.can_split(child)) {
+            return 0;
+        }
+        // 分裂这一回合原地不动，敌头能踩到我头就先别分。
+        if (can_step_to(enemy_heads, head)) {
+            return 0;
+        }
+        // 子龙的头落在我的尾巴上，尾巴那边的空地要够它活：一格死角它第一步就死，一条短死胡同也撑不了几步。
+        if (tail_index < 0 || tail_room() < child + 2.0) {
+            return 0;
+        }
+        return child;
     }
 
     int escape_child_size() {
-        if (!USE_ESCAPE_SPLIT || length < ESCAPE_MIN_LENGTH || chosen_room > ESCAPE_ROOM_MAX) {
+        if (!USE_ESCAPE_SPLIT || length < ESCAPE_MIN_LENGTH) {
+            return 0;
+        }
+        // no_move: 四个方向物理上都进不去，这回合走必死。
+        // boxed: 最好的方向也只剩几格且追不上自己的尾巴，几步内必死。
+        bool const no_move = !any_enterable;
+        bool const boxed = chosen_scored && chosen_room <= ESCAPE_ROOM_MAX && !chosen_reaches_tail;
+        if (!no_move && !boxed) {
             return 0;
         }
         int const child = length - 2;
-        bool const legal = tail_index >= 0 && ct.can_split(child);
-        double const behind = legal ? tail_room() : -1.0;
-
-        if (DEBUG_SPLIT && length >= 20) {
-            ct.output_log("TRAP len", length, "room", chosen_room, "units", ct.get_unit_count(), "trail",
-                          static_cast<int>(trail.size()), "legal", legal ? 1 : 0, "behind", behind);
-        }
-
-        if (!legal) {
+        if (!ct.can_split(child)) {
             return 0;
+        }
+        if (no_move) {
+            // 反正要死，把身体交给子龙；父龙留 2 节原地不动，说不定子龙尾巴挪开后还有活路。
+            return child;
+        }
+        // trail 不完整（刚分裂出来的子龙）时不知道尾巴在哪，也评估不了后方空间，只在必死时才分。
+        if (tail_index < 0) {
+            return 0;
+        }
+        double const behind = tail_room();
+
+        if (DEBUG_SPLIT) {
+            ct.output_log("TRAP len", length, "room", chosen_room, "units", ct.get_unit_count(), "trail",
+                          static_cast<int>(trail.size()), "behind", behind);
         }
         return behind >= chosen_room + ESCAPE_MARGIN ? child : 0;
     }
 
     double tail_room() {
-        strict_bodies = true;
-        Survey const survey = survey_from(trail.back());
-        strict_bodies = false;
+        Survey const survey = survey_from(trail.back(), true);
         return survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen - 1.0;
     }
 
@@ -300,12 +328,6 @@ class Bot {
         return std::min(raw, size - raw);
     }
 
-    bool is_neighbour(Position a, Position b) const {
-        int const dx = torus_gap(a.x, b.x, width);
-        int const dy = torus_gap(a.y, b.y, height);
-        return dx + dy == 1;
-    }
-
     void observe() {
         round = gm.get_round_num();
         length = ct.get_length();
@@ -328,12 +350,12 @@ class Bot {
         ally_head_dirs.clear();
         seen_ids.clear();
         seen_parts.clear();
-        ally_body_ids.clear();
-        ally_body_indices.clear();
         enemy_heads.clear();
         own_parts.clear();
+        expire_leader();
+        // 自己的长度是精确值，先报自己再听别人。
+        hear_exact(ct.get_id(), length, round, head, ct.get_dir());
         hear_sonar();
-        hear_leader(ct.get_id(), length, round, head, ct.get_dir());
 
         for (auto const& tile : ct.get_tiles()) {
             Position const position = tile.get_position();
@@ -355,11 +377,6 @@ class Bot {
                 mark_blocked(index);
                 if (part->get_team() == ct.get_team()) {
                     count_ally_part(part->get_id());
-                    if (!part->is_head()) {
-                        ally_body_stamp[index] = round;
-                        ally_body_ids.push_back(part->get_id());
-                        ally_body_indices.push_back(index);
-                    }
                 }
             } else {
                 own_parts.push_back(index);
@@ -376,6 +393,8 @@ class Bot {
                 }
             }
         }
+
+        extend_trail_from_vision();
 
         for (std::size_t offset = 0; offset < trail.size(); offset++) {
             int const index = index_of(trail[offset]);
@@ -394,13 +413,46 @@ class Bot {
 
         tail_index = static_cast<int>(trail.size()) == length ? index_of(trail.back()) : -1;
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
-            hear_leader(ally_head_ids[k], visible_parts(ally_head_ids[k]), round, ally_heads[k],
-                        ally_head_dirs[k]);
+            hear_sighting(ally_head_ids[k], visible_parts(ally_head_ids[k]), ally_heads[k], ally_head_dirs[k]);
         }
+        compute_drop_cells();
         pick_feed_target();
-        stamp_feed_body();
         refresh_leader_zone();
         map_rivals();
+    }
+
+    // trail 只记录见过的头位置，开局和刚分裂出来的子龙都不知道自己身体在哪。
+    // 身体段的朝向指向前一节，所以可以从头开始沿视野把身体走出来。
+    void extend_trail_from_vision() {
+        while (static_cast<int>(trail.size()) < length) {
+            Position const last = trail.back();
+            int const last_index = index_of(last);
+            bool found = false;
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const behind = step_index(last, direction);
+                if (behind < 0) {
+                    continue;
+                }
+                Position const cell = position_of(behind);
+                auto const* tile = ct.get_tile(cell);
+                auto const* part = tile ? tile->get_dragon() : nullptr;
+                if (!part || part->get_id() != ct.get_id() || part->is_head()) {
+                    continue;
+                }
+                if (step_index(cell, part->get_dir()) != last_index) {
+                    continue;
+                }
+                if (std::find(trail.begin(), trail.end(), cell) != trail.end()) {
+                    continue;
+                }
+                trail.push_back(cell);
+                found = true;
+                break;
+            }
+            if (!found) {
+                return;
+            }
+        }
     }
 
     void count_ally_part(int id) {
@@ -437,21 +489,22 @@ class Bot {
         return sum;
     }
 
+    // 消息布局（低位起）：id 16 | len 12 | when 9 | x 7 | y 7 | face 2 | tag 2 | 校验 8，共 63 位。
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
         std::uint64_t const body = (static_cast<std::uint64_t>(id) & 0xFFFF) |
                                    ((static_cast<std::uint64_t>(len) & 0xFFF) << 16) |
                                    ((static_cast<std::uint64_t>(when) & 0x1FF) << 28) |
-                                   ((static_cast<std::uint64_t>(pos.x) & 0x3F) << 37) |
-                                   ((static_cast<std::uint64_t>(pos.y) & 0x3F) << 43) |
-                                   ((static_cast<std::uint64_t>(face_code(facing)) & 0x3) << 49) |
-                                   ((sonar_tag & 0xF) << 51);
+                                   ((static_cast<std::uint64_t>(pos.x) & 0x7F) << 37) |
+                                   ((static_cast<std::uint64_t>(pos.y) & 0x7F) << 44) |
+                                   ((static_cast<std::uint64_t>(face_code(facing)) & 0x3) << 51) |
+                                   ((sonar_tag & 0x3) << 53);
         return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55);
     }
 
     bool unpack_leader(std::uint64_t message, int& id, int& len, int& when, Position& pos,
                        Direction& facing) const {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 51) & 0xF) != sonar_tag) {
+        if (((body >> 53) & 0x3) != sonar_tag) {
             return false;
         }
         if (sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55)) {
@@ -460,8 +513,8 @@ class Bot {
         id = static_cast<int>(body & 0xFFFF);
         len = static_cast<int>((body >> 16) & 0xFFF);
         when = static_cast<int>((body >> 28) & 0x1FF);
-        pos = Position{static_cast<int>((body >> 37) & 0x3F), static_cast<int>((body >> 43) & 0x3F)};
-        int const face = static_cast<int>((body >> 49) & 0x3);
+        pos = Position{static_cast<int>((body >> 37) & 0x7F), static_cast<int>((body >> 44) & 0x7F)};
+        int const face = static_cast<int>((body >> 51) & 0x3);
         facing = dir_of(face == 0   ? Direction::NORTH
                         : face == 1 ? Direction::EAST
                         : face == 2 ? Direction::SOUTH
@@ -469,14 +522,33 @@ class Bot {
         return id >= 0 && len > 0 && len <= cells && when <= round && pos.x < width && pos.y < height;
     }
 
-    void hear_leader(int id, int len, int when, Position pos, Direction facing) {
-        if (id < 0 || len <= 0 || len > cells || when < 0 || when > round || round - when > SONAR_STALE ||
-            pos.x < 0 || pos.y < 0 || pos.x >= width || pos.y >= height) {
+    bool plausible_report(int id, int len, int when, Position pos) const {
+        return id >= 0 && len > 0 && len <= cells && when >= 0 && when <= round && round - when <= SONAR_STALE &&
+               pos.x >= 0 && pos.y >= 0 && pos.x < width && pos.y < height;
+    }
+
+    void forget_leader() {
+        known_leader_id = -1;
+        known_leader_len = 0;
+        known_leader_round = -1;
+    }
+
+    void expire_leader() {
+        if (known_leader_id >= 0 && known_leader_id != ct.get_id() && known_leader_round >= 0 &&
+            round - known_leader_round > SONAR_STALE) {
+            forget_leader();
+        }
+    }
+
+    // 精确情报：来源是那条龙自己的汇报（自己这回合，或别人原样转发的声呐）。
+    // 同一条龙更新的消息直接覆盖，长度变短（分裂了）也照样接受；旧转发因为 when 更早会被忽略。
+    void hear_exact(int id, int len, int when, Position pos, Direction facing) {
+        if (!plausible_report(id, len, when, pos)) {
             return;
         }
-        if (id == known_leader_id && len >= known_leader_len) {
-            known_leader_len = len;
+        if (id == known_leader_id) {
             if (when >= known_leader_round) {
+                known_leader_len = len;
                 known_leader_round = when;
                 known_leader_pos = pos;
                 known_leader_dir = facing;
@@ -492,14 +564,25 @@ class Bot {
         }
     }
 
-    void hear_sonar() {
-        if (known_leader_id >= 0 && known_leader_id != ct.get_id() && known_leader_round >= 0 &&
-            round - known_leader_round > SONAR_STALE) {
-            known_leader_id = -1;
-            known_leader_len = 0;
-            known_leader_round = -1;
+    // 视野里看到的友军头：位置和朝向是准的，可见节数只是长度下界，不能当精确长度用。
+    void hear_sighting(int id, int visible, Position pos, Direction facing) {
+        if (id == known_leader_id) {
+            known_leader_len = std::max(known_leader_len, visible);
+            known_leader_pos = pos;
+            known_leader_dir = facing;
+            return;
         }
-        if (!USE_SONAR_LEADER) {
+        if (visible > known_leader_len) {
+            known_leader_id = id;
+            known_leader_len = visible;
+            known_leader_round = round;
+            known_leader_pos = pos;
+            known_leader_dir = facing;
+        }
+    }
+
+    void hear_sonar() {
+        if (!sonar_enabled) {
             return;
         }
         for (std::uint64_t const message : ct.get_sonar_messages()) {
@@ -508,14 +591,15 @@ class Bot {
             int when = -1;
             Position pos{};
             Direction facing = dir_of(Direction::NORTH);
-            if (unpack_leader(message, id, len, when, pos, facing)) {
-                hear_leader(id, len, when, pos, facing);
+            // 关于我自己的消息是别人的转发，不会比我自己知道得更准。
+            if (unpack_leader(message, id, len, when, pos, facing) && id != ct.get_id()) {
+                hear_exact(id, len, when, pos, facing);
             }
         }
     }
 
     void broadcast_leader() {
-        if (!USE_SONAR_LEADER || known_leader_id < 0) {
+        if (!sonar_enabled || known_leader_id < 0) {
             return;
         }
         std::uint64_t const message =
@@ -523,6 +607,19 @@ class Bot {
         for (Direction const direction : Direction::get_direction_list()) {
             ct.send_sonar(direction, message);
         }
+    }
+
+    bool leader_in_vision() const {
+        for (int const id : ally_head_ids) {
+            if (id == known_leader_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool leader_info_fresh() const {
+        return leader_in_vision() || (known_leader_round >= 0 && round - known_leader_round <= FEEDER_FRESH_ROUNDS);
     }
 
     int manhattan(Position a, Position b) const {
@@ -584,15 +681,47 @@ class Bot {
         return manhattan(cell, live_leader_head()) <= FEEDER_KEEP_OFF;
     }
 
-    Position walk(Position start, Direction facing, int steps) const {
-        Position cell = start;
-        for (int i = 0; i < steps; i++) {
-            cell = cell.add_dir(facing);
+    // 投放点：领队前方 FEEDER_DROP_MIN..FEEDER_DROP_MAX 格的路两侧。
+    // 沿着领队朝向用 step_index 走，遇到海草就停：墙后面的格子领队到不了，送了也白送。
+    void compute_drop_cells() {
+        drop_cells.clear();
+        if (known_leader_id < 0 || known_leader_id == ct.get_id()) {
+            return;
         }
-        return cell;
+        Direction const facing = live_leader_dir();
+        Position along = live_leader_head();
+        for (int step = 1; step <= FEEDER_DROP_MAX; step++) {
+            int const ahead = step_index(along, facing);
+            if (ahead < 0) {
+                return;
+            }
+            along = position_of(ahead);
+            if (step < FEEDER_DROP_MIN) {
+                continue;
+            }
+            Direction const sides[2] = {facing.get_left(), facing.get_right()};
+            for (Direction const side : sides) {
+                int const cell = step_index(along, side);
+                if (cell < 0 || enter_time[cell] >= BLOCKED_FOREVER) {
+                    continue;
+                }
+                Position const position = position_of(cell);
+                if (in_leader_keep_off(position) || on_leader_ray(position)) {
+                    continue;
+                }
+                drop_cells.push_back(cell);
+            }
+        }
     }
 
+    bool on_drop_cell(Position cell) const {
+        int const index = index_of(cell);
+        return std::find(drop_cells.begin(), drop_cells.end(), index) != drop_cells.end();
+    }
+
+    // 节流只管"开始"当喂食者；已经在路上的保持角色，直到条件不满足或领队换人。
     void pick_feed_target() {
+        bool const was_feeding = feed_id >= 0 && feed_id == known_leader_id;
         feed_index = -1;
         feed_id = -1;
         if (!USE_FEEDER_SACRIFICE || round <= ENDGAME_ROUND || known_leader_id < 0 ||
@@ -600,33 +729,19 @@ class Bot {
             ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return;
         }
-        Position const origin = live_leader_head();
-        if (manhattan(head, origin) > FEEDER_APPROACH) {
+        if (manhattan(head, live_leader_head()) > FEEDER_APPROACH) {
             return;
         }
-        if (ct.get_id() % FEEDER_THROTTLE != (round / FEEDER_THROTTLE_PERIOD) % FEEDER_THROTTLE) {
+        if (!was_feeding && ct.get_id() % FEEDER_THROTTLE != (round / FEEDER_THROTTLE_PERIOD) % FEEDER_THROTTLE) {
             return;
         }
-        Direction const facing = live_leader_dir();
+        feed_id = known_leader_id;
         int best_dist = BLOCKED_FOREVER;
-        for (int step = FEEDER_DROP_MIN; step <= FEEDER_DROP_MAX; step++) {
-            Position const along = walk(origin, facing, step);
-            Direction const sides[2] = {facing.get_left(), facing.get_right()};
-            for (Direction const side : sides) {
-                Position const cell = along.add_dir(side);
-                if (in_leader_keep_off(cell) || on_leader_ray(cell)) {
-                    continue;
-                }
-                int const index = index_of(cell);
-                if (enter_time[index] >= BLOCKED_FOREVER) {
-                    continue;
-                }
-                int const dist = manhattan(head, cell);
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    feed_index = index;
-                    feed_id = known_leader_id;
-                }
+        for (int const cell : drop_cells) {
+            int const dist = manhattan(head, position_of(cell));
+            if (dist < best_dist) {
+                best_dist = dist;
+                feed_index = cell;
             }
         }
     }
@@ -655,17 +770,6 @@ class Bot {
         Position const cell = position_of(index);
         return torus_gap(cell.x, zone_head.x, width) + torus_gap(cell.y, zone_head.y, height) <=
                LEADER_PEARL_RADIUS;
-    }
-
-    void stamp_feed_body() {
-        if (feed_id < 0) {
-            return;
-        }
-        for (std::size_t slot = 0; slot < ally_body_ids.size(); slot++) {
-            if (ally_body_ids[slot] == feed_id) {
-                feed_body_stamp[ally_body_indices[slot]] = round;
-            }
-        }
     }
 
     void flood_heads(std::vector<Position> const& heads, std::vector<int>& dist, std::vector<int>& stamp,
@@ -722,7 +826,7 @@ class Bot {
         enter_time[index] = BLOCKED_FOREVER;
     }
 
-    Survey survey_from(Position start) {
+    Survey survey_from(Position start, bool strict_bodies = false) {
         Survey result;
         visit_mark++;
 
@@ -814,17 +918,19 @@ class Bot {
         return std::max(0.0, weight * (TARGET_REWARD - TARGET_DECAY * distance));
     }
 
-    bool enemy_can_step_to(Position cell) const {
+    bool can_step_to(std::vector<Position> const& heads, Position cell) const {
         int const dest = index_of(cell);
-        for (Position const& enemy : enemy_heads) {
+        for (Position const& origin : heads) {
             for (Direction const direction : Direction::get_direction_list()) {
-                if (step_index(enemy, direction) == dest) {
+                if (step_index(origin, direction) == dest) {
                     return true;
                 }
             }
         }
         return false;
     }
+
+    bool enemy_can_step_to(Position cell) const { return can_step_to(enemy_heads, cell); }
 
     bool is_enemy_head(Position position) const {
         for (Position const& enemy : enemy_heads) {
@@ -835,8 +941,6 @@ class Bot {
         return false;
     }
 
-    bool is_ally_body(int index) const { return ally_body_stamp[index] == round; }
-    bool is_feed_body(int index) const { return feed_body_stamp[index] == round; }
     bool is_enemy_head_cell(int index) const { return enemy_head_stamp[index] == round; }
     bool is_leader() const {
         return round > LEADER_GROW_ROUND && known_leader_id == ct.get_id();
@@ -860,20 +964,7 @@ class Bot {
         return USE_FEEDER_SACRIFICE && feed_index >= 0;
     }
 
-    bool on_drop_cell(Position cell) const {
-        if (known_leader_id < 0 || known_leader_id == ct.get_id()) {
-            return false;
-        }
-        if (in_leader_keep_off(cell) || on_leader_ray(cell)) {
-            return false;
-        }
-        Position const origin = live_leader_head();
-        Direction const facing = live_leader_dir();
-        int const along = forward_along(cell, origin, facing);
-        return across_axis(cell, origin, facing) == 1 && along >= FEEDER_DROP_MIN && along <= FEEDER_DROP_MAX;
-    }
-
-    bool ready_to_die() const { return is_feeder() && on_drop_cell(head); }
+    bool ready_to_die() const { return is_feeder() && on_drop_cell(head) && leader_info_fresh(); }
 
     double score_step(Position destination) {
         Survey const survey = survey_from(destination);
@@ -882,6 +973,7 @@ class Bot {
         double const territory = survey.own_seen + UNSEEN_DISCOUNT * survey.own_unseen;
         last_room = room;
         last_seen_room = survey.area_seen;
+        last_reaches_tail = survey.reaches_tail;
         double score = WEIGHT_SPACE * room + WEIGHT_TERRITORY * territory;
 
         double const room_wanted = 3.0 * length + 8.0;
@@ -902,12 +994,8 @@ class Bot {
                                target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
         score += last_bonus;
 
-        if (AVOID_ALLY_HEADS) {
-            for (Position const& ally : ally_heads) {
-                if (is_neighbour(destination, ally)) {
-                    score -= PENALTY_ENEMY_HEAD;
-                }
-            }
+        if (AVOID_ALLY_HEADS && can_step_to(ally_heads, destination)) {
+            score -= PENALTY_ENEMY_HEAD;
         }
         if (!is_trader() && enemy_can_step_to(destination)) {
             score -= is_leader() ? PENALTY_HEAD_RACE * LEADER_HEAD_MULT : PENALTY_HEAD_RACE;
@@ -922,7 +1010,9 @@ class Bot {
         return score;
     }
 
-    double score_portal_step(Direction direction) {
+    // usable: 传送门两端都认识，出口能进，且（大龙）出口那边看得见的空间够。
+    double score_portal_step(Direction direction, bool& usable) {
+        usable = false;
         if (!USE_PORTALS) {
             return SCORE_PORTAL;
         }
@@ -934,6 +1024,7 @@ class Bot {
         if (length > PORTAL_SCOUT_MAX_LENGTH && last_seen_room < length + PORTAL_SAFETY_MARGIN) {
             return SCORE_PORTAL;
         }
+        usable = true;
         return score;
     }
 
@@ -941,11 +1032,16 @@ class Bot {
         Direction best = dir_of(Direction::NORTH);
         double best_score = SCORE_REJECT * 2.0;
         chosen_room = 0.0;
+        chosen_scored = false;
+        chosen_reaches_tail = false;
+        any_enterable = false;
 
         auto const directions = Direction::get_direction_list();
         std::array<double, 4> scores{};
         std::array<double, 4> rooms{};
         std::array<bool, 4> blind{};
+        std::array<bool, 4> scored{};   // 真正跑过 score_step，rooms[k] 才有意义
+        std::array<bool, 4> reaches{};
         double best_base = SCORE_REJECT;
         bool const scouting = can_scout_portals();
 
@@ -955,15 +1051,22 @@ class Bot {
             double score = SCORE_REJECT;
 
             last_room = 0.0;
+            last_reaches_tail = false;
             if (edge == EDGE_PORTAL) {
-                score = score_portal_step(direction);
-                blind[k] = scouting && score <= SCORE_PORTAL && leads_to_unknown(head, direction);
+                bool usable = false;
+                score = score_portal_step(direction, usable);
+                scored[k] = usable;
+                any_enterable = any_enterable || usable;
+                blind[k] = scouting && !usable && leads_to_unknown(head, direction);
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
+                bool const enterable = enter_time[index_of(destination)] <= 1;
+                any_enterable = any_enterable || enterable;
                 if (is_feeder() && (in_leader_keep_off(destination) || on_leader_ray(destination))) {
                     score = SCORE_REJECT;
-                } else if (enter_time[index_of(destination)] <= 1) {
+                } else if (enterable) {
                     score = score_step(destination);
+                    scored[k] = true;
                     best_base = std::max(best_base, score - last_bonus);
                 } else if (is_enemy_head(destination)) {
                     score = is_trader() ? TRADE_REWARD : SCORE_REJECT * 0.5;
@@ -971,6 +1074,7 @@ class Bot {
             }
             scores[k] = score;
             rooms[k] = last_room;
+            reaches[k] = last_reaches_tail;
         }
 
         for (std::size_t k = 0; k < directions.size(); k++) {
@@ -992,6 +1096,8 @@ class Bot {
                 best_score = score;
                 best = direction;
                 chosen_room = rooms[k];
+                chosen_scored = scored[k];
+                chosen_reaches_tail = reaches[k];
             }
         }
 
@@ -1018,8 +1124,6 @@ class Bot {
     std::vector<int> seen_round;
 
     std::vector<int> enter_time;
-    std::vector<int> ally_body_stamp;
-    std::vector<int> feed_body_stamp;
     std::vector<int> enemy_head_stamp;
     std::vector<int> dirty;
     std::vector<Position> other_heads;
@@ -1028,14 +1132,14 @@ class Bot {
     std::vector<Direction> ally_head_dirs;
     std::vector<int> seen_ids;
     std::vector<int> seen_parts;
-    std::vector<int> ally_body_ids;
-    std::vector<int> ally_body_indices;
+    std::vector<int> drop_cells;
     int feed_index = -1;
     int feed_id = -1;
     int known_leader_id = -1;
     int known_leader_len = 0;
     int known_leader_round = -1;
-    std::uint64_t sonar_tag = 0xA;
+    std::uint64_t sonar_tag = 0x2;
+    bool sonar_enabled = false;
     Position known_leader_pos{};
     Direction known_leader_dir = dir_of(Direction::NORTH);
     bool zone_active = false;
@@ -1053,10 +1157,13 @@ class Bot {
     int ally_mark = 0;
 
     double chosen_room = 0.0;
+    bool chosen_scored = false;
+    bool chosen_reaches_tail = false;
+    bool any_enterable = false;
     double last_room = 0.0;
     double last_bonus = 0.0;
     double last_seen_room = 0.0;
-    bool strict_bodies = false;
+    bool last_reaches_tail = false;
 
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
@@ -1064,6 +1171,25 @@ class Bot {
     std::vector<Position> bfs_queue;
     int visit_mark = 0;
 };
+
+// 兜底：只看这一回合的视野，挑一个没海草也没龙的邻格，找不到就向北。
+Direction fallback_direction(unswbc::Controller const& controller) {
+    Position const here = controller.get_position();
+    auto const* here_tile = controller.get_tile(here);
+    for (Direction const direction : Direction::get_direction_list()) {
+        if (here_tile && !here_tile->get_edge(direction).is_passable()) {
+            continue;
+        }
+        if (here_tile && here_tile->get_edge(direction).is_portal()) {
+            continue;
+        }
+        auto const* ahead = controller.get_tile(here.add_dir(direction));
+        if (ahead && !ahead->get_dragon()) {
+            return direction;
+        }
+    }
+    return Direction(Direction::NORTH);
+}
 
 }
 
@@ -1075,7 +1201,7 @@ int main() {
         try {
             bot.take_turn();
         } catch (...) {
-            controller.make_move(Direction(Direction::NORTH));
+            controller.make_move(fallback_direction(controller));
         }
         unswbc::end_turn();
     }

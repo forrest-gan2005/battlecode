@@ -32,6 +32,12 @@ for m in $maps; do
     a=$(unswbc run "$m" "$left" "$right" --sandbox 2>&1 | rg 'wins|draw' | head -1)
     b=$(unswbc run "$m" "$right" "$left" --sandbox 2>&1 | rg 'wins|draw' | head -1)
 
+    # 引擎没吐出胜负行（编译失败、引擎报错）不能算成任何一方赢
+    if [[ -z $a || -z $b ]]; then
+        echo "!! $name: unswbc run 没有输出胜负行，中止（先手局: '$a'  后手局: '$b'）" >&2
+        exit 1
+    fi
+
     tally "$a" A
     tally "$b" B
 

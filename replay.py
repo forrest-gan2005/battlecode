@@ -261,8 +261,9 @@ def parse(path):
             action = payload.pointer(0)
             usage = payload.pointer(1)
             which_action = action.u16(0) if action else 0
+            action_names = ("move", "split", "suicide")
             entry = {"round": round_no, "kind": "action", "id": did,
-                     "action": ("move", "split", "suicide")[which_action],
+                     "action": action_names[which_action] if which_action < len(action_names) else str(which_action),
                      "tle": payload.bit(32),
                      "points": usage.u64(0) if usage else 0}
             if which_action == 1:
@@ -330,6 +331,9 @@ def summarise(path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+        print(__doc__)
+        sys.exit(2)
     target = sys.argv[1]
     if "--json" in sys.argv:
         info, events, team_of = parse(target)
