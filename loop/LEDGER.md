@@ -26,3 +26,8 @@ One section per wave, facts only.
 ### Chained runner (started in wave 1)
 - `loop/h12.sh` waits for `loop/results/B_done`, then: ident of B61 vs v61 -> `loop/results/ident_B61.txt`; held x2 SEED0=3000 PR3+SR2 vs v61 -> `loop/results/H12_held.json`; main x8 SEED0=3000 -> `loop/results/H12_main.json`; then `loop/results/H12_done`.
 - The held/main runs start only if ident says identical; otherwise it writes `H12_ident_failed` and stops.
+
+### Wave 1 close (04:12 KST)
+- Extra analysis: split propensity is not lower than the opponents' (L4+ splits per 100 dragon-rounds 42.7 vs 34.3); per-unit gain is equal (losses r50-100 0.081 vs 0.085). H3 REJECTED by analysis, no runs spent.
+- No game results yet. Phase B at held map 44/79 at 04:10 (no partial output; ab3 writes at the end).
+- Open runs: phaseB.sh pid 30425; h12.sh pid 47893 (waits for B_done). Verdicts on H1/H2 pending.

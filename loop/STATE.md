@@ -3,8 +3,11 @@
 - Phase: B (Phase A done in wave 1: `loop/ANALYSIS.md`)
 - Baseline B61 = mybot2 + `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true. Built at `tune_runs/ab2/B61`; main.cpp, helper.hpp and bot.toml are byte-identical to `v61/` (ident trivially identical).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
-- Noise table: pending (Phase B batch running, see below).
-- Running: `loop/phaseB.sh` (pid 30425, started 03:43 KST): B61/P1/P2 vs v61, held (heldset_sq+freshset x2, SEED0=3000) -> `loop/results/B_held.json`, then main (official+newset x8, SEED0=3000) -> `loop/results/B_main.json`; writes `loop/results/B_done` at the end.
+- Noise table: pending (Phase B batch running).
+- Running (check `ps` and the marker files before starting anything):
+  1. `loop/phaseB.sh` (pid 30425, started 03:43 KST): B61/P1/P2 vs v61, held (heldset_sq+freshset x2, SEED0=3000, 79 maps) -> `loop/results/B_held.json`, then main (official+newset x8) -> `loop/results/B_main.json`; writes `loop/results/B_done`. At 04:10 it was on held map 44/79; estimates: held ~04:35, main ~05:40.
+  2. `loop/h12.sh` (pid 47893): waits for `B_done`, runs ident of B61 vs v61 (`ident_B61.txt`), then H1 PR3 + H2 SR2 held x2 (`H12_held.json`) and main x8 (`H12_main.json`), then `H12_done` (or `H12_ident_failed`). Estimate ~07:00.
+- Next wave: when `B_held.json` exists, compute the held noise rows with `python3 work/paired.py loop/results/B_held.json B61 loop/results/B_held.json` (P1/P2 rows); same for main. Then judge H1/H2 under the wave 1 pre-registration in LEDGER.md once H12 files exist.
 
 ## Noise table
 | set | B61 W/N | P1 +/- (net) | P2 +/- (net) |

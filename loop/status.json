@@ -1,7 +1,7 @@
 {
  "phase": "B",
- "updated": "2026-10-03T04:00:30+09:00",
- "current": "Phase B batch running; H1/H2 runs chained after it",
+ "updated": "2026-10-03T04:12:00+09:00",
+ "current": "Wave 1 done: analysis + queue; Phase B held ~55% (est. held 04:35, main 05:40); H1/H2 chained after",
  "running": [
   {
    "what": "Phase B: B61,P1(TIE_SEED=1),P2(TIE_SEED=2) vs v61; held x2 then main x8, SEED0=3000",
