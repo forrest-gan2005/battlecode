@@ -1,112 +1,141 @@
 {
- "phase": "B",
- "updated": "2026-10-03T04:12:00+09:00",
- "current": "Wave 1 done: analysis + queue; Phase B held ~55% (est. held 04:35, main 05:40); H1/H2 chained after",
- "running": [
-  {
-   "what": "Phase B: B61,P1(TIE_SEED=1),P2(TIE_SEED=2) vs v61; held x2 then main x8, SEED0=3000",
-   "result_file": "loop/results/B_held.json, loop/results/B_main.json (B_done when finished)",
-   "pid": 30425,
-   "started": "2026-10-03T03:43:00+09:00"
+  "phase": "B",
+  "updated": "2026-10-03T04:35:00+09:00",
+  "current": "웨이브 2: held 노이즈 측정 완료(플라시보 순 +5/−3, 뒤집힘 ~40%); Phase B main 진행 중(~05:40); H4 토글 구현 후 H12→H4→메커니즘 체인 대기",
+  "running": [
+    {
+      "what": "Phase B main: B61·P1·P2 vs v61, official+newset x8, SEED0=3000",
+      "result_file": "loop/results/B_main.json (끝나면 B_done)",
+      "pid": 30425,
+      "started": "2026-10-03T04:24:17+09:00"
+    },
+    {
+      "what": "B_done 후: B61 ident → H1 PR3 + H2 SR2 held x2, main x8",
+      "result_file": "loop/results/ident_B61.txt, H12_held.json, H12_main.json (H12_done)",
+      "pid": 47893,
+      "started": "2026-10-03T04:00:00+09:00"
+    },
+    {
+      "what": "H12_done 후: B61c(현 mybot2) ident → H4 TT5·TT5D held x2, main x8",
+      "result_file": "loop/results/ident_B61c.txt, H4_held.json, H4_main.json (H4_done)",
+      "pid": 26722,
+      "started": "2026-10-03T04:25:30+09:00"
+    },
+    {
+      "what": "H4_done 후: 메커니즘 리플레이(생성맵 10개 x4), MB61/MPR3/MSR2/MTT5/MTT5D",
+      "result_file": "loop/results/mech.json, mech_press.txt (mech_done)",
+      "pid": 28961,
+      "started": "2026-10-03T04:26:00+09:00"
+    }
+  ],
+  "baseline": {
+    "main": "대기 중",
+    "held": "80/160",
+    "ident": "토글 off 빌드는 v61과 가드된 코드만 다름; ident는 체인에서 실행(ident_B61, ident_B61c)"
   },
-  {
-   "what": "Chained after B_done: ident B61 vs v61, then H1 PR3 (TR_PRESS_ROOM=3) + H2 SR2 (SMALL_UNIT_THREAT_REACH=2) held x2 and main x8 vs v61, SEED0=3000",
-   "result_file": "loop/results/ident_B61.txt, H12_held.json, H12_main.json (H12_done when finished)",
-   "pid": 47893,
-   "started": "2026-10-03T04:00:00+09:00"
+  "noise": {
+    "placebo1": "held +34 −29 (순 +5)",
+    "placebo2": "held +35 −38 (순 −3)",
+    "note": "held 160판 중 ~40% 뒤집힘, 순승 SD≈8; 사전등록 기준 held 순 ≥ 9는 약 1SD라 SEED0=5000 확인과 메커니즘이 핵심. main 노이즈 대기"
+  },
+  "hypotheses": [
+    {
+      "id": "H1",
+      "area": "TR",
+      "title": "압박 공간: 적 머리 근처에서 적이 먼저 닿는 칸은 공간으로 안 셈",
+      "status": "running",
+      "prereg": "웨이브1 LEDGER: held 순 ≥ 9(Nh+4), main 순 ≥ −Nm; SEED0=5000 held 순 > 0; 압박사 단위당 −15%",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": ""
+    },
+    {
+      "id": "H2",
+      "area": "CB",
+      "title": "SMALL_UNIT_THREAT_REACH=2: 작은 적 머리가 중형 드래곤을 위협",
+      "status": "running",
+      "prereg": "H1과 같은 기준; 메커니즘 L4-9 head_rammed −15%",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": ""
+    },
+    {
+      "id": "H3",
+      "area": "EC",
+      "title": "중반 유닛 증가: 분할 가드 완화",
+      "status": "rejected",
+      "prereg": "",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": "래더 분석으로 기각: L4+ 분할률 우리 42.7 vs 상대 34.3, 단위당 성장 동일"
+    },
+    {
+      "id": "H4",
+      "area": "CB",
+      "title": "갇힌 소형(L≤5)이 벽사 대신 인접 적 머리와 맞교환 (CB_TRAP_TRADE)",
+      "status": "running",
+      "prereg": "웨이브2 LEDGER: H1과 같은 기준(held 순 ≥ 9 등); 메커니즘은 L≤5 head_ram 증가 + L≤5 자멸 감소 둘 다 필요, 발동 없으면 기각",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": ""
+    },
+    {
+      "id": "H5",
+      "area": "CB",
+      "title": "큰 맵 맞교환 기준 TRADE_MIN_UNITS=4",
+      "status": "queued",
+      "prereg": "",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": ""
+    },
+    {
+      "id": "H6",
+      "area": "OP",
+      "title": "오프닝: 결손 없음, 낮은 우선순위",
+      "status": "queued",
+      "prereg": "",
+      "held": "",
+      "main": "",
+      "confirm": "",
+      "mechanism": "",
+      "verdict": ""
+    }
+  ],
+  "findings": [
+    "래더 120/228; S 61/101, M 38/68, L 21/59; ≥1950 상대 8/42",
+    "r100 총길이 앞섬 79-33, 뒤짐 35-73",
+    "패배 시 r50-r100 상대 유닛 12→24, 우리 11→16",
+    "압박 자멸(적 머리 3칸 내) r100-300 우리 29.8 vs 상대 20.4/게임, 단위당 ~2배",
+    "우리 분할률은 상대보다 높음(42.7 vs 34.3); 단위당 성장 동일; 사망이 이득의 ~70% 소모",
+    "우리 퀸 사망 159/228, 중앙값 r123 (QWQ 영역)",
+    "r300 전 소형(L≤5) 자멸 중 적 머리 인접: 우리 7.1 vs 상대 3.8/게임; 소형 head_ram 우리 9.8 vs 상대 22.8",
+    "로컬 노이즈: TIE_SEED만 바꿔도 held 160판 중 ~40% 결과 뒤집힘"
+  ],
+  "runner": {
+    "state": "웨이브 2 진행 중 (04:23부터)",
+    "waves": [
+      {
+        "n": 1,
+        "start": "2026-10-03T03:42:57.884185+09:00",
+        "minutes": 28,
+        "exit": "adopted",
+        "turns": 62,
+        "cost_usd": 3.2152906000000003,
+        "is_error": false,
+        "summary": "Wave 1 finished the ladder analysis of all 228 games (we won 120): having more total length at round 100 predicted the result (79–33 when ahead, 35–73 when behind), and our dragons die by their own move with an enemy head nearby about twice as often per unit as the opponents'. That second number is the main lead, so the queue's first test, H1, is a new off-by-default toggle (`TR_PRESS_ROOM`) aimed at it. H2 (an existing threat-reach setting) is queued next, and H3 (splitting more in the midgame) was dropped without any games because we already split more often than the opponents. No game results yet: the baseline and placebo noise batch is about halfway through the held-out maps (held set du",
+        "tokens": 6102801
+      }
+    ]
   }
- ],
- "baseline": {
-  "main": "",
-  "held": "",
-  "ident": "B61 main.cpp/helper.hpp/bot.toml byte-identical to v61"
- },
- "noise": {},
- "hypotheses": [
-  {
-   "id": "H1",
-   "area": "TR",
-   "title": "Pressure room: enemy-reachable cells not counted as room near enemy heads",
-   "status": "running",
-   "prereg": "LEDGER wave 1: held net >= Nh+4 and main net >= -Nm; confirm SEED0=5000 held net>0; pressure deaths/unit -15%",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": ""
-  },
-  {
-   "id": "H2",
-   "area": "CB",
-   "title": "SMALL_UNIT_THREAT_REACH=2: small enemy heads threaten our mid dragons",
-   "status": "running",
-   "prereg": "LEDGER wave 1: same rule as H1; mechanism L4-9 head_rammed -15%",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": ""
-  },
-  {
-   "id": "H3",
-   "area": "EC",
-   "title": "Midgame unit growth: relax the dominant split guard before r150",
-   "status": "rejected",
-   "prereg": "",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": "rejected by ladder analysis: our split rate per L4+ dragon-round 42.7 vs their 34.3; per-unit gain equal"
-  },
-  {
-   "id": "H4",
-   "area": "CB",
-   "title": "Trapped small dragon takes a head-on trade instead of a wall death",
-   "status": "queued",
-   "prereg": "",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": ""
-  },
-  {
-   "id": "H5",
-   "area": "CB",
-   "title": "TRADE_MIN_UNITS=4 on large maps",
-   "status": "queued",
-   "prereg": "",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": ""
-  },
-  {
-   "id": "H6",
-   "area": "OP",
-   "title": "Opening: no deficit found, low priority",
-   "status": "queued",
-   "prereg": "",
-   "held": "",
-   "main": "",
-   "confirm": "",
-   "mechanism": "",
-   "verdict": ""
-  }
- ],
- "findings": [
-  "Ladder 120/228; S 61/101, M 38/68, L 21/59; vs >=1950 8/42",
-  "Total-length lead at r100: ahead 79-33, behind 35-73; S maps ahead 41-8",
-  "Losses diverge r50-r150: opp units 12->24 r50-r100, ours 11->16",
-  "Pressure self-deaths (enemy head <=3): us 29.8 vs them 20.4 per game r100-300, ~2x per unit",
-  "Head-ons ~always mutual and symmetric overall",
-  "Our queen dies 159/228, median r123; S-map queen-decided games 1-13 (QWQ area)",
-  "Our split rate per L4+ dragon-round is higher than opponents (42.7 vs 34.3); per-unit gain equal; deaths eat ~70% of gains"
- ],
- "runner": {
-  "state": "\uc6e8\uc774\ube0c 1 \uc9c4\ud589 \uc911 (03:42\ubd80\ud130)",
-  "waves": []
- }
 }

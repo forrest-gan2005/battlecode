@@ -201,6 +201,8 @@ constexpr bool BARREN_KNOWN = false;
 constexpr bool NO_REVERSE = false;
 constexpr int TR_PRESS_ROOM = 0;
 constexpr int TR_PRESS_MAX_LEN = 8;
+constexpr int CB_TRAP_TRADE = 0;
+constexpr bool CB_TRAP_DEAD = false;
 constexpr int RALLY_FRESH = 0;
 constexpr int LC_LEAD_ROUND = 0;
 constexpr int LC_FEED_ROUND = 0;
@@ -3835,6 +3837,22 @@ class Bot {
                 }
             }
             cornered = any_scored && ((all_imminent && length >= DODGE_MIN_LENGTH) || (is_big() && all_exposed));
+        }
+
+        if (CB_TRAP_TRADE > 0 && length <= CB_TRAP_TRADE && !is_queen() && !is_leader()) {
+            bool all_closed = true;
+            int head_on = -1;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (scored[k] && scores[k] > SCORE_REJECT * 0.5 && !closed[k] && !(CB_TRAP_DEAD && dead[k])) {
+                    all_closed = false;
+                }
+                if (dests[k] >= 0 && edge_at(head, directions[k]) != EDGE_PORTAL && is_enemy_head(position_of(dests[k]))) {
+                    head_on = static_cast<int>(k);
+                }
+            }
+            if (all_closed && head_on >= 0) {
+                scores[head_on] = -SCORE_REJECT * 0.1;
+            }
         }
 
         for (std::size_t k = 0; k < directions.size(); k++) {

@@ -47,3 +47,10 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 - r50-r150, non-queen dragons: length mix is the same for both sides (L2 59%, L4+ 7% vs 9%). Splits per 100 dragon-rounds at L4+: us 42.7, them 34.3 (wins 44.7:38.2, losses 40.7:32.2). We do not split less than the opponents.
 - Length gain per unit-round (gain = change in total + length lost in deaths), losses (N=104): r25-50 0.094:0.101, r50-100 0.081:0.085, r100-150 0.066:0.072. Wins (N=97): 0.100:0.094, 0.086:0.085, 0.072:0.075.
 - Length lost in deaths per game in losses: r50-100 us 57.8 of 80.4 gained, them 61.1 of 95.2; r100-150 us 73.6 of 87.8, them 89.5 of 119.4. Our gain and loss numbers are nearly the same in wins and losses; the opponent's numbers move.
+
+## Wave 2 addendum: small-dragon deaths next to an enemy head (H4 sizing)
+- Source: `loop/tools/ladan.pkl`, all 228 games. "Small" = length <= 5 at death; self = wall/self/body/none; adjacent = enemy head at Manhattan distance 1 from our head.
+- Before r300, per game: our small self deaths 108.7, of which with an enemy head adjacent 7.13; theirs 108.0 and 3.81.
+- Before r300, per game: small head_ram deaths (the dying dragon moved into a head) ours 9.8, theirs 22.8.
+- From r300: our small self 60.3 (adjacent 2.38), theirs 88.5 (adjacent 1.73); small head_ram ours 2.9, theirs 8.3.
+- Reading: H4 can act on at most about 7 events per game before r300 (the gap to the opponents is about 3.3). Opponents convert small dragons into head-ons about 2.3x as often as we do; this matches the older finding in `work/plan.md` (top teams initiate 14-25 head-ons per game). The TRADE_MIN_UNITS=1 test (te1) listed there has no recorded result.

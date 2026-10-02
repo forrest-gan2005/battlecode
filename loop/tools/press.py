@@ -25,5 +25,8 @@ if __name__ == '__main__':
                     c[k] += 1
                     if k == 'self' and d[5] <= 3: c['press'] += 1
                     if d[4] == 'head_ram': c['ram'] += 1
+                    if d[4] == 'head_rammed' and 4 <= d[3] <= 9: c['mid_rammed'] += 1
+                    if d[4] == 'head_ram' and d[3] <= 5: c['small_ram'] += 1
+                    if k == 'self' and d[3] <= 5: c['small_self'] += 1
             n = len(G)
-            print('%s games %d  per 100 unit-rounds: pressure %.3f self %.3f head %.3f | per game pressure %.1f self %.1f head_ram %.1f' % (tag, n, 100 * c['press'] / ur, 100 * c['self'] / ur, 100 * c['head'] / ur, c['press'] / n, c['self'] / n, c['ram'] / n))
+            print('%s games %d  per 100 unit-rounds: pressure %.3f self %.3f head %.3f | per game pressure %.1f self %.1f head_ram %.1f | L4-9 rammed %.2f, L<=5 ram %.2f, L<=5 self %.2f' % (tag, n, 100 * c['press'] / ur, 100 * c['self'] / ur, 100 * c['head'] / ur, c['press'] / n, c['self'] / n, c['ram'] / n, c['mid_rammed'] / n, c['small_ram'] / n, c['small_self'] / n))
