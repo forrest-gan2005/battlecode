@@ -10,8 +10,8 @@
 ## Local A/B tests
 ```
 cd work
-python3 -m venv bc123 && bc123/bin/pip install unswbc==1.2.3
-export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 WORKERS=4
+python3 -m venv bc127 && bc127/bin/pip install unswbc==1.2.7
+export PATH=$PWD/bc127/bin:$PATH NOSANDBOX=1 FAST=1 WORKERS=4
 SEED0=3000 python3 ab3.py "$(cat newset.txt),$(cat official.txt)" v61 8 out.json "TAG@mybot2:TOGGLE_A=value,TOGGLE_B=value"
 python3 paired.py baseline.json BASELINE_TAG out.json
 ```
