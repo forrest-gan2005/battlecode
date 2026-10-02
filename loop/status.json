@@ -1,19 +1,13 @@
 {
  "phase": "C",
- "updated": "2026-10-03T05:22:00+09:00",
- "current": "웨이브 3: H1·H2 기각(held 순 −57/−11); H4 held 진행 중(~05:45), 이후 메커니즘→H5→H1b 체인",
+ "updated": "2026-10-03T05:51:00+09:00",
+ "current": "웨이브 3 종료: H1·H2·H4(TT5) 기각, TT5D 미결(+1); 메커니즘 리플레이 진행 중 → H5 → H1b 체인",
  "running": [
   {
-   "what": "H4 TT5·TT5D: B61c ident → held x2, main x8",
-   "result_file": "loop/results/ident_B61c.txt, H4_held.json, H4_main.json (H4_done)",
-   "pid": 26722,
-   "started": "2026-10-03T05:18:00+09:00"
-  },
-  {
-   "what": "H4_done 후: 메커니즘 리플레이(생성맵 10개 x4), MB61/MPR3/MSR2/MTT5/MTT5D",
+   "what": "메커니즘 리플레이(생성맵 10개 x4): MB61/MPR3/MSR2/MTT5/MTT5D vs v61",
    "result_file": "loop/results/mech.json, mech_press.txt (mech_done)",
    "pid": 28961,
-   "started": "2026-10-03T04:26:00+09:00"
+   "started": "2026-10-03T05:48:00+09:00"
   },
   {
    "what": "mech_done 후: H5 TM4·TM1 held x2, main x8 (HOLD_H5 있으면 대기)",
@@ -22,7 +16,7 @@
    "started": "2026-10-03T05:04:12+09:00"
   },
   {
-   "what": "H5_done 후: H1b PD2·PD4(압박 칸 제한 깊이 2/4) held x2, main x8 (HOLD_H1B 있으면 대기)",
+   "what": "H5_done 후: H1b PD2·PD4 held x2, main x8 (HOLD_H1B 있으면 대기)",
    "result_file": "loop/results/H1b_held.json, H1b_main.json (H1b_done)",
    "pid": 11892,
    "started": "2026-10-03T05:20:11+09:00"
@@ -31,7 +25,7 @@
  "baseline": {
   "main": "88/176",
   "held": "80/160",
-  "ident": "ident_B61: identical; TR_PRESS_DEPTH 추가 후 토글 off 오브젝트 파일 바이트 동일"
+  "ident": "ident_B61, ident_B61c 모두 identical; TR_PRESS_DEPTH 토글 off 오브젝트 바이트 동일"
  },
  "noise": {
   "placebo1": "held +34 −29 (+5) / main +34 −44 (−10)",
@@ -91,13 +85,13 @@
    "id": "H4",
    "area": "CB",
    "title": "갇힌 소형(L≤5)이 벽사 대신 인접 적 머리와 맞교환 (CB_TRAP_TRADE)",
-   "status": "running",
+   "status": "inconclusive",
    "prereg": "웨이브2 LEDGER: H1과 같은 기준(held 순 ≥ 9 등); 메커니즘은 L≤5 head_ram 증가 + L≤5 자멸 감소 둘 다 필요, 발동 없으면 기각",
-   "held": "",
-   "main": "",
+   "held": "TT5 73/160 (+19 −26, 순 −7); TT5D 81/160 (+24 −23, 순 +1)",
+   "main": "중단(판정 불변)",
    "confirm": "",
    "mechanism": "",
-   "verdict": ""
+   "verdict": "TT5 기각(held ≤ 0); TT5D 미결(+1, 기준 9 미달) — 메커니즘에서 소형 head_ram 증가 없으면 기각"
   },
   {
    "id": "H5",
@@ -135,7 +129,8 @@
   "로컬 노이즈: TIE_SEED만 바꿔도 held 160판 중 ~40% 결과 뒤집힘",
   "main 세트에서 무효 플라시보 둘 다 B61 대비 −10/−14: 공식맵은 현 v61 쪽으로 편향",
   "H1 PR3 붕괴(전멸 71/160): 적 머리 기준 전체 맵 컷은 소형의 공간·먹이 인식을 망가뜨림",
-  "SMALL_UNIT_THREAT_REACH=2는 중형 맵에서 손해(−9)"
+  "SMALL_UNIT_THREAT_REACH=2는 중형 맵에서 손해(−9)",
+  "CB_TRAP_TRADE는 뒤집힌 게임 수가 플라시보보다 적음(45~47 vs 63~73): 발동 빈도 낮음"
  ],
  "runner": {
   "state": "웨이브 3 진행 중 (05:03부터)",

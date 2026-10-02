@@ -4,13 +4,12 @@
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH added in wave 3: toggle-off object file byte-identical to the previous build.
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (each script waits for the previous marker file; check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h4.sh` (pid 26722): B61c ident -> H4 TT5 + TT5D held x2 (`H4_held.json`), main x8 (`H4_main.json`) -> `H4_done`. Started 05:18, est. ~06:05.
-  2. `loop/mech.sh` (pid 28961): after `H4_done`: KEEP replays, 10 devset maps x4, MB61/MPR3/MSR2/MTT5/MTT5D vs v61 -> `mech.json`, `mech_press.txt`, `mech_done`. Est. ~06:35.
-  3. `loop/h5.sh` (pid 38751): after `mech_done`, waits while `loop/results/HOLD_H5` exists: H5 TM4 + TM1 held x2, main x8 -> `H5_done`. Est. ~07:20.
-  4. `loop/h1b.sh` (pid 11892): after `H5_done`, waits while `HOLD_H1B` exists: H1b PD2 + PD4 held x2, main x8 -> `H1b_done`. Est. ~08:05.
+  1. `loop/mech.sh` (pid 28961): started 05:48: KEEP replays, 10 devset maps x4, MB61/MPR3/MSR2/MTT5/MTT5D vs v61 -> `mech.json`, `mech_press.txt`, `mech_done`. Est. ~06:20.
+  2. `loop/h5.sh` (pid 38751): after `mech_done`, waits while `loop/results/HOLD_H5` exists: H5 TM4 + TM1 held x2, main x8 -> `H5_done`. Est. ~07:05.
+  3. `loop/h1b.sh` (pid 11892): after `H5_done`, waits while `HOLD_H1B` exists: H1b PD2 + PD4 held x2, main x8 -> `H1b_done`. Est. ~07:50.
 - To run a confirm (SEED0=5000) before a queued step: `touch loop/results/HOLD_H5` (or HOLD_H1B) before its wait ends, run the confirm, then remove the file.
 - Stopping an ab3 batch: kill `ab3.py` AND its `multiprocessing.spawn` workers (they keep launching games), then the leftover `unswbc run` processes.
-- Next wave: judge H4 under the wave 2 rule (`python3 loop/tools/judge.py loop/results/B_held.json loop/results/H4_held.json`). If both TT5 and TT5D held net <= 0, H4 is REJECTED and the main step may be killed. Read `mech_press.txt` when present: MPR3 wiped/pressure counts (why H1 collapsed), MTT5 small_ram/small_self (H4 mechanism).
+- Next wave: read `mech_press.txt` when present: MPR3 wiped/pressure counts (why H1 collapsed; informs H1b), MTT5D small_ram/small_self vs MB61 (H4 TT5D: no rise in small_ram -> REJECTED as no-op). Judge H5 when `H5_held.json` exists (`python3 loop/tools/judge.py loop/results/B_held.json loop/results/H5_held.json`; maps <= 1200 cells should not flip). The queue is thin after H1b: new hypotheses should come from the ladder data (e.g. opponents' head-on initiative in r100-300 losses, economy r50-150).
 
 ## Noise table (vs B61, same games)
 | set | B61 W/N | P1 +/- (net) | P2 +/- (net) | P1 vs P2 flips |
@@ -35,8 +34,8 @@
 ### H3 EC — midgame unit growth: REJECTED by analysis (wave 1)
 - Our split rate is higher than the opponents' (42.7 vs 34.3 per 100 L4+ dragon-rounds); per-unit gain is equal.
 
-### H4 CB — trade instead of trapped suicide (priority 1, running)
-- `CB_TRAP_TRADE` (max length), `CB_TRAP_DEAD`. Variants TT5, TT5D. Rule in LEDGER wave 2.
+### H4 CB — trade instead of trapped suicide: TT5 REJECTED, TT5D INCONCLUSIVE (wave 3)
+- TT5 held net -7; TT5D held net +1 (flips 47, fewer than placebo). Mechanism (MTT5D) pending in mech.sh.
 - Sizing: before r300 our small self deaths with an enemy head adjacent 7.1 per game (theirs 3.8); small head_rams 9.8 vs 22.8.
 
 ### H5 CB — trade threshold on maps over 1200 cells (priority 3, chained)

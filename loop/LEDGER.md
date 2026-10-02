@@ -79,3 +79,15 @@ One section per wave, facts only.
 - Runs (`loop/h1b.sh`, after `H5_done`, while no `HOLD_H1B`): held x2 SEED0=3000 -> `H1b_held.json`; main x8 SEED0=3000 -> `H1b_main.json`; paired vs B61.
 - PASS = held net >= 9 and main net >= -14. CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (pressure deaths per 100 unit-rounds >= 15% below B61 and wiped count not above B61 by more than 10%) + CPU. REJECTED = held net <= 0 or no drop in pressure deaths. Otherwise INCONCLUSIVE.
 - Kill early: if the held net of both variants is <= 0, the main batch may be skipped.
+
+### H4 held results (`H4_held.json`, finished 05:46)
+- `ident_B61c.txt`: identical (05:21).
+- Paired vs B61: TT5 73/160, +19 -26, net -7 (small -2, medium -3, large -2; sqheld -5, fresh -2); wiped 34 vs 28. TT5D 81/160, +24 -23, net +1 (small -2, medium 0, large +3; sqheld +1, fresh 0); wiped 32 vs 28.
+- Flips are fewer than the placebos' (45 and 47 vs 63 and 73): the toggle changes fewer games, small maps only 2.
+- **H4 TT5: REJECTED** (held net <= 0). **H4 TT5D: INCONCLUSIVE** (held +1, below the PASS bar 9 and above 0; main cannot make it PASS). Mechanism (MTT5D in `mech_press.txt`) decides whether it fires; if small head_ram does not rise, it becomes REJECTED as a no-op.
+- H4 main batch stopped at 05:47 for the same reason as H12 (cannot change either verdict). No H4_main.json. mech.sh started 05:48 with 8 workers.
+
+## Wave 3 close — 05:50 KST
+- Ran: main noise row filled (Nm = 14); H1/H2 held; H4 held. Verdicts: H1 REJECTED (-57), H2 REJECTED (-11), H4 TT5 REJECTED (-7), H4 TT5D INCONCLUSIVE (+1).
+- Code: `TR_PRESS_DEPTH` toggle (off, object-identical). Tools: `loop/tools/judge.py` (paired net by size and set).
+- Open runs: mech.sh pid 28961 (est. ~06:20), h5.sh pid 38751 (est. ~07:05), h1b.sh pid 11892 (est. ~07:50).
