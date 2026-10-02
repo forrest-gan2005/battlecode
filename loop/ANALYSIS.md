@@ -60,3 +60,10 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 - Share of splits made from parents of length >= 6, r50-150: maps 801-1200 cells us 0.19-0.29 vs them 0.07-0.12; maps > 1200 cells us 0.31-0.40 vs them 0.12-0.20; maps <= 800 equal.
 - Median units us:them on maps > 1600 cells (losses N=46): r100 46.5:42, r150 56:61, r200 47:62, r300 42:62. Wins (N=24): r150 60:53, r300 51:63. Engine cap is 64; opponents stay at 62-63 from r150.
 - Local diagnosis (24 games vs v61, 800+ cell maps): in r50-150, 82-95% of refused splits by L4+ non-leader dragons are refused by SPLIT_SOFT_LIMIT = 60; exit/room, portal and harvest checks refuse <= 5%. After r150 on maps > 1200 cells the stop-round rule refuses 92-95%.
+
+## Wave 8 addendum: where the food goes on maps <= 1200 cells (`loop/tools/eatnear.py`, `eatnear.pkl`)
+- Length eaten per game r25-150, binned by the eater's distance to the nearest enemy head (e) and to the nearest other own head (a), at the eat. Maps <= 800 cells: losses N=40, wins N=61. 801-1200: losses N=22, wins N=35.
+- <= 800 losses, r50-100 us:them: e<=3 alone (a4+) 14.9:9.9; e9+ with an ally within 3 1.1:11.2; e4-8 with an ally within 3 4.5:12.4. r100-150: e<=3 alone 21.2:13.7; e9+ ally near 3.0:23.1.
+- <= 800 wins mirror this (e9+ ally near r50-100 18.9:1.1, r100-150 25.4:0.7), but our e<=3 alone eating stays higher than theirs in wins too (19.4:12.4).
+- 801-1200 losses r50-100: e9+ ally near 6.8:17.3; wins 8.3:6.7.
+- Reading: on small maps the side that wins eats in a safe back zone in clusters, far from enemy heads; this flips with the result, so it is mostly a symptom of territory. Our extra eating next to enemy heads while alone shows in both wins and losses (a style difference: the small-dragon contest rule targets pearls where the enemy is up to 1 step closer).

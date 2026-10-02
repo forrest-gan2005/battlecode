@@ -247,3 +247,24 @@ One section per wave, facts only.
 - Verdicts: H8 SL62 INCONCLUSIVE (net +7); H9 TE REJECTED (net -4).
 - Code: none in mybot2 (H8, H9, H10 are value changes of existing constants). Tools: `loop/tools/edge10.py`, `loop/tools/mech8.py`, `loop/h8b.sh`, `loop/h10.sh`.
 - Open runs: h8b.sh pid 84921 running H8b SL62 held x2 SEED0=5000 (started 08:17, est. ~08:37) -> `H8b_held5.json`, `H8b_done`, removes `HOLD_H10`; h10.sh pid 54889 then runs H10 LE0 + LEM1 held x2 SEED0=3000 (est. ~09:20) -> `H10_held.json`, `H10_done`.
+
+## Wave 8 — 2026-10-03 08:31 KST
+- Start: H8b finished 08:30 (`H8b_held5.json`); h10.sh (pid 54889) started H10 LE0 + LEM1 held x2 SEED0=3000 at ~08:30.
+
+### H8b results (`H8b_held5.json`, held x2 SEED0=5000, paired vs B61 in `H7b_held5.json`)
+- SL62 85/160 vs B61 80/160: +23 -18, net +5 (large +2, medium +3, small 0; sqheld +3, fresh +2). Wiped 31 vs 31. Mean final length 44.1 vs B61 51.8.
+- **H8b SL62: INCONCLUSIVE** (net +5: above 0, below 9).
+- Combined SEED0 3000 + 5000 (320 games): +46 -34, net +12; small 0 flips in both seeds. Meets the pre-registered "combined net >= 12 justifies a third seed".
+
+### Pre-registration: H8c EC — SL62 third seed
+- Same toggle. Runs: B61 and SL62 held x2 SEED0=7000 in one batch -> `H8c_held7.json` (B61 tag in the same file). Chain `loop/h8c.sh` (waits for `H10_done`).
+- Rule: combined net over three seeds (480 games). Null SD of a 160-game net ~8.5, so ~14.7 for 480. CANDIDATE path (main x8 net >= -14, mechanism, CPU) only if the combined net >= 20 and the SEED0=7000 net > 0. REJECTED if the SEED0=7000 net <= -5 or the combined net < 10. Otherwise INCONCLUSIVE and the family is parked (no fourth seed).
+
+### Ladder: food by local situation on maps <= 1200 cells (`loop/tools/eatnear.py`)
+- Facts in `ANALYSIS.md` (wave 8 addendum). <= 800 losses r50-100: we eat more alone next to enemy heads (14.9:9.9), they eat far more in safe back zones with allies near (11.2:1.1); the back-zone gap flips in wins, the next-to-enemy excess does not.
+
+### Pre-registration: H11 EC — small-dragon pearl contest slack
+- Claim: small dragons (length <= 4) take a pearl as their target even when an enemy head is 1 step closer (`CONTEST_SLACK = 1`). This sends lone small dragons to pearls next to enemy heads. Either the contest costs more than it gains (then slack 0 helps) or contesting harder pays (then slack 2 helps). Bracket both directions; applies on all map sizes.
+- Toggle: existing `CONTEST_SLACK` (value change only). CS0 = B61 + CONTEST_SLACK=0; CS2 = B61 + CONTEST_SLACK=2.
+- Runs: held x2 SEED0=3000 -> `H11_held.json`, paired vs `B_held.json`. Chain `loop/h11.sh` waits for `H8c_done`. Main only if held passes.
+- PASS = held net >= 9 and main net >= -14 (per variant). CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays: for the passing variant, our length eaten with an enemy head within 3 moves in the intended direction by >= 15%, and pressure deaths per 100 unit-rounds do not rise by > 15% for CS2 / fall for CS0) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
