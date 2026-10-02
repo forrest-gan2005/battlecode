@@ -42,3 +42,8 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 ## Feeding / late game (owner Zhe, issue #3; recorded only)
 - r400 top dragon: wins 17:10, losses 12:21. End top: wins 15:2, losses 14:27.
 - Longest-dragon finishes on L maps 11 W / 20 L.
+
+## Split propensity and per-unit growth (wave 1 addendum; `loop/tools/splitgap.py`, `splitgap.out`)
+- r50-r150, non-queen dragons: length mix is the same for both sides (L2 59%, L4+ 7% vs 9%). Splits per 100 dragon-rounds at L4+: us 42.7, them 34.3 (wins 44.7:38.2, losses 40.7:32.2). We do not split less than the opponents.
+- Length gain per unit-round (gain = change in total + length lost in deaths), losses (N=104): r25-50 0.094:0.101, r50-100 0.081:0.085, r100-150 0.066:0.072. Wins (N=97): 0.100:0.094, 0.086:0.085, 0.072:0.075.
+- Length lost in deaths per game in losses: r50-100 us 57.8 of 80.4 gained, them 61.1 of 95.2; r100-150 us 73.6 of 87.8, them 89.5 of 119.4. Our gain and loss numbers are nearly the same in wins and losses; the opponent's numbers move.

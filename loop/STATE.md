@@ -28,12 +28,9 @@
 - Expected signal: our L4-9 head_rammed per game drops in KEEP replays.
 - Falsifier: no drop, or held-out net within noise.
 
-### H3 EC — midgame unit growth (priority 3, queued)
-- Claim: in r50-r150 our dragons split too rarely; opponents double units in r50-r100 (12 -> 24 in losses) while we go 11 -> 16. Find the split guard that blocks most often, then relax it before r150.
-- Evidence: r100 lead decides S/M maps (S ahead 41-8, behind 14-30). Loss economy r100 41:59, units 16:24. Prior rejects: LEADER_GROW_ROUND_BIG 300, HARVEST_SPLIT (plan.md), so the late-split levers are done.
-- Step 0: debug count of split_child_size() return reasons in a few local games (no ladder). Step 1 cheap test: `CHILD_MIN_ROOM=2`. Step 2: `EC_EARLY_SPLIT` toggle relaxing the dominant guard before r150.
-- Expected signal: median units at r100 up in local games; held-out net above noise.
-- Falsifier: units at r100 do not rise, or rise without a length gain.
+### H3 EC — midgame unit growth (REJECTED by analysis, wave 1)
+- Claim was: we split too rarely in r50-r150. Falsified on ladder data: our splits per 100 L4+ dragon-rounds are 42.7 vs their 34.3, length mix equal, per-unit gain nearly equal (losses r50-100 0.081 vs 0.085). The unit gap is compounding of small per-unit edges and of the opponent's strength, not a split guard. No test run.
+- Side fact: deaths eat most of the gain (losses r50-100: we lose 57.8 of 80.4 gained per game). Reducing avoidable deaths (H1, H4) is the economy lever.
 
 ### H4 CB — trade instead of trapped suicide (priority 4, queued)
 - Claim: when a pressured small dragon (L<=3) has only trapped moves, a mutual head-on (enemy loses a unit too) beats a wall/self death.

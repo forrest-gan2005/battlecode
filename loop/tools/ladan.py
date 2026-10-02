@@ -8,7 +8,7 @@ NR = '/Users/quasarpark/meow-loop/work/nr'
 SNAP = (25, 50, 100, 150, 200, 300, 400, 499)
 def one(arg):
     gid, mp, ours, opp, elo, res = arg
-    p = os.path.join(NR, gid + '.replay')
+    p = gid if gid.endswith('.replay') else os.path.join(NR, gid + '.replay')
     info, _, team_of = replay.parse(p)
     them = 'B' if ours == 'A' else 'A'
     side = lambda d: 'us' if team_of.get(d) == ours else 'them'
