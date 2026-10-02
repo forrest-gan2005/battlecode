@@ -172,3 +172,26 @@ One section per wave, facts only.
 - Verdicts: H7 ES225 REJECTED (net 0); H7 ES300 INCONCLUSIVE (net +4), followed up as H7b.
 - Code: none in mybot2. Tools: `splitlen.py`, `splitlen_rep.py`, `loop/dev/diag8*` (diagnostic copy).
 - Open runs: H1b held started 06:59 (h1b.sh pid 11892, ab3 pid 87652; held est. ~07:25, main ~08:00); h8.sh pid 94571 (after H1b_done: H7b held SEED0=5000 with B61, then H8 held; est. ~09:00).
+
+## Wave 6 — 2026-10-03 07:10 KST
+- Start: h1b.sh running H1b held (PD2, PD4; started 06:59); h8.sh waiting on `H1b_done`.
+
+### Ladder head-on initiative by map size (all 228 games, `ladan.pkl`, r < 300, per game)
+- head_ram deaths (the dying dragon moved) us:them. Maps > 1200 cells: losses (N=46) 12.4:53.3, wins (N=24) 12.5:44.4. 801-1200: losses (22) 9.4:21.2, wins (35) 12.3:12.9. <= 800: losses (40) 6.4:11.4, wins (61) 8.1:7.0. Almost all initiators are L <= 4 on both sides.
+- Length lost in head-ons (ram + rammed) us:them, maps > 1200 cells: losses 190:221, wins 168:186. The exchange itself is even or slightly in our favour; opponents trade 4x as often on big maps.
+- Our trade rule on maps > 1200 cells (non-aggressive) needs a target with >= max(5, L+2) parts unless we are at the unit cap; maps <= 1200 cells already trade on parts >= length. `TRADE_EVEN` (existing constant, untested: te1 in `work/plan.md` has no result) applies the even rule on all maps.
+
+### Pre-registration: H9 CB — even trades on maps over 1200 cells
+- Claim: on large maps, our small dragons (L <= 4) refuse head-on trades with equal-size enemies when we are below the unit cap; opponents take them 4x as often at an even length exchange. Allowing even trades keeps space and corpses contested. Binding: only maps > 1200 cells, only while our unit count is below cap - 1 (locally mostly r < 50 and after r150).
+- Toggle: existing `TRADE_EVEN` (value change only). TE = B61 + TRADE_EVEN=true. Maps <= 1200 cells must be unchanged (check: zero flips there).
+- Runs: held x2 SEED0=3000 -> `H9_held.json`, paired vs `B_held.json`. Main only if held passes. Chain `loop/h9.sh` waits for `H8_done` and no `HOLD_H9`.
+- PASS = held net >= 9 and main net >= -14. CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays on > 1200 cell maps: our head_ram r < 300 per game >= 30% above MB61; length lost in head-ons not worse than MB61 by > 10%) + CPU. REJECTED = held net <= 0, or any flip on maps <= 1200 cells (implementation error). Otherwise INCONCLUSIVE.
+
+### H1b held results (`H1b_held.json`, finished 07:24)
+- Paired vs B61 (`judge.py`): PD2 38/160, +17 -59, net -42 (small -15, medium -21, large -6; sqheld -19, fresh -23). PD4 33/160, +17 -64, net -47 (small -18, medium -22, large -7). B61 80/160. Mean final length 37.9-38.5 vs v61 47-50.
+- **H1b PD2 and PD4: REJECTED** (held net <= 0). Even a local ring of 2 cells around the destination costs as much as the whole-map cut of H1 (PR3 -57). Treating enemy-reachable cells as blocked in the room survey hurts at every map size; the pressure-death family (TR_PRESS_*) is closed.
+- H1b main batch stopped at 07:25 (killed h1b.sh, ab3, spawn workers, unswbc runs); `H1b_done` touched by hand. h8.sh started H7b at once.
+
+### H9 mechanism baseline (`loop/tools/mech9.py`, KEEP replays, maps > 1200 cells, r < 300)
+- MB61 (16 local mirror games vs v61): head_ram 62.8 per side per game, head-on length lost 546 per side, self deaths 582. MTT5D: head_ram 72.9:65.6.
+- Locally both sides already initiate ~63 head-ons per game on big maps (ladder: we 12, opponents 44-53). In mirror games we sit at the unit cap from r50, and the at-cap rule already allows even trades, so TE may bind rarely locally. A near-zero flip count in H9 held would mean "no local signal", not "no effect".
