@@ -40,7 +40,9 @@ You are one wave of an automated improvement loop for team meow's Battlecode bot
    - No comments in bot code.
    - With the toggle off, `ident.py` must report identical.
 6. CPU: the worst turn must stay under about 60M points on 64x64 maps. Check with `unswbc run --sandbox` on the largest maps before calling anything a candidate.
-7. Write every file and commit message in English.
+7. Write `STATE.md`, `LEDGER.md`, `ANALYSIS.md`, code and commit messages in English.
+   `loop/status.json` is local-only and feeds the user's Korean dashboard. Write its human-readable fields in Korean:
+   `current`, `running[].what`, `hypotheses[].title`, `prereg`, `verdict` and `findings`.
 8. At most 8 parallel game workers. Do not start a new batch while one is running; check `running` in `status.json` and `ps`.
 
 ## Ownership (avoid duplicate work)
@@ -113,4 +115,4 @@ You are one wave of an automated improvement loop for team meow's Battlecode bot
 Do not touch the `runner` key; the runner owns it. Update `current` and `running` during the wave as well, not only at the end, so the dashboard stays live.
 
 ## Your final reply
-End the wave with a plain-English summary of two or three sentences: what you did, the key numbers, and what is running. The runner shows it on the dashboard.
+End the wave with a summary of two or three sentences **in Korean**: what you did, the key numbers, and what is running. The runner shows it on the user's dashboard.

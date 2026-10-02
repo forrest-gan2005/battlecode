@@ -1,14 +1,25 @@
 {
   "phase": "A",
-  "updated": "",
-  "current": "waiting for wave 1",
-  "running": [],
-  "baseline": {},
+  "updated": "2026-10-03T03:50:00+09:00",
+  "current": "Phase A ladder analysis; Phase B baseline+placebo batch running",
+  "running": [
+    {
+      "what": "Phase B: B61,P1(TIE_SEED=1),P2(TIE_SEED=2) vs v61; held x2 then main x8, SEED0=3000",
+      "result_file": "loop/results/B_held.json, loop/results/B_main.json",
+      "pid": 30425,
+      "started": "2026-10-03T03:50:00+09:00"
+    }
+  ],
+  "baseline": {
+    "main": "",
+    "held": "",
+    "ident": "B61 main.cpp/helper.hpp/bot.toml byte-identical to v61"
+  },
   "noise": {},
   "hypotheses": [],
   "findings": [],
   "runner": {
-    "state": "not started",
+    "state": "웨이브 1 진행 중 (03:42부터)",
     "waves": []
   }
 }
