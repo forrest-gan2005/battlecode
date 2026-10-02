@@ -1,6 +1,6 @@
 import os, re, sys, shutil, subprocess
-ROOT = '/Users/UNSW/battlecode'
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, 'ab2')
 MAP_DIRS = ['tune_runs/newmaps', 'tune_runs/official123', 'maps', 'tune_maps', 'tune_runs/variants', 'tune_runs/variants_sq', 'tune_runs/community', 'tune_runs/genmaps',
             'tune_runs/genmaps_sq', 'tune_runs/sprintmaps', 'tune_runs/genheld', 'tune_runs/genheld_sq', 'tune_runs/huge', 'tune_runs/genfresh']

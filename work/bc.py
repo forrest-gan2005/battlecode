@@ -1,8 +1,8 @@
 """回放分析工具：逐事件重建身体、画地图。"""
-import sys
+import os, sys
 from collections import deque
 
-sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import replay
 
 REASON = ['wall', 'self', 'body', 'head', 'suicide']
