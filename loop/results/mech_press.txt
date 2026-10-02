@@ -1,0 +1,5 @@
+MB61 games 40  per 100 unit-rounds: pressure 0.221 self 2.503 head 0.620 | per game pressure 41.2 self 467.9 head_ram 58.0 | L4-9 rammed 16.35, L<=5 ram 55.70, L<=5 self 448.73
+MPR3 games 40  per 100 unit-rounds: pressure 0.386 self 3.912 head 0.654 | per game pressure 43.4 self 440.1 head_ram 36.5 | L4-9 rammed 7.00, L<=5 ram 34.92, L<=5 self 426.38
+MSR2 games 40  per 100 unit-rounds: pressure 0.236 self 2.915 head 0.824 | per game pressure 37.5 self 463.6 head_ram 62.1 | L4-9 rammed 18.20, L<=5 ram 59.58, L<=5 self 445.38
+MTT5 games 40  per 100 unit-rounds: pressure 0.196 self 2.501 head 0.671 | per game pressure 36.5 self 466.2 head_ram 65.3 | L4-9 rammed 17.60, L<=5 ram 62.75, L<=5 self 446.98
+MTT5D games 40  per 100 unit-rounds: pressure 0.209 self 2.569 head 0.695 | per game pressure 38.5 self 473.9 head_ram 68.0 | L4-9 rammed 18.05, L<=5 ram 65.45, L<=5 self 456.70

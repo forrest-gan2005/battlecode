@@ -91,3 +91,31 @@ One section per wave, facts only.
 - Ran: main noise row filled (Nm = 14); H1/H2 held; H4 held. Verdicts: H1 REJECTED (-57), H2 REJECTED (-11), H4 TT5 REJECTED (-7), H4 TT5D INCONCLUSIVE (+1).
 - Code: `TR_PRESS_DEPTH` toggle (off, object-identical). Tools: `loop/tools/judge.py` (paired net by size and set).
 - Open runs: mech.sh pid 28961 (est. ~06:20), h5.sh pid 38751 (est. ~07:05), h1b.sh pid 11892 (est. ~07:50).
+
+## Wave 4 — 2026-10-03 05:48 KST
+- Start: mech.sh running (8 workers, 44/200 replays at ~05:52); h5.sh and h1b.sh waiting in the chain.
+
+### Ladder analysis (all 228 games; `loop/tools/unitflow.py`, `l2age.py`, `splitgap2.py` -> `splitgap2.out`)
+- Unit flow, per game, us:them. Losses (N=108): r50-100 deaths 24.2:25.2, head_ram 1.3:5.0, head_rammed 4.6:1.7 (head-on deaths per side 5.9:6.7, about even). r100-150 deaths 29.2:33.7. r150-300 deaths 75.7:113.8; implied births (splits) r150-300 about 70:117.
+- r50-300 self deaths of L2 dragons within 1 round of a split: 49.1:44.2 per game, mostly the parent (the head part left at length 2 after a tail escape split; 42.6:35.6). Same order for both sides, so a game mechanic, not a gap. In losses 49.1:57.7.
+- Splits r50-300 per game: losses 135.9:201.6, wins 154.8:115.8.
+- Maps over 1600 W*H, r150-300: our splits per game 83.3 vs 165.6 (wins N=24 90.2:170.9, losses N=46 79.8:162.8). Share of L4+ among non-queen dragon-rounds: losses 0.17:0.30. Splits per 100 L4+ dragon-rounds: 7.2:6.8 (vs 52.4:40.8 on smaller maps).
+- Code reading: on maps over AGGRESSIVE_MAX_CELLS (1200), `grow_round` = LEADER_GROW_ROUND_BIG = 150, and `split_child_size` returns 0 for every dragon longer than SPLIT_MIN_LENGTH after that round (not only the leader). Our mid-game unit count on large maps is capped by this rule. GB300 (LEADER_GROW_ROUND_BIG=300) was tested twice on old bases and official maps only (q2 +6 -8, sw7 +2 -5); it also moves the leader zone and is_leader.
+
+### Pre-registration: H7 EC — keep non-leader splits on large maps after r150
+- Claim: on maps over 1200 cells, the blanket stop of splits for dragons longer than 4 after r150 halves our r150-300 births vs the opponents. Letting non-leader dragons keep splitting until a later round raises unit count and eating without touching the leader logic.
+- Code: `EC_SPLIT_ROUND_BIG` (int, 0 = off). When > 0 and the map is not aggressive (cells > 1200), the no-split-when-longer-than-4 rule uses max(grow_round, EC_SPLIT_ROUND_BIG). is_leader, leader zone, queen split rules unchanged. Toggle-off object file byte-identical (clang++ -std=c++20 -O2 md5 aee4013d... before and after), so ident vs v61 carries over from B61c.
+- Variants: ES225 = B61 + EC_SPLIT_ROUND_BIG=225; ES300 = B61 + EC_SPLIT_ROUND_BIG=300.
+- Runs (`loop/h7.sh`, pid 1547, after `H1b_done`, while no `HOLD_H7`): held heldset_sq+freshset x2 SEED0=3000 vs v61 -> `H7_held.json`; main official+newset x8 SEED0=3000 -> `H7_main.json`; paired vs B61 (`B_held.json`, `B_main.json`).
+- Only maps over 1200 cells can change; games on smaller maps should be identical (a flip there is a bug signal).
+- PASS = held net >= 9 and main net >= -14. CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism + CPU. Mechanism (KEEP replays, large generated maps): our splits in r150-300 per game >= 20% above MB61, our unit count at r300 higher, top dragon length at r300 not more than 25% below MB61. REJECTED = held net <= 0, or no rise in r150-300 splits. Otherwise INCONCLUSIVE.
+- Kill early: if both variants' held net is <= 0, the main batch may be skipped.
+
+### Mechanism replays (`mech.sh`, finished 06:02; `mech.json`, `mech_press.txt`; 10 devset maps x4, SEED0=7000, vs v61)
+- Wins: MB61 20/40, MPR3 6 (+3 -17), MSR2 13 (+5 -12), MTT5 23 (+8 -5), MTT5D 22 (+7 -5).
+- Per 100 unit-rounds pressure / self / head: MB61 0.221 / 2.50 / 0.62; MPR3 0.386 / 3.91 / 0.65; MSR2 0.236 / 2.92 / 0.82; MTT5 0.196 / 2.50 / 0.67; MTT5D 0.209 / 2.57 / 0.70.
+- Per game small (L<=5) head_ram / small self: MB61 55.7 / 448.7; MTT5 62.8 / 447.0; MTT5D 65.5 / 456.7.
+- **H4 TT5D: stays INCONCLUSIVE, closed.** It fires (small head_ram +17.5% vs MB61) but small self deaths do not drop (+1.8%); held net +1. Not re-queued.
+- H1 (MPR3): the whole-map press block raised pressure deaths per unit by 75% and self deaths per unit by 56%. This weakens the H1 claim as implemented; H1b still runs under its pre-registered rule, but behind H7.
+- Chain change (06:03): `HOLD_H1B` created; h7.sh restarted (pid 38919) to wait on `H5_done` instead of `H1b_done`; it removes `HOLD_H1B` after `H7_done`. Order now H5 -> H7 -> H1b. h5.sh started H5 held at 06:02.
+- Tool: `loop/tools/mech7.py` (KEEP replays, maps over 1200 cells: splits r150-300, units/top/total at r300). MB61 on mechset: 16 games, splits 443:443 (mirror games), units r300 57.6.

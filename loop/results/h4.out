@@ -1,0 +1,1 @@
+loop/h4.sh: line 11: 58472 Terminated: 15          SEED0=3000 python3 ab3.py "$(cat official.txt),$(cat newset.txt)" v61 8 $R/H4_main.json "TT5@mybot2:$T,CB_TRAP_TRADE=5" "TT5D@mybot2:$T,CB_TRAP_TRADE=5,CB_TRAP_DEAD=true" > $R/H4_main.log 2>&1

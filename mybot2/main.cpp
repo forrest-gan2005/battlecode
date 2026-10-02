@@ -204,6 +204,7 @@ constexpr int TR_PRESS_MAX_LEN = 8;
 constexpr int TR_PRESS_DEPTH = 0;
 constexpr int CB_TRAP_TRADE = 0;
 constexpr bool CB_TRAP_DEAD = false;
+constexpr int EC_SPLIT_ROUND_BIG = 0;
 constexpr int RALLY_FRESH = 0;
 constexpr int LC_LEAD_ROUND = 0;
 constexpr int LC_FEED_ROUND = 0;
@@ -739,7 +740,8 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
-        if (round > grow_round && length > SPLIT_MIN_LENGTH) {
+        int const stop_round = EC_SPLIT_ROUND_BIG > 0 && !aggressive ? std::max(grow_round, EC_SPLIT_ROUND_BIG) : grow_round;
+        if (round > stop_round && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
         if (ct.get_unit_count() >= SPLIT_SOFT_LIMIT) {
