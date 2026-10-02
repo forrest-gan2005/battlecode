@@ -195,3 +195,14 @@ One section per wave, facts only.
 ### H9 mechanism baseline (`loop/tools/mech9.py`, KEEP replays, maps > 1200 cells, r < 300)
 - MB61 (16 local mirror games vs v61): head_ram 62.8 per side per game, head-on length lost 546 per side, self deaths 582. MTT5D: head_ram 72.9:65.6.
 - Locally both sides already initiate ~63 head-ons per game on big maps (ladder: we 12, opponents 44-53). In mirror games we sit at the unit cap from r50, and the at-cap rule already allows even trades, so TE may bind rarely locally. A near-zero flip count in H9 held would mean "no local signal", not "no effect".
+
+### H7b results (`H7b_held5.json`, held x2 SEED0=5000, finished 07:50)
+- B61 80/160 at SEED0=5000. ES300 76/160, +14 -18, net -4 (large -4, medium 0, small 0; sqheld -3, fresh -1). Only maps over 1200 cells flipped, as in H7.
+- Combined with H7 (SEED0=3000, net +4): +29 -29, net 0 over 320 games.
+- **H7b ES300: REJECTED** (new-seed held net <= 0). H7 family (EC_SPLIT_ROUND_BIG) closed; toggle stays in code, off.
+
+## Wave 6 close — 07:52 KST
+- Ran: H1b held (PD2, PD4); H7b held (SEED0=5000); ladder head-on initiative by map size; mech9 baseline on MB61/MTT5D replays.
+- Verdicts: H1b PD2 REJECTED (net -42), PD4 REJECTED (net -47); H7b ES300 REJECTED (net -4; combined with H7 net 0 over 320 games).
+- Code: none in mybot2. Tools: `loop/tools/mech9.py`, `loop/h9.sh`.
+- Open runs: h8.sh pid 94571 running H8 SL62 held x2 SEED0=3000 (started ~07:50, est. ~08:10) -> `H8_held.json`, `H8_done`; h9.sh pid 78255 then runs H9 TE held x2 (est. ~08:30) -> `H9_held.json`, `H9_done`.
