@@ -1,0 +1,7 @@
+844934 R 龙虎豹 1707 B 844934:Default:W:1,844935:Devil:W:1,844936:Schooltime:L:1,844937:Prisoners_Dilemma:W:1,844938:Trauma:W:1
+844734 R Team_SKKU 1887 A 844734:Default:L:1,844735:Trophy:L:1,844736:Schooltime:L:1,844737:Slithery_Fight:W:1,844738:Prisoners_Dilemma:L:1
+844729 R Sponge(Albert_and_Bob) 2046 A 844729:Schooltime:L:1,844730:Slithery_Fight:W:1,844731:Prisoners_Dilemma:W:1,844732:Devil:L:1,844733:Portals:L:1
+844724 R calc 1996 A 844724:Devil:L:1,844725:Autarky:L:1,844726:Queen_Of_Spades:L:1,844727:Schooltime:W:1,844728:Default:L:1
+844719 R 3.14159265 1998 A 844719:Trauma:W:1,844720:Prisoners_Dilemma:L:1,844721:Default:L:1,844722:Queen_Of_Spades:L:1,844723:Autarky:L:1
+844714 R Stockfish 2001 A 844714:Slithery_Fight:L:1,844715:Queen_Of_Spades:L:1,844716:Portals:L:1,844717:Trauma:L:1,844718:Default:L:1
+844709 R Cache_me_outside 1958 A 844709:Prisoners_Dilemma:W:1,844710:Trauma:W:1,844711:Autarky:W:1,844712:Trophy:W:1,844713:Default:L:1

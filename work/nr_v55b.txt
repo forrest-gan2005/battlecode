@@ -1,0 +1,5 @@
+830012 R STAR 1701 A 830012:Queen_Of_Spades:L:1,830013:Autarky:W:1,830014:Schooltime:W:1,830015:Trauma:W:1,830016:Default:W:1
+829872 U Cache_me_outside 2021 B 829872:Prisoners_Dilemma:W:1,829873:Trophy:L:1,829874:Slithery_Fight:L:1,829875:Schooltime:W:1,829876:Portals:W:1
+829437 R Z-A 1677 A 829437:Autarky:W:1,829438:Slithery_Fight:W:1,829439:Devil:W:1,829440:Schooltime:L:1,829441:Default:W:1
+829092 R 3.14159265 1987 A 829092:Default:L:1,829093:Prisoners_Dilemma:W:1,829094:Trophy:L:1,829095:Trauma:W:1,829096:Autarky:L:1
+829057 R Cache_me_outside 2021 A 829057:Schooltime:L:1,829058:Default:L:1,829059:Portals:L:1,829060:Slithery_Fight:W:1,829061:Prisoners_Dilemma:W:1

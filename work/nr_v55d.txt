@@ -1,0 +1,3 @@
+835644 R Delusion_Tax 1910 B 835644:Schooltime:L:1,835645:Slithery_Fight:L:1,835646:Autarky:W:1,835647:Trauma:W:1,835648:Default:W:1
+835024 R Adrak_vali_chai 1824 A 835024:Default:W:1,835025:Trophy:W:1,835026:Devil:W:1,835027:Schooltime:W:1,835028:Queen_Of_Spades:W:1
+834984 U Peanut_Butter 1478 B 834984:Schooltime:L:1,834985:Portals:W:1,834986:Slithery_Fight:L:1,834987:Trophy:L:1,834988:Prisoners_Dilemma:L:1,834989:Queen_Of_Spades:L:1,834990:Default:W:1,834991:Autarky:L:1,834992:Devil:L:1,834993:Trauma:W:1

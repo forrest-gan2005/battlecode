@@ -1,0 +1,8 @@
+842628 R Cache_me_outside 1898 B 842628:Trophy:L:1,842629:Trauma:L:1,842630:Autarky:W:1,842631:Devil:W:1,842632:Slithery_Fight:W:1
+842543 R Computers 1959 A 842543:Slithery_Fight:W:1,842544:Queen_Of_Spades:W:1,842545:Schooltime:L:1,842546:Prisoners_Dilemma:L:1,842547:Default:W:1
+842538 R 3.14159265 1992 A 842538:Default:W:1,842539:Trophy:L:1,842540:Devil:L:1,842541:Autarky:L:1,842542:Queen_Of_Spades:W:1
+842523 R Stockfish 1984 A 842523:Slithery_Fight:W:1,842524:Portals:L:1,842525:Devil:W:1,842526:Queen_Of_Spades:L:1,842527:Schooltime:L:1
+842508 R Sponge(Albert_and_Bob) 1996 A 842508:Slithery_Fight:L:1,842509:Prisoners_Dilemma:W:1,842510:Default:W:1,842511:Devil:L:1,842512:Autarky:W:1
+842503 R horse 1982 A 842503:Slithery_Fight:L:1,842504:Prisoners_Dilemma:W:1,842505:Trauma:L:1,842506:Autarky:L:1,842507:Default:L:1
+842498 R calc 2014 A 842498:Portals:L:1,842499:Default:L:1,842500:Prisoners_Dilemma:W:1,842501:Slithery_Fight:W:1,842502:Trauma:W:1
+842323 U Cache_me_outside 1898 B 842323:Devil:W:1,842324:Default:L:1,842325:Autarky:W:1,842326:Trauma:W:1,842327:Queen_Of_Spades:L:1

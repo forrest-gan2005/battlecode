@@ -1,0 +1,7 @@
+859928 R Sponge(Albert_and_Bob) 2084 A 859928:Trophy:L:1,859929:Portals:L:1,859931:weakhold:W:1,859932:Autarky:W:1
+859632 U Tony_S 1714 B 859632:Default:W:1,859633:Devil:W:1,859634:Portals:W:1,859635:Queen_Of_Spades:L:1,859636:Trauma:W:1,859637:Trophy:L:1
+858842 U Tony_S 1714 B 858842:Default:W:1,858843:Devil:W:1,858844:Portals:L:1,858845:Queen_Of_Spades:W:1,858846:Trauma:W:1,858847:Trophy:W:1
+858700 U bread_first_search 1703 B 858700:Schooltime:W:1,858701:Queen_Of_Spades:L:1,858702:Stripes:L:1,858703:Tower_Defense:W:1
+858371 R Team_SKKU 1906 A 858371:Schooltime:W:1,858372:Stripes:W:1,858373:Default:W:1,858374:Australia:L:1,858375:Trauma:W:1
+858201 U SSS 2011 B 858201:Default:L:1,858202:Queen_Of_Spades:L:1,858203:Schooltime:W:1,858204:Trophy:W:1,858205:Devil:W:1,858206:Trauma:W:1,858207:Prisoners_Dilemma:W:1,858208:Autarky:L:1,858209:Portals:L:1,858210:Slithery_Fight:L:1
+858099 R forgot_to_mention 1996 B 858099:Prisoners_Dilemma:L:1,858100:Portals:W:1,858101:Trophy:L:1,858102:Maze:L:1,858103:weakhold:L:1

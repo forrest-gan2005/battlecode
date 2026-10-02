@@ -29,8 +29,8 @@ tally() {
 
 for m in $maps; do
     name=$(basename "$m" .map)
-    a=$(unswbc run "$m" "$left" "$right" --sandbox 2>&1 | rg 'wins|draw' | head -1)
-    b=$(unswbc run "$m" "$right" "$left" --sandbox 2>&1 | rg 'wins|draw' | head -1)
+    a=$(unswbc run "$m" "$left" "$right" --sandbox 2>&1 | grep -E 'wins|draw' | head -1)
+    b=$(unswbc run "$m" "$right" "$left" --sandbox 2>&1 | grep -E 'wins|draw' | head -1)
 
     # 引擎没吐出胜负行（编译失败、引擎报错）不能算成任何一方赢
     if [[ -z $a || -z $b ]]; then

@@ -1,0 +1,10 @@
+834609 R Cache_me_outside 2025 A 834609:Autarky:L:1,834610:Queen_Of_Spades:W:1,834611:Default:W:1,834612:Schooltime:L:1,834613:Slithery_Fight:W:1
+834319 R EternalWisdom 1731 A 834319:Schooltime:W:1,834320:Slithery_Fight:L:1,834321:Portals:L:1,834322:Devil:L:1,834323:Trophy:W:1
+834279 U Cache_me_outside 2025 B 834279:Portals:L:1,834280:Slithery_Fight:W:1,834281:Autarky:W:1,834282:Schooltime:W:1,834283:Queen_Of_Spades:L:1
+834224 R Sabotage-d 1549 B 834224:Portals:W:1,834225:Trauma:L:1,834226:Default:W:1,834227:Queen_Of_Spades:W:1,834228:Slithery_Fight:W:1
+833924 U Cache_me_outside 2025 B 833924:Prisoners_Dilemma:L:1,833925:Trophy:W:1,833926:Slithery_Fight:L:1,833927:Schooltime:W:1,833928:Portals:W:1
+833647 R fandagong 1796 B 833647:Prisoners_Dilemma:L:1,833648:Autarky:W:1,833649:Trophy:W:1,833650:Devil:W:1,833651:Default:W:1
+832966 U Peanut_Butter 1496 B 832966:Schooltime:L:1,832967:Portals:L:1,832968:Slithery_Fight:W:1,832969:Trophy:W:1,832970:Prisoners_Dilemma:W:1,832971:Queen_Of_Spades:W:1,832972:Default:W:1,832973:Autarky:W:1,832974:Devil:W:1,832975:Trauma:W:1
+832826 R SHINK_AI_6500 1853 B 832826:Trauma:W:1,832827:Portals:W:1,832828:Schooltime:L:1,832829:Trophy:L:1,832830:Queen_Of_Spades:L:1
+832289 R Cache_me_outside 2025 B 832289:Trophy:L:1,832290:Queen_Of_Spades:W:1,832291:Slithery_Fight:L:1,832292:Prisoners_Dilemma:L:1,832293:Schooltime:W:1
+831999 U Cache_me_outside 2025 B 831999:Prisoners_Dilemma:L:1,832000:Trophy:W:1,832001:Slithery_Fight:W:1,832002:Schooltime:L:1,832003:Portals:W:1

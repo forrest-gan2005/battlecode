@@ -1,0 +1,4 @@
+847513 R Cutlery 2046 A 847513:Queen_Of_Spades:W:1,847514:Autarky:L:1,847515:Prisoners_Dilemma:W:1,847516:Trophy:L:1,847517:Portals:L:1
+847268 R Shannon 1747 B 847268:Slithery_Fight:W:1,847269:Trauma:L:1,847270:Schooltime:W:1,847271:Default:W:1,847272:Portals:L:1
+845963 R zitian 1864 A 845963:Trophy:L:1,845964:Schooltime:L:1,845965:Prisoners_Dilemma:W:1,845966:Trauma:W:1,845967:Default:L:1
+845313 R y 1821 A 845313:Autarky:W:1,845314:Schooltime:W:1,845315:Portals:L:1,845316:Trauma:L:1,845317:Prisoners_Dilemma:W:1

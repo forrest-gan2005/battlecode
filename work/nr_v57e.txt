@@ -1,0 +1,3 @@
+848146 R 龙虎豹 1720 A 848146:Trauma:W:1,848147:Prisoners_Dilemma:W:1,848148:Trophy:W:1,848149:Devil:W:1,848150:Queen_Of_Spades:L:1
+847752 R fandagong 1965 B 847752:Portals:L:1,847753:Devil:W:1,847754:Queen_Of_Spades:L:1,847755:Prisoners_Dilemma:L:1,847756:Schooltime:L:1
+847712 R chaoliangUNSW 1695 B 847712:Trophy:W:1,847713:Trauma:W:1,847714:Autarky:W:1,847715:Slithery_Fight:W:1,847716:Portals:W:1

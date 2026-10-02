@@ -1,0 +1,1 @@
+Colosseum,arena,autarky,big_empty,default,default_small,devil,dilemma,portals,queen_of_spades,schooltime,slithery_fight,stronghold,trauma,trophy

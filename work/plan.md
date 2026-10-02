@@ -1,0 +1,646 @@
+# Hourly improvement loop: state
+
+Goal: Qualifiers 10 Oct (Bo7 knockout, top 10 advance). Seeding by ladder rating.
+Active verified version: v41 (submission 11514). Test version v42 = v41 + PORTAL_FAR_DECAY=10 (submission 11702).
+
+## Measured defects (ladder, v41)
+- Trauma: start field is barren and portal-locked. Opponents farm fountains early (r0-100 fountain eats 31 vs 3). PORTAL_FAR_DECAY fixes the early game locally (fountain eats 38), but local wins are 3/8 because consolidation fails.
+- Consolidation: feeders feed non-top "leaders". Local Trauma: 65% of v42 feeds and 50% of v41 feeds go to a non-top dragon. Leader info splits by region.
+- Schooltime: free (uncontested) eating 40 vs 70 in r0-100. Contested eating is equal.
+- QoS: we over-stay in the room (191 head-rounds for 32 eats vs 143 for 34). Main region 4.5 vs 11.7.
+
+## Pending tests
+- pf1: local ab3 of PF10/PF20/PF10E vs v41 on 24 maps (pf1.txt, pf1.json). Baseline B41 is in lg1.json.
+- Ladder Trauma-only for v42, 23:10 29 Sep:
+  - dev1 597674 x10
+  - cheji 597675 x6
+  - calc 597686 x6
+  - 龙虎豹 597687 x6
+  - Cache 597688 x6
+  - Baseline: v41 Trauma 6/13.
+
+## Local results vs B41 (lg1.json baseline, 96 paired games)
+- UC (UNSEEN_CLAIM): 57/96, paired +28 -19, length +3.4. Promising.
+- RP20: 55/96, +27 -20.
+- RP50, UCRP: worse.
+- LG5k (leader guard): 50/96, +5 -3.
+
+## Next ideas
+- Combine UC + PF10 (+ LG5k).
+- Consolidation fix: feed only a leader that is plausibly the global top; do not feed tiny leaders (believed length < own length*2 is already a rule, but belief goes stale).
+
+## 2026-09-29 23:40 update
+- Ladder Trauma test of v42: repeated mapIds collapse to 1 game, so only 5 games were played, all lost to strong teams (calc, cheji, 龙虎豹, Cache, dev1).
+  - v42 r0-100 eating is about 40 vs v41's 11, so the early game is fixed.
+  - r100-300 eating is 136 vs 427. Per-dragon efficiency is equal (4.7 vs 5.0); the gap is unit count (dragon-rounds 2917 vs 8492).
+- ROOT CAUSE across maps: opponents split far more.
+  - Trauma r<=300: 205 vs 81 splits.
+  - Schooltime per 50 rounds: 28-36 vs 13-22.
+  - Our Schooltime splits fall after r150 because LEADER_GROW_ROUND_BIG=150 (maps over 1200 cells stop splitting for length>4). harvesting_now also blocks voluntary splits on fountains.
+- Queued tests (gs.sh, after pf1):
+  - gb1: LEADER_GROW_ROUND_BIG 225/300 on schooltime x4, 16 games each.
+  - hs1: HARVEST_SPLIT (+PF10) on fountain maps.
+- The uc1 test (UC+PF+LG combos) was dropped from the queue; requeue it after gs.sh.
+
+## 2026-09-29 23:55 hourly run
+- Rating 1897, rank #26 (was 1871, #32). New ranked series vs free_trip_to_sydney_pls: won 3:2 (lost Trauma and QoS).
+- QoS "wall" deaths are 1-cell dead-end pockets holding the (1,50) spawn tiles. Entering is always fatal, because a dragon cannot reverse into its neck. Our wall deaths are about 2x the opponents' (23 vs 12 per game, r<=300).
+  - The survey BFS from the destination allowed stepping straight back to the old head cell, so pockets looked safe.
+  - NO_REVERSE toggle added (blocks that first back-step). Local QoS: wall deaths drop, but NR lost 3/4 vs v41 and was wiped twice, because avoiding pockets starves the economy (pockets are the main QoS income).
+  - REJECTED as is; default off. Idea for later: enter a pocket only when the eat-and-die trade is worth it, or split the tail off before the head dies.
+
+## 2026-09-30 00:55 hourly run
+- Rating 1909, rank #24. Ranked vs 𓎼𓃭𓅱𓂋𓇌 won 5:0. Unranked vs Deer Park (they challenged us) won 7:3; lost QoS, Schooltime and Trauma.
+- pf1 (paired vs B41, 96 games):
+  - PF10: 45 (+23 -26). Always-on hurts Default.
+  - PF20: 50.
+  - PF10E (only r<=150): 55, +26 -19, length +4.5.
+- v43 = B41 + UNSEEN_CLAIM + PORTAL_FAR_DECAY=10 + PORTAL_FAR_ROUNDS=150. Submitted as submission 11808 (label v42).
+  - Ladder unranked 10-map series queued at 00:52:
+    - dev1: 604832, 604852, 604862
+    - cheji: 604872
+    - calc: 604882
+    - Cache: 604892
+  - Switched back to v41 (11514) right after queueing.
+  - Baselines: v41 dev1 3/10, cheji 1/9, calc 3/10, Cache 3/10 (d41 series, 29 Sep).
+- gb1 (grow round big) is running, then hs1 (harvest split). After that, queue a local test of UC+PF10E (+LG5k) vs B41.
+
+## 2026-09-30 01:45: refactor step 1 started (user approved the plan: clean up, team layer, candidate actions, scoring fixes)
+- The user's design input: the early game is exploration (no early leader; an early leader is inefficient and easy to snipe). The late game should add assassin roles: 4-6 long dragons that sprint-kill enemy big dragons.
+- Work dir /Users/UNSW/battlecode/mybot2 (the cleaned copy). mybot stays as the toggle testbed.
+  - Removed: rally, alert, merge, gossip, probe, plan, poverty, pocket, grab, deny, final, loop, unseen_far, split_enemy, self_check, repel, no_reverse, loiter, portal_fallback.
+  - Baked in the v41 flags. Size went from 3050 to 2349 lines.
+  - Identity check: ident.py <dir> (10 maps x both sides vs v41 against v41-v41 digests). It must print "identical".
+- BUG found: the NO_REVERSE toggle's default survey_back=-1 matched step_index()==-1, so it skipped kelp/unknown-portal neighbours of the destination in survey_from.
+  - Every mybot build from about 23:50 29 Sep to 01:40 30 Sep has it: gb1, hs1, the V43 local build and ladder v43 (11808).
+  - Fixed in mybot (guard survey_back >= 0); the cleanup removes it entirely.
+- Results:
+  - gb1 (buggy base, but the comparison is internally consistent): GB300 30/64 vs 20/64 on schooltime x4.
+  - hs1: HS 36/72 vs 34 (neutral); HSPF 32/72. Harvest split rejected.
+- Trauma: UNSEEN_CLAIM kills the fountain access that PF gave (UC-only 0 fountain eats, PF10 38).
+  - Portal 0 is only discovered if some dragon wanders near (10,0) while chasing unseen cells.
+  - Opening exploration coverage is the real issue; it belongs to the team layer.
+- Split POLICY is not the bottleneck: growth splits r<=150 on the ladder are 5362 us vs 4792 them, and both split at length 4. The unit gap comes from income compounding (the opening).
+- Queued q2 (fixed mybot): B41F, GB300, BOOT10, BOOT16 vs v41 on 24 maps.
+- 02:00 STEP 1 DONE: mybot2 (2352 lines, 139 constants, v41 flags baked in) is replay-identical to v41 on 10 maps x 2 sides (ident.py snap2 "identical").
+  - Kept toggles: UNSEEN_CLAIM, HARVEST_SPLIT, FEED_BOOT_LEN, PEARL_FAR_DECAY, PORTAL_FAR_*, LEADER_GUARD_*.
+  - New tests on the cleaned base: use `TAG@mybot2:<overrides>` in ab3; the base config is empty (defaults = v41).
+  - Plan: once q3 has built its variants, rename mybot -> mybot_legacy and mybot2 -> mybot, so the hourly prompt's path stays valid. B41 overrides such as MOUTH_WARN no longer exist there, so use an empty base.
+- 02:50 hourly: rating 1903 #26 (down from 1914 #23). ddabap 0:5, python.io 1:4, WeHaveQuizzes 3:2 and 4:1. Early wipes: Devil r54, Trophy r161, Prisoners r181; Default wiped at r393 despite leading at r100.
+  - Those deaths are mostly enemy-initiated head rams, many of them sprints.
+  - ramstat.py (crawl, r<=250), our small dragons sprint-rammed vs theirs: Schooltime 8.6 vs 0.9, Slithery 13.2 vs 1.7, Autarky 10.6 vs 5.5, Default 6.0 vs 3.4, Trophy 6.3 vs 4.4.
+  - Code: small dragons only treat cells adjacent to small enemies as threats (SMALL_UNIT_THREAT_REACH=1) and ignore sprint reach (parts-1).
+  - Added SMALL_SPRINT_THREAT to mybot2. q4 queued after q3: C0@mybot2 vs SST@mybot2 on 12 contact maps.
+  - Killed the stale uc2 run (buggy V43 builds).
+- 02:50 hourly: rating 1903 #26 (down from 1914 #23). ddabap 0:5, python.io 1:4, WeHaveQuizzes 3:2 and 4:1. Early wipes: Devil r54, Trophy r161, Prisoners r181; Default wiped at r393 despite leading at r100.
+  - Those deaths are mostly enemy-initiated head rams, many of them sprints.
+  - ramstat.py (crawl, r<=250), our small dragons sprint-rammed vs theirs: Schooltime 8.6 vs 0.9, Slithery 13.2 vs 1.7, Autarky 10.6 vs 5.5, Default 6.0 vs 3.4, Trophy 6.3 vs 4.4.
+  - Code: small dragons only treat cells adjacent to small enemies as threats (SMALL_UNIT_THREAT_REACH=1) and ignore sprint reach (parts-1).
+  - Added SMALL_SPRINT_THREAT to mybot2. q4 queued after q3: C0@mybot2 vs SST@mybot2 on 12 contact maps.
+  - Killed the stale uc2 run (buggy V43 builds).
+- 03:45 hourly: rating 1906 #25.
+  - Ranked: y 3:2, Computers 3:2, Stockfish 1:4. Quaker Qubits challenged us: 6:4.
+  - 8 of 12 losses were wipes: Trophy r120/r234, Prisoners r213/225/305, Devil r170, QoS r206/r457.
+  - Swarm opponents out-eat us 2-7x by r100 in those games (Trophy 19:144).
+  - Overall Trophy opening eating favours us (87.8 vs 66.2 over 19 games). The wipes are against swarm bots that sweep sparse (1,1000) tiles.
+  - Same 6-step horizon issue as QoS; q3 (PEARL_FAR_DECAY) addresses it.
+  - q2 results vs fresh B41F (48/96, identical to lg1 B41, so the fix restored v41 behaviour):
+    - GB300: 46 (+6 -8; schooltime +2 -5, contradicting gb1), not adopted.
+    - BOOT10: 43 (+16 -21), rejected.
+    - BOOT16: 40 (+16 -24), rejected.
+- 04:45 hourly: rating 1908 #22. Ranked: Quaker 3:2, free_trip 3:2, Computers 2:3.
+  - q3: PL15 49/96 (neutral), PL25 44/96. Far-pearl reach shows no gain vs v41 locally.
+  - q4: SST (SMALL_SPRINT_THREAT) 27/48 vs 24/48 (+12 -9), on mybot2.
+  - Submitted v43 = mybot2 + SMALL_SPRINT_THREAT as submission 12022 (label v43; dirs renamed: old v43 -> sub_v42_uc_pf10e, old v42 -> sub_v41_pf10).
+  - Unranked 10-map series queued 04:40:
+    - python.io (147): 621775
+    - ddabap (457): 621785
+    - Quaker (501): 621795
+    - Stockfish (206): 621805
+    - WeHaveQuizzes (87): 621815
+    - dev1: 621825, 621835
+  - Switched back to v41. v41 baselines: python.io 1:4, ddabap 0:5, Quaker 6:4 (plus ranked 3:2), Stockfish 3:12, WHQ 7:3, dev1 3/10 (plus v43-old 10/30).
+- 05:40 hourly: rating 1902 #25. v43 (SST) ladder results, 70 games:
+  - python.io 6:4 (v41 1:4), ddabap 5:5 (0:5), Quaker 6:4 (9:6), Stockfish 1:9 (3:12), WHQ 4:6 (7:3), dev1 1:9 and 3:7 (3:7).
+  - Overall 37% vs 38% baseline, so no net gain. 24/70 wipes.
+  - Sprint-ram deaths did NOT drop (Autarky 15.6, Trophy 13.6).
+  - Killers of our small dragons (v43 games): L2 491, L3 505, L4 56, L5+ 20. Most are 1-step rams by L2 enemies after we end adjacent to their head.
+  - The threat penalty for small dragons (~225) is below pearl (260) + EAT_BONUS (300), so we walk next to enemy heads to eat.
+  - Added SMALL_THREAT_MULT and SMALL_THREAT_OUTNUMBERED (penalty x mult for length<=4, optionally only when visible enemy heads > ally heads) to mybot2.
+  - q5 started: TM3O, TM3, TM3OS on 12 contact maps; baseline C0 in q4.json.
+- 06:45 hourly: rating 1895 #25. Ranked: WeHaveQuizzes 2:3; BloodBath (1820) 2:3, 5:0 and 2:3.
+  - q5 (vs v41, 12 contact maps, base C0 24/48): TM3 22, TM3O 23, TM3OS 25. All neutral.
+  - Local v41-vs-v41 tests cannot see swarm-opponent effects, and the swarm sparring bot is too weak (47/48 earlier).
+  - NEW EVALUATION CHANNEL: dev1 (separate 60/h allowance) as the main large-sample A/B opponent.
+  - v41 dev1 baseline (one-time, 60 games) queued 06:40: 628884, 628894, 628914, 628924, 628934, 628944.
+  - Each candidate then gets 60 games vs dev1.
+  - Memory note: TARGET_DECAY 16->40 once raised early eating 37% (steep decay was deliberate). That is why far-reach toggles (PL, PF) are neutral.
+- 07:45 hourly: rating 1908 #22. Ranked: EternalWisdom 4:1, BloodBath 3:2 and 4:1.
+  - v41 vs dev1 BASELINE (60 games, d1b/): 23/60 = 38%.
+    - Per map: Autarky 0/6, Devil 0/6, QoS 0/6, Prisoners 1/6, Schooltime 1/6, Portals 3/6, Default 4/6, Trauma 4/6, Slithery 5/6, Trophy 5/6.
+  - Devil vs dev1: all wiped (r52-r350).
+    - The first 20 rounds are identical mirror play; then head trades happen and dev1 takes the fountains.
+    - r0-60 per game: dev1 eats 36 fountain + 26.5 corpse + 14.3 mid (1,30) vs our 4.7 + 5.7 + 1.5.
+    - Fountains sit in 1-wide vertical wrap corridors (x=5,8,...,26; tips at y=0/15).
+    - v41 self-play DOES farm them (side A 27-76 fountain eats, winning 3/4), so vs dev1 we lose the contest rather than lacking the behaviour.
+  - PEARL_FAR_DECAY hurts Devil fountain farming (PL variants 0-23 vs v41 27-76). Rejected.
+  - Prisoners vs dev1: equal eating at r100 (91:86), then all our units die between r100 and r200. Needs analysis.
+  - Submitted v44 = mybot2 + UNSEEN_CLAIM as submission 12152 (label v44). dev1 x6 queued 07:42: 633129, 633139, 633149, 633159, 633169, 633179. Switched back to v41.
+- 08:45 hourly: rating 1916 #21 (best so far). Ranked: w daniel ma 2:3, BloodBath 4:1, WeHaveQuizzes 4:1. Quant Merch Trader (unranked) 4:1.
+  - v44 (UC) vs dev1: 21/60 vs v41 23/60, total neutral.
+    - Big per-map swings: Devil 3/6 (0), Prisoners 3/6 (1), QoS 2/6 (0), Portals 5/6 (3), Trophy 0/6 (5), Trauma 1/6 (4), Default 2/6 (4).
+    - Per-map outcomes vs a fixed opponent are chaotic, so only the 60-game total counts (std about 3.8 wins).
+  - CONCLUSION after a night of toggles: no single scoring toggle moves dev1 totals. Next is the structural work (team layer); keep v41 active.
+- 09:45 hourly: rating 1918 #21. Ranked: python.io 3:2.
+  - KEY FINDING, dev1's fountain pipeline:
+    - A parent near a fountain corridor splits L2 children.
+    - Each child runs into the 1-wide dead-end fountain corridor, eats the fountain (1-2), and dies against the wall. Its corpse pearls are eaten by the next child.
+  - Numbers:
+    - Devil r0-60: dev1 36 fountain + 26.5 corpse eats vs our 4.7 + 5.7.
+    - Prisoners r100-250: dev1 68 splits and 41.7 L2 wall deaths vs our 3.3 splits.
+  - This is the main economic gap on fountain maps (Devil, Prisoners, Autarky, Trauma, Portals).
+  - Our harvestable() is a conservative single-dragon pocket entry with no splitting.
+  - NEXT (team layer, feature 1): a fountain-pipeline behaviour. Detect dead-end cells with fast respawn (observed timer 0-1 or hot); a parent at the corridor mouth repeatedly splits L2 children that go in, eat and die; nearby allies eat the corpse pearls. Measure with dev1 60 games (Devil and Prisoners are 0/6 and 1/6 for v41).
+- 10:50 hourly: rating 1938 #17 (best). Ranked: Shannon 3:2, Peanut Butter 5:0, byte_force 5:0.
+  - Devil fountain detail (fountwho.py, 6 dev1 games, r0-100):
+    - dev1 eats about 34 from the centre 2x2 wrap block (15/16, 0/15) and about 27 from the centre corridor pairs (14/17, 7/8). We eat about 0 and about 3.
+    - Head-rounds within 3 of a fountain: 602 vs 139.
+    - A 2x2 fountain block is a +1/turn circling farm.
+  - Our hot detection needs two sightings 6-25 rounds apart, and the hot bonus uses the 6.5-step horizon.
+  - Added to mybot2:
+    - HOT_FAST: two sightings of timer<=1, 2-4 rounds apart, mark the cell hot (fountain detection within about 3 rounds).
+    - HOT_FAR_DECAY: longer reach for hot targets only.
+  - hf1 running (KEEP=1): C0, HF, HFD15, HFD10 vs v41 on 12 fountain maps.
+- 11:45 hourly: rating 1938 #18. tungtung67 (ranked) 2:1 so far. 中国人不准飞 (unranked, they challenged) 4:6.
+  - hf1 (vs v41, 12 fountain maps; C0 24/48): HF 19 (+3 -8), HFD15 19, HFD10 15. NEGATIVE.
+    - On Devil, HF ate fewer fountains (52 vs 72 per 150 rounds) while v41 ate more.
+    - Likely false positives: a cell with an uneaten pearl probably keeps timer 0, so every pearl cell became hot.
+  - Fix: HOT_FAST now requires an empty cell (!pearl_here). hf2 running (HFE).
+- 12:45 (user: crawl, judge, follow the plan): rating 1931 #20.
+  - Ranked: Sabotage-d (1995) 0:5 and 2:3, y 2:3, tungtung67 4:1.
+  - Unranked: Sabotage-d 6:4, cheji 3:7, zitian 5:5, QMT 4:1.
+  - Weakest maps still QoS 27%, Trauma 33%, Schooltime 34%.
+  - HFE (HOT_FAST on empty cells only): 21/48 vs 24 (+2 -5). Fountain-detection direction ABANDONED.
+  - Team layer, opening part 1: BARREN_ESCAPE never fired on Trauma because `!productive` (any visible pearl) blocked it.
+    - Added BARREN_BY_RATE: judge the region only by spawn-cell fraction (<6%).
+    - br1 running on 24 maps (base = q2 B41F 48/96, identical to mybot2 C0).
+- 13:30: BR (BARREN_BY_RATE) 48/96 (+4 -4); Trauma unchanged (eat 1-9).
+  - Debug build: the escape_update region BFS crossed UNKNOWN edges, leaked past unseen walls (queue hit the 600 cap) and counted the fountain cells beyond the wall as spawn. The fraction came out 7-17% > 6%.
+  - Added BARREN_KNOWN (the BFS only crosses known-open edges).
+  - BK (BY_RATE + KNOWN) on local Trauma x4: eat 46-54 by r100 (38 fountain) vs v41 3-5; totals 72:38, 71:39, 88:29, 51:52; wins 2/4 (the losses are consolidation).
+  - bk1 running on 24 maps (base q2 B41F 48/96).
+- 13:40 hourly: rating 1940 #17 (best).
+  - Ranked: DESTINY_3 4:1, BloodBath 3:2, Shannon 4:1.
+  - Unranked: zitian 4:6.
+  - bk1 (BARREN_BY_RATE + BARREN_KNOWN, 24 maps) still running.
+- 13:57: bk1 BK 49/96 (+5 -4, only 9 flips). No side effects; the Trauma economy gains locally, but wins are limited by consolidation.
+  - Submitted v45 = mybot2 + BARREN_BY_RATE + BARREN_KNOWN as submission 12489 (label v45). Mistake: this was at 13:56, near the hour; switched back to v41 at 13:57:00, before the 14:00 autoscrim.
+  - Queued:
+    - dev1 x6: 661567, 661577, 661597, 661607, 661617, 661627 (base v41 23/60, Trauma 4/6).
+    - Trauma singles 661637-661646 vs cheji, calc, 龙虎豹, Cache, Sabotage-d, w daniel ma, python.io, ddabap, Quaker, WHQ (v41 ladder Trauma baseline about 33%).
+- 14:40 hourly: rating 1924 #23. Ranked: Settlers 3:2, w daniel ma 1:4.
+  - v45 results:
+    - dev1 17/60 vs v41 23/60 (Trauma 1/6 vs 4/6, Trophy 0/6 vs 5/6, Prisoners 0/6).
+    - Trauma singles 3/10 (calc, wdm and Quaker won) vs about 33% baseline.
+    - v45 is NOT better.
+  - ANOMALY: Trophy vs dev1.
+    - v41 (06:40) won 5/6, wiping dev1 (r100 eat 82-135 vs 31-48).
+    - Every mybot2-based build lost all of its Trophy games vs dev1: v43 (04:40) 0/2, v44 (07:42) 0/6, v45 (13:57) 0/6, with r100 eat 18-67 vs 100-136.
+    - The builds differ from mybot2 only by toggles, and helper.hpp is identical to v41.
+    - Hypotheses: dev1 changed or the Trophy variance is huge, OR mybot2 differs from v41 on the ladder Trophy map (local ident covered only maps/trophy.map, seed 109).
+    - NEXT: re-run v41 vs dev1 on Trophy x6 (the dev allowance was exhausted at 14:37, retry after 15:00).
+- 15:55 hourly: rating 1902 #24 (down from 1940 at 13:36). Four ranked series lost 2:3: BloodBath, WHQ, EternalWisdom, Computers.
+  - v41 itself lost Trophy by wipe in two ranked games this hour (670785 r205, 669983 r165; r100 eat 28:137, 33:121). The same pattern as the mybot2 builds vs dev1, so the "Trophy anomaly" may be opponent-driven.
+  - Each ladder game has its own seed.
+  - Queued v41 vs dev1 Trophy x6 at 15:50: 671320-671325 (the decisive check).
+  - Opponents iterate; our static v41 is drifting down (1940 -> 1902).
+- 16:45 hourly: rating 1913 #23. Ranked: Weneedmoretokens 5:0, Computers 3:2.
+  - v41 vs dev1 Trophy rerun: 2/6 (it was 5/6 at 06:40).
+  - Local ident mybot2 vs v41 on trophy over 12 seeds: all identical.
+  - The Trophy anomaly is VARIANCE (plus possible dev1 drift). The mybot2 base is sound.
+  - dev1 60-game totals have std about 3.7 wins, so gaps under about 8 are noise.
+  - Re-added NO_REVERSE to mybot2 with the sentinel guarded by survey_back >= 0.
+  - Queued: ident3 (snap3) and then nr2 (NR on 24 maps vs v41; base q2 B41F 48/96).
+  - DON'T edit mybot2 until nr2 has built.
+- 16:55 USER: "先暂时不要测试，等我告诉你在开始测试".
+  - All tests were stopped (ident3/nr2 killed, including orphan workers).
+  - The hourly cron was replaced with a read-only crawl+analysis job (c3247d37): no local tests, submissions, challenges or version switches.
+  - v41 (11514) stays active.
+  - Pending when resumed: ident3 on snap3 (mybot2 with guarded NO_REVERSE), then nr2 (NR on 24 maps).
+- 19:23 USER RESUMED TESTING ("你可以继续测试了"). The cron was restored to full mode (5a8d4bcf; improvement work targets mybot2).
+  - Rating 1880 #31 (downtrend, opponents iterate).
+  - Started: ident3 (snap3 = mybot2 with guarded NO_REVERSE, which must be identical when off), then nr2 (NR@snap3 on 24 maps, KEEP=1).
+  - mybot2 is free to edit, because tests build from snap3.
+- 19:40 Trauma BK consolidation analysis (local bk/t100, t101, t103, where A = BK):
+  - At r400 A has 46 units / 133 total / longest 12 vs B (v41) 27 / 68 / 8.
+  - By r450, A has 98 total and longest 10, while B's longest is 23.
+  - Feeds to a non-top "believed leader": 24/37, 18/25, 29/42.
+  - Regions on the maze and portal maps elect local leaders because sonar is blocked, so feeding fragments.
+  - NEXT (team layer 2): pre-feeding gather or rally toward the global leader's last known position, and/or refuse to feed a leader much shorter than the max leader length ever heard.
+- 19:55 hourly: rating 1877 #32. Settlers 4:1 and 1:4. ident3 (guarded NO_REVERSE off) is identical; nr2 is running.
+  - v45 Trauma ladder games (v45tr):
+    - r0-100 eat 43 vs 61 (improved from v41's ~11). Per-dragon efficiency is equal; the unit gap is 494 vs 791 dragon-rounds.
+    - About 16 deaths per game in r0-100: L2 wall/self deaths in the fountain dead-end column.
+    - 661643 is a pure consolidation loss (r300 total 137 vs 56, final longest 17 vs 19).
+  - v41 has RALLY_FRESH=0, so dragons more than FEEDER_APPROACH (15) from the leader never go to it. That is why many small dragons remain at the end.
+  - Re-added RALLY_FRESH to mybot2 (snap4). q6 queued after nr2: ident4 (snap4), then rl1 = RL15, RL25, RLBK (RL25 + BK) on 24 maps, KEEP=1.
+- 20:40: nr2 NR 46/96 (+9 -11), QoS +2 -1. QoS-map wall deaths are UNCHANGED (NR side 101 vs v41 side 98.9 per game), so the pocket deaths are not caused by the survey reverse illusion. NR rejected. The real pocket-entry path is unknown (candidates: harvest logic, cornered moves, EAT_BONUS). q6 (ident4, then rl1 rally tests) is running.
+- 20:27 USER: challenge the top of the ladder unranked and analyse.
+  - Top 10: cheji(70), forgot(264), Stockfish(206), Cache(952), SSS(91), Cutlery(306), calc(20), 中国必须人能飞(801), ddabap(457), 3.14159265(314).
+  - Queued v41 10-map series: 696232 cheji, 696242 forgot, 696252 Stockfish, 696262 Cache, 696282 SSS, 696292 calc. Downloading to top/ (topdl.sh); consol.py analyses the late game.
+  - Early read (46 games): v41 went 25-21 vs the top 6 (SSS 9-0, Cache 2-7).
+    - MOST games end in an early WIPE (r73-r400); few reach r500.
+    - QoS 0/5 (all wiped). Trauma mostly lost (r100 eat 4-15 vs 46-107).
+    - Portals lost on length 4x (consolidation).
+- 21:10 TOP-6 RESULTS (v41, 60 games, top/): 30-30.
+  - By opponent: cheji 6-4, forgot 4-6, Stockfish 4-6, Cache 3-7, SSS 10-0, calc 3-7.
+  - By map: Devil 6-0, Default 4-2, Slithery 4-2, Autarky/Prisoners/Trophy 3-3, Portals/Schooltime/Trauma 2-4, QoS 1-5.
+  - Endings: W wipe 21, W length 9, L wipe 17, L length 13.
+  - Length losses: the top teams' leader starts growing about 100 rounds earlier.
+    - At r300 their top is 18-35 vs our 4-15. At r400 44 vs 13 (Portals) and 50 vs 25 (Slithery).
+    - They often keep a big 2nd dragon too.
+    - Our ENDGAME_ROUND is 400. Local ENDGAME=350 was neutral (48/96), because v41-vs-v41 is symmetric.
+  - PLAN: v46 = mybot2 + ENDGAME_ROUND=330, then the same top-6 x 10-map unranked series (60 games), compared directly with v41's 30-30. Submit after the next full hour.
+- 20:50 USER: SSS probably ran its old bot, so exclude it. v41 vs the top 5 (cheji, forgot, Stockfish, Cache, calc) = 20-30 (40%). Baseline for the v46 comparison = these 5 (50 games) + dev1 60 (v41 23/60).
+- 21:00 USER approved the refactor (team layer) and said to start writing now; test with dev1 or self-play.
+  - LIFECYCLE module in mybot2 (snap5):
+    - update_lifecycle() runs each turn.
+    - LC_LEAD_ROUND overrides grow_round (leader election, leader zone, split stop).
+    - LC_FEED_ROUND overrides the ENDGAME_ROUND feeding start (feed_round variable).
+    - LC_LEAD_MULT gives the leader extra pearl weight before feeding.
+    - Reactive triggers: LC_ENEMY_LEAD / LC_ENEMY_FEED (enemy dragon of that visible length seen -> start phase now).
+  - lc.sh: ident5, then lc1 = LC200, LC200M, LC200F, LCE on 24 maps vs v41.
+  - Next pieces: second dragon, assassins, feeding pipeline.
+- 21:29 SUBMITTED v46 (submission 13056, label v46) = mybot2 + ENDGAME_ROUND=330. Switched back to v41 at 21:29:15.
+  - Top 5: cheji 702054, forgot 702064, Stockfish 702074, Cache 702084, calc 702094 (v41 baseline 20-30).
+  - dev1 x6: 702104, 702114, 702124, 702134, 702144, 702159 (v41 baseline 23/60).
+- 22:35 RESULTS:
+  - v46 (ENDGAME 330): top5 10-40 vs v41 20-30. But games decided before r330 (identical code) went v41 11-14 vs v46 6-18, so this is opponent drift or variance, not v46. dev1 24-36 vs v41 23-37: neutral.
+  - Lesson: top teams update hourly, so stale baselines mislead. Use dev1 (static) as the main A/B opponent.
+  - Lifecycle local (lc1, vs v41, 96 games): LC200 52 (+26 -22, dlen +3.8), LC200F 49, LC200M 48, LCE 47 (triggers rarely fire). ident5 identical.
+  - NEXT: v47 = mybot2 + LC_LEAD_ROUND=200 -> dev1 60 games. Continue the lifecycle part 2 (second dragon, assassins).
+- 22:00 USER on assassins: they must be conditional, because on fully separated maps the sides never meet and assassins waste resources.
+  - Implemented ASSASSIN_MOD/MIN/MAX/TARGET/FRESH in mybot2 (snap6).
+    - A dragon becomes an assassin only in the feeding phase, when non-leader, length 4-6, id%MOD==0, AND it saw an enemy dragon with >= ASSASSIN_TARGET (8) parts within ASSASSIN_FRESH (30) rounds.
+    - Assassins skip feeding and route to the last big-enemy sighting; END_HUNT does the kill.
+    - With no enemy contact (separated maps) there are no assassins.
+  - as.sh: ident6, then as1 = AS3, AS2, LCAS on 24 maps.
+- 22:15 USER pasted a suggestion: a crowding-aware room check (QoS rooms).
+  - Implemented CROWD_MARGIN in mybot2 (snap7). survey_from sums (visible_parts + margin) over ally heads adjacent to the reachable region into Survey.ally_load; the cramped penalties in score_step use avail = room - ally_load.
+  - Caveats reported to the user: territory already has a Voronoi share; QoS deaths are mostly 1-cell pockets; the Trauma issue was the BARREN unknown-edge leak (fixed).
+  - cr.sh: after as1, run ident7, then cr1 = CR2, CR5 on 24 maps (KEEP=1).
+- 22:25 USER observed calc: very aggressive kamikaze trades (even sprinting to kill shorter dragons), and very efficient corpse collection, which snowballs.
+  - DATA (corpse2.py, v41 vs calc, 10 games, r<=250): about 437 corpse pearls dropped per game, which dominates the economy.
+    - Head-collision corpses eaten: us 28.2 vs them 55.2 (we get 34%). Other corpses: 140 vs 191 (42%).
+  - Cause: after a trade the corpse lies next to enemy heads. Our pearl targets need share (we must be strictly closer) or the small-dragon contest rule (length<=4, slack 1), and threat avoidance keeps us away.
+  - Implemented CORPSE_SLACK/CORPSE_FRESH in mybot2 (snap8).
+    - Corpse detection: a pearl appears on a cell that had a dragon part last round.
+    - Fresh corpse pearls (<=15 rounds) become targets when steps <= rival_steps + slack, at any length.
+  - co.sh: after cr1, run ident8, then co1 = CO2, CO4 on 24 maps (KEEP=1).
+- 22:40 v47 (LC_LEAD_ROUND=200) vs dev1: 19/60 (v41 23, v46 24).
+  - Weak maps: Autarky 0/6, Schooltime 0/6, Default/Devil/Prisoners 1/6; Portals 5/6, Trophy 4/6.
+  - USER: an early leader means fewer expanding dragons and resources concentrated in one dragon that is easy to snipe on open maps. REJECT global early leader.
+  - Next idea: contact-conditional lead timing (early leader only if no enemy contact seen, i.e. separated maps). Focus on corpse collection, crowding and assassins.
+- 00:xx results:
+  - as1: AS3 52/96, AS2 49, LCAS 44 (early leader bad again).
+  - cr1: CR2 45 (QoS +5 -1 but overall negative), CR5 37. Crowding REJECTED.
+  - co1: CO2 39 (+5 -14), CO4 41. Corpse share in CO games stayed 49-50% (no gain), so the toggle never achieved its goal. REJECTED.
+    - The ladder corpse deficit comes from opponents who dive into fights; it would need "vulture" pre-positioning, not a relaxed contest.
+  - Next: v48 = snap8 (mybot2) + ASSASSIN_MOD=3 -> dev1 60 games (a few minutes after the hour).
+- 00:40 v48 (assassins) vs dev1: 20/60 (v41 23). No gain.
+  - Across versions some maps are consistent losses vs dev1: Autarky 1/36, Schooltime ~5/36, QoS ~8/36, Default ~9/36.
+- AUTARKY deep dive (36 games vs dev1, aut/):
+  - Our total stagnates at 20-70 while dev1 reaches 150-250. We eat 60-145 by r100 but lose it to about 55 deaths in r0-150.
+  - dev1 splits 102 (r0-150) and 154 (r150-350) with 46/78 L2 wall deaths (pipeline).
+  - Fountain clusters inferred from spawn frequency (spawnfreq.py): (18/19, 0/1), (18/19, 16/17), (34/35, 0/1), (34/35, 16/17), the gaps at the ends of the central walls. Each cell spawns about 32-36 per 300 rounds.
+  - dev1 eats more even at OUR clusters next to our 14-long start dragon: at (18,0/1), 26 vs 5.8 per cell.
+- RANK1 QoS game 717331 (we were wiped):
+  - Rank1 leaves the (1,50) rooms after about r100: r100-200 head-rounds in rooms 14 vs our 289, in the main region 683 vs 118.
+  - Their deaths are about 16 vs our 28 (we lose 9 body, 5 wall, 4 self, about 10 head).
+  - We ate more in r100-200 (40 vs 26) but self-inflicted losses erased it.
+- NEXT (team layer): region staffing by income.
+  - Surplus dragons leave low-yield clusters (rooms).
+  - An unguarded high-yield cluster (fountain) pulls one guard.
+- 00:45 STAFF module (region staffing by income) in mybot2 (snap10), toggle STAFF_CELLS.
+  - staff_update() runs after escape_update when no escape target: BFS over known-OPEN edges only; skipped if the region exceeds STAFF_REGION_MAX (120).
+  - capacity = max(1, spawn_cells / STAFF_CELLS). If lower-id allies in the region >= capacity, the dragon is surplus: escape_target = nearest portal cell, escape_through at it.
+  - apply_route lets the route enter the exit cell even if closed or vetoed (the QoS room exits are 1-cell pockets with the portal on the far side).
+  - Local QoS x4 (ST16b vs v41): 4/4 WINS, all wipes. Room head-rounds 267-322 vs 388-425; main region 539-709 vs 89-293; eat 95-125 vs 74-102.
+  - ident10 identical. v49 (snap10 + STAFF_CELLS=16) prepared; st1 (ST16, ST8 on 24 maps) running.
+  - Submit v49 for dev1 x6 after 01:08.
+- 00:47 v49 vs top5 (series 718612-718652): 20:30. Stockfish 10:0 is EXCLUDED as lopsided (probably a weak bot), leaving 10:30 vs cheji/forgot/Cache/calc.
+  - Same four: v41 16-24 (20:27), v46 9-31 (21:29); opponent drift over time.
+  - QoS: v49 3-1 (excluding Stockfish) vs v41 0-5 and v46 0-5. Default 1-4, Trauma 1-4.
+- 01:09 dev1 x6 for v49: 722103, 722113, 722123, 722133, 722143, 722153. Switched to 13338 only for queueing; back to v41 at 01:09:28.
+- 01:40 v49 vs dev1 (v49d): 23/60 = v41. QoS 4-2 (v41 0-6). Trophy 0-6 vs v41 5-1, though Trophy/Devil have NO small regions (STAFF never fires) = pure variance.
+  - USER SWITCHED ACTIVE TO v49 (13338). v49 IS THE MAIN VERSION; switch back to 13338 after tests.
+  - New work: mybot2 must carry STAFF_CELLS=16 as the default (to be done), so ident compares against v49.
+- 01:55 Rank-1 (Cache me outside, 2104) ranked series 722680 (v49): 1:4.
+  - Devil W (wipe r121, eat 147:36).
+  - Schooltime L (eat 101:311, 30 vs 62 units at r100).
+  - Autarky L (eat 69:106).
+  - Portals L (their top 25 vs 13 at r400).
+  - Prisoners L: an early trade war (9 each by r20) left us 1 L3 dragon by r70, which then CIRCLED in a 3x3 portal room (29-31, 0-3) from r120 to r500 without eating. The barren escape needs r<=100 and seen>=40 and so never fires.
+  - mybot2 is now v49-based (STAFF_CELLS=16 default); ident.py takes REF env (REF=v49); ident11 is identical to v49.
+  - Added IDLE_ESCAPE (no growth for N rounds, known-open region <= IDLE_REGION_MAX (40) with no visible pearl -> leave via the nearest portal).
+  - id1 running: B49 vs ID40 on 30 maps (24 + prisoners/autarky variants) vs v49.
+- 02:15 USER: stop per-map analysis, because the qualifiers use NEW maps. Find GENERAL logic and strategy.
+  - General stats (selfloss.py, 800 ladder games, r<=300):
+    - eat us 371 vs them 445 (-17%); splits 153 vs 165.
+    - Trapped deaths are similar (185 vs 181 length); body 48 vs 37; head 76 vs 91.
+    - 'none' (voluntary) deaths 3 vs 20.8 per game: they deliberately recycle small dragons.
+    - The gap is INCOME, not self-loss.
+  - Implemented the general INCOME ALLOCATION module in mybot2 (snap12), toggle INC_PERIOD.
+    - Every INC_PERIOD rounds a non-leader small dragon BFSes (known cells, <=30 steps) and scores candidate cells (hot or with a pearl) by the 7x7 area rate sum (hot 1.0, spawn 0.05, pearl +0.3) / (1 + recent ally sightings within 4), minus 0.03*dist.
+    - It commits to a target if it beats here + margin 0.5, clears on arrival, and routes via apply_route.
+  - NEW BROAD TEST SET: v0 and v1 variants of all 20 map families (40 maps, including unseen types) as a stand-in for unseen maps.
+  - inc.sh: ident12 (REF=v49), then inc1 = B49 vs INC10 on 40 maps vs v49.
+  - IDLE_ESCAPE=40 gave 55/120 vs 60 (+1 -6); not adopted (maybe 100 later as a safeguard).
+- 02:51 hourly: rating 1895 #27, v49 active.
+  - Ranked: STAR 4:1, Eric 4:1, the hieroglyph-named team 3:2, DESTINY_3 2:2 (+1 running), SHINK 2:3, 中国人不准飞 2:3, calc 1:4.
+  - Unranked vs 3.14159265: 1W 2L (not ours).
+- 03:05 USER: full autonomy until 08:55. The final Sprint submission must be active by 08:55; the goal is still the Grand Final. Default is v49.
+- inc1 (38 broad maps, 152 paired games): B49 76, INC10 67 (+21 -30). REJECTED.
+- r<=100 eating (292 ladder games): us 86 vs them 112. At r100: us 14 units / total length 35, them 22 / 55.
+- 'none' deaths are the SUICIDE action (action 2; our FEEDDIE no-act is also recorded as suicide).
+  - Whole game: us 17.1 per game, all at r200+; them 45.5 per game, spread over all rounds (r0-100: 4.8).
+  - Mostly L2 (61%) and L3 (28%).
+  - 98% of their suicide corpses are eaten by their own team; eater average length 6.5, so small dragons, not the leader.
+  - suictx.py (free neighbours, nearest own and enemy, age since split) written; not run yet (Bash classifier outage at 03:15).
+- effgen.py (units, avglen, eat per 100 dragon-rounds, splits and deaths in r0-50/50-100/100-200/200-300) written; not run yet.
+- 03:20-03:55 GENERAL ANALYSIS vs strong teams (opponent rating >= 1950, 86 games; effgen, deathwhy, wallctx, opening, escmap).
+  - Opening is equal through r30 (units 9 vs 9.3). It diverges over r30-100: r100 units 17 vs 23.6, total length 43 vs 60. Per-dragon eat rate is equal or better for us.
+  - The gap is unit count, i.e. split and death dynamics.
+    - r0-100: our escape splits (child bigger, head L2 dies) 18.6 vs 6.3 per game; head deaths 15.5 vs 3.7. Their even splits 41.9 vs our 27.6.
+    - Escape splits are dominated by Slithery Fight (155 vs 35) plus Autarky and Prisoners. On the other maps the gap is fewer even splits (the compounding unit gap).
+  - Mechanism: HARVEST (dead-end pocket with >=3 pearls, L<=6): enter, eat, escape split, head dies (see trapshow.py scenes).
+  - hv1 local (38 broad maps, paired vs inc1 B49 76/152): H0 (harvest off) 78 (+21 -19, neutral); HN2 (min net 2) 72 (+8 -12).
+  - v49 vs dev1 by map shows the same escape pattern (Slithery 155 vs 60, Prisoners 19 vs 13).
+- 04:01 SUBMITTED v50 (13628) = v49 + HARVEST_MAX_LENGTH=-10.
+  - dev1 x6: 737117, 737127, 737147, 737157, 737167, 737177 (v49 base 23/60).
+  - Top 4: cheji 737187, forgot 737197, Cache 737207, calc 737217. v49 went 10:30 vs these four at 00:47.
+  - Back to 13338 at 04:02.
+- 04:25 v50 RESULT:
+  - dev1 19/60 (v49 23/60). Slithery 3-3 (v49 1-5), Prisoners 2-4 (v49 5-1), Autarky 0-6, Trophy 0-6.
+  - Top 4: cheji 3, forgot 5, Cache 1, calc 2, total 11/40 (v49 10/40 at 00:47).
+  - NOT ADOPTED. Harvesting is roughly break-even; per turn it is actually efficient.
+- 04:10-04:25 more general stats (strong_ns = strong teams excluding Slithery, 78 games):
+  - The per-dragon eat rate is equal in r0-20 but ~10% lower for us in r20-60 (9.0-10.0 vs 9.7-10.6 per 100 dragon-rounds). That compounds into the unit gap. Absolute deaths are equal.
+  - Idle dragons (>=20 rounds without eating, r20-100): 13% of ours loop inside <=8 cells vs 3% of theirs; displacement <=4 is 26% vs 14%.
+  - The loops are in small portal rooms (Prisoners 3x3 rooms, Portals, Trauma), not at the centre.
+  - IDLE_ESCAPE flaw: its BFS treats UNKNOWN edges and unseen cells as walls, so a partly explored maze looks like a small closed room. That explains Autarky -3 in id1.
+  - Added IDLE_STRICT (abort if an unknown edge or unseen cell is on the region boundary); snap13 is identical to v49.
+- Running: sw1 (WP15 WEIGHT_PEARL=1.5, TD30 TARGET_DECAY=30, WT07 WEIGHT_TERRITORY=0.75, WU04 WEIGHT_UNSEEN=0.4), then is1 (IS40, IS25 = IDLE_ESCAPE 40/25 + IDLE_STRICT). Base: inc1.json B49 (76/152).
+- 04:52 sw1 (paired vs B49 76/152):
+  - TD30 85 (+39 -30), WP15 84 (+31 -23): stronger pearl attraction looks positive, about 1 sigma each.
+  - WT07 75, WU04 73: neutral or negative.
+- 04:53 hourly: rating 1908 #28, v49 active. Ranked: Computers 3:2, Adrak_vali_chai 2:3. Unranked vs 3.14159265 (they challenged us): 1:1.
+- Queued: is1 (IS40, IS25) is running, then sw2 (WPTD = WP1.5 + TD30, WP20, TD25).
+- v51 = snap13 + TARGET_DECAY=30 prepared; submit at 05:01 for dev1 x6 and the top 4.
+- 05:15 is1: IS40 74 (+1 -3), IS25 72 (+1 -5). Rarely fires locally; REJECTED.
+- 05:30 v51 RESULT: dev1 20/60 (v49 23; one series was 0:10). Top 4 11/40 (v49 10, v50 11). NOT ADOPTED.
+  - NOTE: the difference of two 60-game dev1 samples has std ~5.2 wins, so these tests are underpowered. Same for 152-game local paired runs (std ~8 flips).
+- Endgame consolidation (full-length recent games, 63): our top goes 11.8 -> 26.6 over r350-499, theirs 12.2 -> 32.5. Our total at the end is 77 vs 108.
+  - In about 12 of 30 recent length losses, our total would have won even with 50% feed loss (e.g. 32/300/41 vs 68).
+  - Our consolidation effectively starts at r430-450; theirs at r350-400.
+  - Past local tests: FEEDER_APPROACH=25 and ENDGAME 350 were both rejected; v46 ENDGAME 330 was neutral on dev1.
+- ab3.py now takes the SEED0 env (default 100). Queued sw3 after sw2: SEED0=102, B49 + TD30 + WP15 on the 38 maps (fresh seeds for more power).
+- 05:50 sw2 (paired vs B49 76/152):
+  - WP20 (WEIGHT_PEARL=2.0) 91 (+33 -18, net +15, about 2.1 sigma), positive across most families.
+  - WPTD 87 (+44 -33); TD25 80.
+  - The gain is monotone in pearl weight (WP15 +8, WP20 +15).
+- sw3 relaunched: SEED0=102 (fresh seeds 102-103), B49 + WP20 + WP30 (killed the earlier TD30/WP15 run and its orphan workers).
+- v52 = snap13 + WEIGHT_PEARL=2.0 prepared; submit at 06:05 when the dev allowance frees. It also doubles the leader's pearl weight (x4 endgame multiplier).
+- 06:22 v52 RESULT: dev1 31/60 (v49 23).
+  - By map: Default 6-0, Prisoners 6-0, Portals 5-1, Devil 4-2, QoS 4-2, Slithery 3-3, Trauma 2-4, Schooltime 1-5, Autarky 0-6, Trophy 0-6.
+  - Top 4 15/40 (cheji 3, forgot 4, Cache 4, calc 4) vs v49 10 / v50 11 / v51 11.
+  - SWITCHED ACTIVE TO v52 (13769) at 06:22. v52 IS THE MAIN VERSION; switch back to 13769 after tests.
+- Next: sw4 (seeds 104-105: B49, WP20, WP25), then snapshot mybot2 with WEIGHT_PEARL=2.0 as the new default (ident vs v52) and continue the sweep around v52 (TARGET_DECAY, WEIGHT_SOON, WEIGHT_HOT, EAT_BONUS relative to space).
+- 07:37 v52 dev1 batch 2: 27/60 (4, 2, 6, 4, 7, 4). v52 total 58/120 (48%) vs v49 23/60 (38%).
+  - Ranked with v52 at 07:00: Peanut_Butter 2:3, WeHaveQuizzes 2:3.
+  - Rating 1908 #25.
+- 07:40 Ranked losses with v52: 747941 Default vs WeHaveQuizzes (known early swarm, head-on wipe by r11).
+  - 749068 Schooltime vs Peanut_Butter: we ate 4 in 100 rounds. Our dragons OSCILLATE between 2 cells for 60 rounds, e.g. dragon 2 at (2,10)/(3,11) next to spawn tile (1,11), which never spawned before r120.
+  - API: get_pearl_time = rounds until a pearl TRIES to spawn, so attempts can fail. Suspect camping on 'soon' or 'pearl' targets.
+  - Added the IDLE_LOG debug toggle (logs the chosen direction's survey distances when idle >= N). Local schooltime/default debug runs: camping is rare (1.8% of idle turns; unseen 282, pearl 143, soon 68). Not reproduced locally. Open issue for the Qualifiers.
+- 07:42 v52 (active) vs more top-10 teams: 3.14159265 752298, 中国必须人能飞 752308, ddabap 752318, Stockfish 752328.
+- SPRINT DECISION: v52 (13769) stays active for the 08:55 Sprint. No further candidate can be verified in time.
+- 08:06 sw6 vs v52 (B52 76/152): HR300 79 (+15 -12), EB600 74 (+21 -23), CS2 73 (+17 -20). All neutral.
+- v52 vs other top-10 teams (07:42): 3.14159265 3/10, 中国必须人能飞 5/10, ddabap 2/10, Stockfish 4/10 (14/40).
+- Ranked at 08:00 with v52: WeHaveQuizzes 3:2; noob in progress. Rating 1910 #25.
+- FINAL SPRINT VERSION: v52 (13769), active since 06:22.
+- Open items for the Qualifiers:
+  1. Idle oscillation / camping on the ladder (13% vs 3%), e.g. Schooltime next to a spawn tile whose attempts fail.
+  2. Endgame consolidation starts later than the opponents' (they reach top ~26-42 by r400).
+  3. Early swarm opponents (WeHaveQuizzes) wipe us by r11 on Default.
+- 08:10 hourly (the cron text still says v49, but v52 13769 is main since 06:22; use REF=v52 and switch back to 13769).
+  - Hypothesis for the camping: every target bonus decays to 0 beyond ~6.5 steps (TARGET_REWARD 260 / DECAY 40), so in an explored, empty area a dragon has no long-range goal and circles a territory local optimum.
+  - Added the FAR_GAIN / FAR_RANGE toggle: score += FAR_GAIN * max(0, FAR_RANGE - min(dist_pearl, dist_soon, dist_hot, dist_unseen)). snap15 is identical to v52.
+  - fg1 running: FG3 and FG8 vs v52 (base = B52 in sw5.json).
+- 08:26 v52 vs top 8 (v52t, 80 games):
+  - Idle loops drop to 5% (v49 era 13%; theirs 3%).
+  - Per-dragon eat rate r20-80 is now equal (11.8/11.3/10.4 vs 12.2/11.2/9.8).
+  - Units still diverge from r40 (r60-80: 14.1 vs 17.6): deaths slightly higher, splits slightly fewer.
+  - v52 fixed the efficiency gap; the remaining gap is survival.
+- 08:52 hourly: rating 1903 #29, v52 active. Ranked with v52: noob 2:3, Karbon (1841) 2:3. v52 ranked so far 11/25 (small sample).
+  - Losses are consolidation failures again:
+    - 753302 Autarky: 9/88/31 vs 29/55/3 (our total is higher, top only 9).
+    - 753304 Portals: 26/34 vs 45/45.
+    - 755096 Portals: 28/63 vs 50/63.
+  - Opponents feed from r300 (Karbon: 19 suicides in r300-350, 48 total). We start at r400 with only 8-19.
+  - Queued ef1 (after fg2), vs v52 with base B52 in sw5.json: F330 (LC_FEED_ROUND=330), F300, F330A (+FEEDER_APPROACH=25).
+- 09:52 fg2 (seeds 102-103): FG3 81 (+30 -25), FG2 75. FG3 over both seed sets: +60 -50 (about 1 sigma). Not adopted yet.
+- ef1 vs v52 (B52 76): F330 70, F300 69, F330A 68. Early feeding is locally negative again (Portals +, QoS -).
+- 10:00 hourly: rating 1885 #34 (was 1903 #29). The browser pane had been closed; reopened it and tab-1.
+  - Ranked with v52 in the last hour: Kamikaze 4:1, Martin Shkreli 5:0 (lopsided, excluded), Check_Raise 2:3, ddabap 2:3, Quant_Merch 2:3, pizza 1:4.
+  - Elo-adjusted ranked (vs a 1900 rating): v49 29/60 (expected 29.0); v52 22/50 (expected 25.4, about -1 sigma).
+  - Conflicts with dev1 (+1.3 sigma), top 4 (+1 sigma) and local (+2.4 sigma); keeping v52.
+  - 753302 Autarky: at r400 we had 22 units of L2-3 in the open middle and a top of 8 that DIED by r450. The opponent went from top 4 at r400 to 29 at r500 via swarm feeding.
+  - Our endgame from a swarm state (all tiny dragons) is weak: feeding barely happens and the leader is small and fragile.
+- 09:57 Added FEED_LOCAL / FEED_LOCAL_MIN (in the feeding phase a non-leader suicides when a visible ally head within FEED_LOCAL steps has parts >= max(MIN, 2*length) and no enemy is within 4). snap16 is identical to v52.
+  - fl1 running vs v52 (base B52 in sw5.json): FL2, FL3, FL2F (FL2 + feed round 350).
+- USER pasted the site notice:
+  - SUBMISSION FREEZE since about 08:00 (no version switches, no manual games) until the Sprint ends (17:30-19:00 AEST).
+  - Autoscrims run continuously with a constant k-factor in the meantime (explains the faster rating moves: 1910 -> 1885).
+  - Balance changes come after the Sprint, so re-verify WEIGHT_PEARL and other tuning then.
+  - Hourly loop during the freeze: crawl, analyse and test locally only. Queue the dev1 tests for after 19:00.
+- 10:45 USER: continue local tests during the freeze; dev1 after the Sprint.
+- fl1 vs v52: FL2 70, FL3 74, FL2F 69. FEED_LOCAL rejected.
+- v52 vs top 8 deaths, r40-300, per 1000 unit-rounds: wall 12.4 vs 7.1, body 4.3 vs 1.9, head 7.0 vs 5.5, self equal, suicide 0.8 vs 3.8.
+  - Absolute trapped deaths (wall + self + mover body) are equal at about 95 per game.
+  - Body deaths are all first-step moves (forced). Opponents initiate head-ons 23 vs our 10 per game (sprint rams 9.4 vs 2.1); length trades are equal.
+  - r20-70 excluding Slithery: absolute deaths equal (10.5 vs 10.7). The gap is a compounding 5-10% lead in units, eats and splits from r20.
+- 10:50 sw7 vs v52 (base B52 in sw5.json): GB300, WS10, PT250, PEH300.
+- 11:00 Freeze-period autoscrims run about every 6-8 minutes (8-9 series per hour).
+  - New incremental crawler: crawl2.js plus known_series.py. New Elo-adjusted report: verperf.py.
+  - v52 so far: 85 ranked games, performance rating 1882 (v49 1899 over 60 games; within noise). Rating 1899 #32.
+  - Hourly cron replaced: e34b22cb deleted, c531859a created (v52 main, freeze rules, crawl2 + verperf).
+- 11:29 sw7 vs v52 (B52 76):
+  - PEH300 83 (+26 -19).
+    - PENALTY_ENEMY_HEAD is actually applied to cells an ALLY head can step to (ally-collision avoidance).
+  - WS10 79 (+9 -6); PT250 78 (+6 -4); GB300 73 (+2 -5).
+- sw8 (SEED0=102, base = B52 in fg2.json): PEH300, PEH200, PEHWS (PEH300 + WS10).
+- 12:10 crawl: 10 new autoscrim series. v52 now 125 ranked games, performance rating 1881 (v49 1899 over 60).
+  - verperf now excludes only lopsided WINS vs opponents rated < 1900 (a 0:5 loss to Cache counts).
+  - Losses: mostly CONSOLIDATION (Portals: 790235 23 vs 24, 791728 25 vs 26, 784404 total 67 vs 55 but top 16 vs 48; Schooltime 779150 total 261 vs 148, top 35 vs 54).
+  - Also a LEADER DEATH: 787115 L58 killed at r427 by a split child born next to its head (the enemy tail tip became a new head and rammed). Split-kills are rare overall (about 0.05 per game).
+  - Early wipes by Cache and 3.14 on Devil, Prisoners and Trophy.
+- sw8 (seeds 102-103, base = B52 in fg2.json): PEH300 73 (+21 -24; with seeds 100-101 the total is +4), PEH200 87 (+29 -18), PEHWS 71.
+- peh.sh: PEH200 on seeds 100-101 (base sw5) and 104-105 (with B52).
+- 12:10 hourly: Computers 1:4 (two early wipes). Rating 1881 #35. v52 performance 1868 over 135 games (v49 1899 over 60).
+  - Caveat: during the freeze every team runs its best version and pairing is wider, so the opponent pools differ.
+  - A head-to-head on common opponents is too small, and series ids 746397-746506 are v52 tests that fall inside the v49 id range.
+  - TODO after the freeze: an interleaved v49 vs v52 check on dev1 + top 4 if ranked keeps trending below v49.
+- 12:35 autoscrims ended. Final: rating 1901 #29.
+  - v52: 165 ranked games, performance rating 1872 (3 lopsided wins excluded); v49 1899 over 60.
+  - Weak maps for v52 on the ranked ladder: Trauma 3/15, Portals 8/24, Slithery 6/18.
+  - PEH200 at seeds 100-101: 67 (net -9). PEH rejected.
+- Endgame on the ladder (v52, 98 full-length games): our top goes 17.5 -> 34.3 over r400-499, theirs 23.1 -> 38.5. Growth after r400 is equal.
+  - The gap exists AT r400: they are ahead in r300-400.
+  - Local maps have a rich economy (top 39 at r400, total 220).
+- 12:55 Added FEED_EARLY_ROUND / FEED_EARLY_MAX: dragons of length <= MAX may become feeders after round R, before the feeding phase. snap17 ident pending.
+  - fe.sh queued after peh2: FE300, FE250, LM2 (LC_LEAD_MULT=2), LM3.
+- 14:20 USER: crawl the top teams' latest games to learn or counter them.
+  - Downloaded 270 replays of 54 series from team pages /teams/<id> (tops/, tops_games.tsv, tops.py; replay side A = battle team A, verified 270/270).
+  - teamprof.py (per-team profile) and rams.py (head-on trades).
+  - CONSOLIDATION r300-400: all top teams halve their units and grow the top (r400 top: Stockfish 21.8, forgot 16.4, Cutlery 16.2, Cache 13.1, 3.14 13.0). We keep 16.5 units with top 9.8.
+    - top>=20 first reached: Stockfish 355, forgot 376, Cache 377, Cutlery 394; us 419.
+  - RAMMING: top teams initiate 14-25 head-ons per game before r300 (about 50-60% sprints), trading equal small dragons (L 2.7 vs 2.7). We do 9.9 (25% sprint).
+    - Our trade rule on big maps requires the target to have >= max(5, L+2) parts, >= 8 units and a local edge.
+  - Economy at r300: total 84-93 for forgot / Stockfish / calc / 3.14, ours 58.7 (Cutlery 56 wins through early consolidation plus ramming).
+  - The 'suicide' teams (Cutlery, forgot, cheji: 100+ suicides before r300) have zero wall deaths. It is just their trapped-death mode.
+- fe1 vs v52: FE300 73, FE250 74, LM2 76, LM3 77. All neutral.
+- Added TRADE_EVEN (equal-size trades on all maps, like aggressive mode). snap18 is identical to v52.
+  - te1 running: TE, TEU (+TRADE_MIN_UNITS=1), TEE (+TRADE_LOCAL_EDGE=0).
+- AFTER FREEZE: test early consolidation on dev1 directly (ladder evidence is strong; the local maps' rich economy hides it), e.g. F330 or F300.
+- 15:27 hourly: no new games. FG3 seeds 104-105: +25 -24; FG3 total +85 -74 (+11). Not adopted.
+- Opening comparison (teamopen.py): fast openers forgot / Cache / Stockfish / 3.14 lead in units from r10-60 (r100: 23-26 units, total 56-66).
+  - Slow openers Cutlery / cheji / SSS / calc match our curve (r100: about 19 units / 46-48 total). Map mixes differ, so treat this as indicative only.
+- 15:35 USER: battles stay off until 19:00; no crawling needed until then.
+  - Deleted the hourly cron c531859a. One-shot 8b9a15f3 fires at 19:07: crawl, submit v53 for dev1, recreate the hourly cron.
+  - combo.sh running: PF = PENALTY_ENEMY_HEAD=200 + FAR_GAIN=3 on seeds 100-101, 102-103 and 104-105 (bases sw5, fg2, peh2). Summary in combo.txt.
+- 00:33 qs3 (14 small sq maps x2, vs v53; STV 15/28): QM (guard 0, threat x2) 5 (+3-13), QMP (+no pessimist) 9 (+3-9), QMS (+split clear 0, no dead penalty) 10 (+4-9). Small maps end by elimination in 27/28 games; queen variants are wiped more (QM 22, QMS 16 vs STV 13). Queen protection loses the team fight. q3 (Q3K5, Q3K7 on 59 sq + 19 variants_sq) running.
+- 00:58 q3 (59 sq + 19 variants_sq, x2, vs v53; V54 95/156): Q3K5 77 (+28-46), Q3K7 69 (+22-48). Queen v3 rejected. By size V54/Q3K5/Q3K7: small 16/10/5, medium 17/15/11, large 41/37/41, variants 21/15/12; we are wiped 27/41/48 times. Keeping the queen long early cuts units and loses the team fight; queen mode stays off.
+- Opening profile r<=60 (openprof.py): v54 over 50 ladder games eats 54.5 vs 55.7 by r50, units 11.9 vs 14.2, splits 32 (parent len 5.4; top teams 4.3-5.0). Own deaths per game before r60: wall 11.0, self 3.6, body 2.8 (3.14 8.3/0/0.2, calc 6/0/1.2). Devil vs calc: calc splits 35 by r50 and rams 1:1 in the centre; we flee (TRADE_LOCAL_EDGE needs local parity), lose the centre and eat 20 vs 77.
+- r1 (devset_sq vs rush54 = v54 with aggressive trades on every map and no local-edge rule): V54 68/118, TLE0 60, TLEN 66. The rush bot does not reproduce calc; no counter helps.
+- USER: v54 queen rams (match 822124: our len-3 queen rammed at r71). v54 ladder queen deaths (51 games): wall 20, self 7, body 3, rammed 11, own ram 8, alive 1; median r29.5, len 2-3. Head-on always kills both whatever the lengths (276 events).
+- qa1 (sq set vs v53, V54 95): QS0 (queen mode, exclusions only) 96, QS0P (+no portal) 96, QS0PL (+late lead) 96 identical, QS0PH (+hunt) 91. Minimal queen mode is free.
+- KEEP screens (12 sq maps x2, replays): v54 queen alive 0/24 (8 own rams); QS0P 6/24; +room 6; +ally block 4 (11/24 wins); +give way 2: 7/24. Threat x3/x6 and guard 3 do not cut rams (rammed 9-12); keep 4 alive 0. Our queen is rammed right after moving next to an enemy head: the additive threat penalty loses to other terms, and a len-2 queen has one step.
+- USER: rewrite the queen's evaluation; queen logic must differ completely; keep length 5 for 2 free steps. calc's write-up: BC policy net + 1-ply search with 3-5 round rollouts scored by length diff; rules for hidden food, portal scouting with sonar report, symmetry inference + mirrored memory, boxed escape split, least-bad collision, keeper feeding and hunting.
+- snap30: QUEEN_BRAIN planner (queen_act): kill map from every enemy head and recent ghost (reach = ceil(L/4)+L-2 capped at 6, ghosts +age), DFS over all legal multi-step moves (free + up to 2 paid, seen cells, no portals, own body simulated), endpoint score = lethal veto, margin (cap 3), room/dead end, tail reach, safe options, distance to unseen, eaten, paid cost, nearest pearl, ally head adjacency. Queen splits only if standing still is safe (margin >= 2). Default off = v53 ident OK.
+- 02:01 2026-10-02: the Mac froze and was rebooted; /private/tmp scratchpad was wiped. Rebuilt the harness in /Users/UNSW/battlecode/work (ab2/ab3/paired/distq/worker/ident rewritten from context; analysis scripts and plan.md rebuilt from transcript heredocs via recover.py/rebuild.py; engine venv work/bc123 = unswbc 1.2.3; map lists regenerated from tune_runs dirs). ladder replays (nr/, ntop/) and result JSONs were lost; v54chk baseline must be rerun.
+- USER: small batches go to the laptop only, big batches use both. Worker now uploads replays (job keep flag, POST /replay); laptop updated. ab3 DIST+KEEP stores uploaded replays in work/ab2.
+- qb1 (Mac, 12 sq maps x2): QB5 6/24, QB3 12, QB0 13; queen alive 0/0/1. Planner v1 bled length via paid steps and boxed itself.
+- USER idea: all dragons keep a shared map, the queen stays only in known safe places, late game everyone feeds the queen. Sonar only reaches the first dragon/kelp along a line, so the shared part is enemy sightings (SHARE_SIGHT) + leader position; the queen keeps a decaying danger log (QB_W_DANGER) and an escort bonus; QUEEN_LEAD_LATE makes the queen the leader in the feeding phase.
+- snap31: QB_TIMED_ROOM (own body frees over time in the room BFS; dead end tier), danger log, escort. CPU QC5 on around_unsw / sq_open_large: max 59M / 44M.
+- qc1 (laptop, 24 each): KV(v54) 17/24 alive 0 median death r49; KG (old logic + give way + late lead) 12 alive 1; QC5 8 alive 0 r113; QC3 17 alive 1 r130; QC5N 11 alive 0 r98. Queen length still drops to 2 through escape splits (8->2) when boxed: planner counted the own tail next to the endpoint as an escape, but a single step cannot enter the tail; allies then filled the only exit.
+- snap32: QB_ROBUST_EXITS (tail counts only from step >= 2; exits must be free, safe and not next to another head; 0 exits = dead-end tier, 1 exit = -QB_ONE_EXIT). qd1 running on the laptop: KV, QD3, QD5, QD3N.
+- qd1 (laptop, deterministic: KV repeats qc1 exactly): KV 17/24; QD3 13 (alive 1, median death r229), QD5 10, QD3N 11. Rams: small maps = len-2 queen surrounded by enemy smalls; big maps late = queen (fed leader, longest dragon) assassinated by long enemies sprinting 4-8 steps (reach cap 6 too low). The queen need not be longest: alive queen vs dead queen wins at r500 (v54 ladder: 15/50 losses were longest-dragon with both queens dead).
+- snap33: QUEEN_LEAD_ROUND (queen leads only from that round). qe1 running (both machines, sq full 156 each): KV, QD3, QR (+reach cap 12, lead from 460), QRN (+reach 12, no queen lead), QS (minimal queen rules, no planner, no lead).
+- qe1 (both machines, sq full 156 each, vs v53): KV 95 (queen alive 4, median death r49, W_queen 0); QD3 69 (alive 7, r104, W_queen 2); QR 70 / QRN 71 (identical: queen never reaches r460; alive 10, W_queen 5); QS 84 (alive 12, r72, W_queen 3). Planner variants lose small/medium maps by elimination (L_elim 27 -> 54; small 16 -> 5, medium 17 -> 9), large maps equal. Queen protection costs 11-26 wins and buys 2-5 queen wins: rejected for now. Next: confirm the free minimal rules (no rams/hunts/portal scouting/portals for the queen) with and without give-way (qf1), then return to the small-map opening/team fight.
+- 03:19 hourly: rating 1888 #11, active v54. Latest 65 ladder games (nr_latest.txt): W30 L35 (W_elim 19, W_longest 11, L_elim 15, L_longest 17, L_queen 3). Our queen alive 1/65, median death r30.5 (wall 25, rammed 19, self 10, own ram 6, body 4); their queen alive 5/65. ladfetch.py + ladq.py added.
+- 03:23 qf1 (both machines, sq full 156): QM (minimal queen rules + no portal) 96 (+23-22 vs KV 95, neutral; small 13/16, medium 20/17, large 42/41); QMG (+give way 2) 84 (+21-32): give-way rejected. Held-out check of QM next.
+- 03:31 qh1 held-out (80): KV 53, QM 46 (+12-19); dev+held QM 142/236 vs KV 148: not submitted. BIG FINDING: bundled 1.2.3 maps autarky/dilemma/slithery now spawn queens long (14/11/7) in protected kelp rings (dilemma: column ring x=14 with side openings in the middle rows). On the ladder EVERY team's queen dies at r3-10 there (ours by splitting the queen so the child blocks the ring). tune_runs/official123 = bundled maps. og1: official maps vs v54, KV/QM/QN (QN = QM + queen never splits).
+- 03:36 og1 (official 15 maps x8 vs v54): KV 60/120, QM 71 (+30-19; trauma 8/8 queenW8, stronghold 8/8 queenW7, dilemma 8/8, schooltime 7/8, arena 0/8), QN (queen never splits) 38 (small maps and dilemma wiped). Never-split rejected. Next: replays of QM/KV on autarky/dilemma/slithery to see queen fates.
+- 03:41 og2 (laptop replays, autarky/dilemma/slithery vs v54): KV and QM queens all die at r7 (24/24). The new pockets face a kelp dead end; no stay action exists (only MOVE/SPLIT), so every queen there is doomed; splitting each turn only delays (ours r7, others r3-5). QM's og1 gain comes from big maps where v54's queen rams and ours survives; its loss is arena 0/8 (tiny map, queen not trading). snap34: QUEEN_TRADE_SMALL (queen may trade only on aggressive/small maps). qt1 running: official vs v54, sq dev vs v53, held-out vs v53.
+- 03:54 qt1 QMT (QM + queen trades on aggressive maps): official 66/120 (KV 60, QM 71; arena still 0/8), dev 95 (=KV), held-out 44 (KV 53). Queen rules cost on small maps (dev small 13 vs 16, held small 7 vs 11), not via trading. Official trauma/stronghold are 1152 cells (aggressive), so a 1200 cut would drop the gains. snap35: QUEEN_MIN_CELLS (queen rules only when cells > N). qc600 running with N=600 (generated small maps <= 486, arena/Colosseum/default_small below).
+- 04:02 qc600 QMC (QM rules only on maps > 600 cells): official vs v54 68/120 (+19-11 vs KV 60; trauma 8, stronghold 8, schooltime 7, queen wins 19, small maps back to 4/8), dev vs v53 101/156 (+17-11 vs 95), held-out 50/80 (+11-14 vs 53). Total paired +47 -36 (net +11 over 356). Candidate v55 = snap35 + v54 toggles + minimal queen rules + QUEEN_MIN_CELLS=600; CPU as QM (max 55M). Awaiting the user's decision (held-out -3, within noise).
+- 04:06 USER: submit. SUBMITTED v55 (label v55) = snap35 + v54 toggles + QUEEN_MODE minimal rules (no trade/hunt/portal scouting/portals for the queen) + QUEEN_MIN_CELLS=600; active, rating 1877. Hourly: rating 1879 #11 before submit; 23 new v54 games W11 L12 (L_queen 4); our queen median death r9.5 (new pocket maps).
+- 04:16 v55 ladder (45 ranked vs mostly top-10, Peanut_Butter 10:0 excluded): 20W 25L; our queen alive 8/45 (v54 2/88), all on big maps; W_queen 2 (Trauma vs WHQ, calc); 2 Trauma losses with both queens alive (queen length lost: Computers, Cache). USER: build late queen feeding. lf1: vs v55 (queens protected both sides), official x8 + sq dev x2: V55 mirror, L400 (LEAD_BONUS 1000, LEAD_LATE), L440, L460 (QUEEN_LEAD_ROUND).
+- 04:30 USER (going to sleep): decide direction autonomously; ranked-challenge every ranked-on top team if no significant regression; consider whether a neural net is worth it. Ranked challenges cannot pick maps (random); allowance was exhausted, cron b43955ed fires 07:47. Decision so far: no NN (8 days left; calc needed BC dataset + C++ engine copy + search; Halite/Battlecode winners were mostly rule-based; calc is #5 not #1). Direction: general map knowledge + queen-era endgame. snap36: SYM_INFER (three symmetry hypotheses pruned by mirrored edge clashes and shared pearl countdowns; once one remains, mirror open/kelp edges both ways). Debug: correct kind on default/trauma/maze (rotation) and trophy/schooltime (vertical mirror), fixed by r0-14.
+- 04:36 lf1 late queen feeding vs v55: official L400 64/120 (+6-2; queen wins 13 vs 8), L440 59 (+2-3), L460 62 (+2-0); sq dev L400 73/156 (+1-6), L440 77 (+0-1), L460 78 (+0-0). Queen length rarely decides (official 16/120, sq 4/156 games); no significant effect, not adopted. sy1 (SYM_INFER) running, then eg1 (ENDGAME_ROUND 350/450).
+- 04:48 CPU RISK: no max map size in the docs. v55 on 96x96 open: p50 69M, p99 89M, max 98.7M (limit 100M); 128x64: max 90.7M. Cost scales with area because survey_from BFS covers the whole reachable region per candidate. snap37: SURVEY_CAP (cells per survey); 2500 gives 96x96 p50 33M, max 54.5M. cap1 queued after eg1: official vs v55, sq dev/held vs v53, huge maps (tune_runs/huge) vs v55.
+- 05:00 sy1 SYM_INFER: official vs v55 58/120 (+22-24), sq dev 91/156 vs 101 (+21-31), held 45/80 vs 50 (+9-14): regression, investigating (genmaps use SYMMETRY x which official maps never use; suspect pearl-countdown pairing check or edge mapping for x). v55 ladder so far 70 games (excl. 10:0): 35W 35L, queen alive 12/70, W_queen 5, L_queen 1; rating 1894 #11.
+- 07:00 USER: docs say width/height are 10..64 inclusive. The huge-map CPU risk is moot; SURVEY_CAP becomes optional (adopt only if neutral).
+- 07:05 USER: crawl latest battles and analyse losses. Rating 1922 #10. nr_v55c.txt = 10 new series (ids 831999-834609); nr_v55all.txt = all v55 series excl. Peanut_Butter 10:0 = 125 games, W69 L56 (v54 sample: 41-47). Tools: lossan.py (per-game table, lossan.pkl), lossmap.py, deathwin.py, leadfate.py, eatcmp.py, tileeat.py (eating by tile class r0-100), roomeat.py, reach.py (BFS reachability without portals).
+  - Loss types (56): elimination 25 (Trophy 8, QoS 5, Dilemma 4, Default 3, Autarky 2, Schooltime 2, Devil 1); r500 longest with economy deficit at r300 20; r500 longest despite total lead (consolidation; Slithery 6, Portals 1) 7; queen length with both queens alive (Trauma, our queen len 2 vs 4/20/44) 3; queen killed 1.
+  - Games snowball: the side ahead at r50 wins. Tile-class eating r0-100 (W vs L): QoS fast tiles us:them W 46:18, L 8:61; Trophy fast W 31:4, L 2:44; Dilemma fountains W 32:21, L 18:42.
+  - QoS ROOT CAUSE: each side has a private 16-tile fast room (gap 1-50) reachable ONLY through a portal near its start. v54 entered at r11 in 7/7 ladder games (queen walked through). v55 bans the queen from portals and the other starter heads south, so entry is r10 in 2/12, otherwise r16-212 or never; QoS record v54 5-2 -> v55 6-6.
+  - Trophy: 11 fast tiles (gap 5-30) in ONE central cluster on the symmetry axis; contested; every Trophy game ends in elimination.
+  - Dilemma losses: Cache rams our heads 1:1 (10 enemy-initiated head-ons by r32) and out-splits us; our last L3 dragon then circles a 2x2 corner for 450 rounds (IDLE_ESCAPE off).
+  - Slithery/Portals consolidation: top-3 at r499 e.g. 53/43/34 vs 64/28/7: our length is spread over several mid dragons (FEED_LEN_RATIO 2 keeps big dragons from feeding; regions elect separate leaders).
+- cap1 SURVEY_CAP=2500: official 61/120 (+5-4), dev 96 (+7-12), held 52 (+7-5), huge 7/8: neutral, not adopted (maps <= 64). SYM_INFER shelved (symdbg had no source; regression unexplained).
+- snap38: QUEEN_PORTAL_ROUND (queen may scout/use portals before round R; default 0 = v53 ident OK). QoS screen vs v55 (8 games): QP30 7/8, QP60 7/8, PF (PORTAL_FAR_DECAY 10, rounds 60) 4/8, V55 mirror 4/8. Replays: QP30 enters the room at r11 in 8/8 (room eat r100 33-78 vs 0-34); v55 at r24-208. qp1 running: QP30/QP15 on official vs v55, sq dev and held vs v53.
+- 08:05 qp1 QUEEN_PORTAL_ROUND: official vs v55 QP30 54/120 (+2-8), QP15 57 (+4-7), both Trauma -4; sq dev QP30 98 (+0-3), QP15 99 (+0-2); held QP30 53 (+4-1), QP15 52 (+3-1). Trauma replays (QP15 vs v55, 8 games): queen dies r35-56 in 7/8 (V55 0/8): it takes a portal at r12 into a 21-cell barren pocket, then the ban returns and it cannot leave. REJECTED.
+- ps0 stronger early portal pull for non-queens (WEIGHT_PORTAL_SCOUT 2.0/1.0 + PORTAL_FAR_DECAY 10, rounds 60) on QoS+Trauma vs v55: 8/16 each; QoS room entry still r24-139. Cause: survey_from does not expand through unseen cells, and the second starter never sees the portal edge (only the queen does, at r10). A fix would need sonar sharing of discovered-but-unscouted portal edges; not done (QoS is an old-pool map; uncertain value on new maps).
+- 08:20 hourly: rating 1957 #9 (v55). RANKED CHALLENGES sent (no maps): Cache 952 -> 835699, Stockfish 206 -> 835704, 3.14159265 314 -> 835719, calc 20 -> 835724, Sponge 213 -> 835729, Team SKKU 249 -> 835734. WeHaveQuizzes 87 and Sabotage-d 46 refused: "Ranked battles need an opponent rated 1907 or higher, 50 below your 1957" (not an allowance 429; no retry). New complete series: Delusion_Tax R 3-2, Adrak_vali_chai R 5-0, Peanut_Butter U 3-7 (was 8-2 / 10-0 before; they changed their bot?). nr_v55d.txt.
+- 08:45 Late leader assassination: in v55 ladder games (140) our dragons >= 15 long died to enemy-initiated head-ons 40 times after r200 (24 in losses), killers almost all length 2-4 sprinting 1-3 steps (e.g. 834986 our 141-long at r468, 828653 77-long r463, 828681 51-long r474). sprint_escape only tries 2-3 step paths with 4 evals; stride extension accepts cells as exposed as the first step. snap39: BIG_ESCAPE_STEPS (long_escape: big non-queen dragon whose chosen cell is exposed BFS-searches free sprint paths up to N steps through seen, empty cells for an endpoint with zero threat, scores up to 6 nearest with score_step). Default 0 = v53 ident OK. be1 running: BE8, BE12 on official vs v55, sq dev and held vs v53.
+- 09:40 be1 BIG_ESCAPE (all game): official vs v55 BE8/BE12 62/120 (+5-3); sq dev BE8 93 (+11-19), BE12 98 (+15-18) vs 101; held BE8 45 (+11-16), BE12 46 (+12-16) vs 50. Rejected as is (big dragons flee small units all game). snap40: BIG_ESCAPE_LATE (only in feeding phase). hunt55 = v55 + ASSASSIN_MOD=2, MIN 2, MAX 6, TARGET 12 (leader-hunting sparring bot). be2 running: vs hunt55 V55/BEL12/BE12; BEL12 regression on official/dev/held.
+- 09:55 ranked challenge results (nr_v55e.txt, 40 games incl. tungtung67 R 2-3 and Cache U 4-1): Cache 4-1, Stockfish 1-4, 3.14 2-3, calc 1-4, Sponge 2-3, SKKU 1-4 (11-19); rating 1923 #10. Losses: Devil 4 (all elim, r50 total 4-10 vs 21-40), QoS 3 elim, Slithery 4 longest (836249 our 100-long rammed r477 by a small unit, final 30 vs 71; 835736 59-long rammed r475), Portals 3 longest, Trophy 2 elim, Schooltime 2, Trauma 1 queen. Our queen alive 4/40.
+- 10:40 be2: vs hunt55 (official x8): V55 60/120, BEL12 60 (+3-3), BE12 61 (+4-3). BEL12 regression: official vs v55 63 (+5-2), dev 100 vs 101 (+16-17), held 48 vs 50 (+9-11): neutral. be3 KEEP vs hunt55 on slithery/schooltime/portals (24 each): V55 12, BEL12 13; our >=15-long head-on deaths after r300 V55 17, BEL12 25 (no reduction) -> the escape does not stop the kills; checking whether victims are leaders.
+- 11:00 be3 detail: big head-on victims are mostly NOT the leader (second dragons); leader deaths V55 4, BEL12 8 in 24 games (one schooltime game 5 leader deaths). Traced BEL12 schooltime r407: our 17-long leader rammed by a 13-long enemy sprinting from distance 4; no zero-threat endpoint within 5 free steps so no escape. Threat model for big dragons uses clamp(parts+2, 2, 6): overestimates small enemies (L2 true reach 1, model 4) and underestimates long ones (L13 true 15, model 6). BIG_ESCAPE rejected so far. snap41: BIG_TRUE_REACH (big dragons use true reach ceil(L/4)+L-2+BIG_TRUE_MARGIN(1), capped) ident OK. be4 running: TR12, TRL (TR12 + late escape 12) vs hunt55 and the three sets.
+- 12:05 be4 BIG_TRUE_REACH: vs hunt55 TR12 63/120 (+8-5), TRL (TR12 + late escape) 61 (+6-5) vs V55 60; official vs v55 TR12 60 (+8-8), TRL 61 (+10-9); dev TR12 99 (+16-18), TRL 96 (+16-21) vs 101; held TR12 44 (+10-16), TRL 45 (+7-12) vs 50. Totals TR12 +42-47, TRL +39-47: REJECTED. Leader-safety line (BIG_ESCAPE, BIG_ESCAPE_LATE, BIG_TRUE_REACH) gives no local gain after 4 batches; stopping it. v55 stays active.
+- 08:48 hourly: rating 1930 #10 (v55). New: Just_Keep_Swimming U 5-5, Sabotage-d R 4-1, Peanut_Butter U 9-1 (lopsided, excluded). nr_v55f.txt.
+- 08:59 ROBUSTNESS on 40 fresh mkgen maps (tune_runs/genfresh, seeds 70000+, freshset.txt, starting dragons length 3 unlike the sq sets' length-7 queens): CPU v55 vs v55 sandboxed on the 8 largest (up to 64x55): max 45.9M, p99 <= 39M (fresh_cpu.txt): safe. v55 vs v53 (fresh1.json, KEEP replays ab2/V55_fresh*): 41/80 (small 13-9, medium 16-12, large 12-18; no queen-decided games), no crashes. Edge over v53 is much smaller than on sq dev (101/156) -> fresh set is a useful extra held-out set (baseline fresh1.json V55). stuck.py (head within <=6 cells for 100 rounds without growth): ours 21 vs v53 14 dragons in 80 games, mostly len 2-3 on mazes. Debug of maze_large_70024 dragon 108: circles a 2x2 kelp pocket; at the exit corner continuing scores -2.3k..-3.6k vs exit -4.2k..-21k (danger outside); rational hiding, shared with v53; not changed.
+- 09:44 hourly: rating 1934 #10 (v55). New: Deep_Sea_Dragons U 3-2, Peanut_Butter U 7-3, WeHaveQuizzes R 4-1, Cache U 2-3 (nr_v55g.txt).
+- 09:47 QUEEN LENGTH: in 225 v55 ladder games, on maps >600 the alive queen is length 2-3 at every checkpoint (r100: 88/91 at len 2-3; r499: 14/20), queen growth-splits ~4x/game, eats ~6. Losses: 838959 Schooltime len-3 queen boxed by kelp + 2 enemies at r366 (rammed, we led 124 vs 34); 838960 Portals (512 cells, queen rules off) queen walked into a kelp pocket, escape-split, died. Earlier Q3K5/Q3K7 lost on small/medium maps (all sizes); v55 has QUEEN_MIN_CELLS=600 now. qk1 running: QK5 (QUEEN_KEEP=5), QSR100 (QUEEN_SPLIT_ROUND=100) on official/dev/held/fresh.
+- 10:04 qk1: QK5 official 56/120 (+13-17), dev 92 (+16-25), held 46 (+12-16), fresh 40 (+9-10): rejected. QSR100 (no queen growth splits after r100): official vs v55 69/120 (+10-1; trauma +4, stronghold +3, big_empty +2), dev 98 (+1-4), held 47 (+0-3), fresh 40 (+1-2). Official gain significant, others few flips slightly negative. qk2: confirmation with new seeds (SEED0 3000): official V55/QSR100/QSR50/QSR200, dev V55/QSR100.
+- 10:16 qk2 (new seeds 3000): official vs v55 V55 60, QSR100 65 (+6-1), QSR50 62 (+9-7), QSR200 66 (+6-0; trauma +4); dev V55 87, QSR100 88 (+3-2). QSR100 over both official seed sets +16-2 (p~0.001); dev +4-6. qk3 running: held/fresh new seeds V55/QSR100/QSR200, dev QSR200.
+- 10:18 qk4 mechanism (trauma x8 vs v55, KEEP): QSR100 8/8, our queen ends 23-35 long (v55 mirror 4/8, queens 2-3). Long queen also becomes the leader (queen length counts for both criteria).
+- 10:36 (clock check: earlier manual timestamps 11:00-13:25 in this log were estimates; real time now 10:36) qk3 new seeds: held V55 47, QSR100 46 (+0-1), QSR200 46 (+0-1); fresh V55 46, QSR100 45 (+1-2), QSR200 46 (+0-0); dev QSR200 89 vs 87 (+2-0). qk5 official seed 1000: QSR200 65 (+6-1), QSR150 66 (+9-3). QSR200 totals: official +12-1, dev +2-0, held +0-1, fresh +0-0. CPU v56 vs v55 sandboxed on 3 largest fresh maps: max 43.5M. SUBMITTED v56 (label v56) = v55 + QUEEN_SPLIT_ROUND=200 (built from snap41 + v55 toggles; tune_runs/ab2/QSR200 copied to /Users/UNSW/battlecode/v56).
+- 10:37 v56 active (rating 1926 inherited). RANKED CHALLENGES with v56: Cache 952 -> 841441, Stockfish 206 -> 841446, 3.14159265 314 -> 841451, calc 20 -> 841456, Sponge 213 -> 841461, Team SKKU 249 -> 841466 (WHQ/Sabotage-d below the 50-point window). Compare with v55's 11-19 vs the same six (nr_v55e.txt) in aggregate.
+- 10:45 hourly: rating 1910 #9, v56 active. v56 ranked challenges (nr_v56.txt): Cache 2-3, Stockfish 3-2, 3.14 2-3, calc 2-3, Sponge 3-2, SKKU 1-4 = 13-17 (v55 vs same six: 11-19). v56: queen alive at end 6/30 (v55 2/30), W_queen 4 (v55 1); alive queen lengths r499 3/5/6/10 (v55 4); queen eats ~6/game. v55 incoming before switch: nr_v55h.txt. lf2 running: late queen feeding on v56 base: F400 (QUEEN_LEAD_BONUS 1000 + LEAD_LATE), F300 (bonus 1000 from r300) vs v56 official, vs v53 dev/held/fresh (seed 3000, paired with qk3 QSR200).
+- 11:03 lf2 late queen feeding on v56 base: official vs v56 F400 60/120 (+6-6), F300 56 (+5-9); dev F400 89 (+1-1), F300 88 (+0-1); held F400 47 (+2-1), F300 46 (+1-1); fresh both 46 (+0-0). Neutral/negative: rejected. v56 stays.
+- 11:09 USER: QoS is a small map, ignore the queen on small maps (elimination decides). Ladder win types (nr_all.txt, ~285 games): Trophy (625) elim 33/33; QoS (875) elim 21, longest 4, queen 3; Autarky (972) elim 16, longest 9, queen 0; Default (1024) elim 17, queen 2; Trauma (1152) queen 17/22; Schooltime (2400) queen 4. qm1 running: QUEEN_MIN_CELLS 1000/1100 on v56 base (official vs v56 paired lf2o V56; dev/held/fresh vs v53 paired qk3 QSR200).
+- 11:29 qm1 QUEEN_MIN_CELLS on v56: QM1000 official 59/120 (+5-6: QoS +4-1, autarky +1-4, trophy -1), dev 90 (+4-3), held 43 (+1-4), fresh 43 (+1-4); QM1100 official 60 (+8-8), dev 89 (+5-5), held 43 (+2-5), fresh 43 (+1-4). Rejected (size alone is not the right signal). USER (v56 own battles): late game does not feed the queen -> lost; decide queen importance dynamically in the first ~100 rounds from map size + enemy threat (Trauma: bases rarely meet). Evidence: 842629 Trauma vs Cache both queens alive 4 vs 4, lost on longest. F400 on trauma+stronghold vs v56 (KEEP): 11/16 vs 8/16, queens fed to 15-89; official mixed (+6-6). Contact data (qcontact.py): first contact (any ally within 5 of an enemy head) median Trauma r80, all other official maps <= r26; both queens alive at the end almost only on Trauma (7/26). snap42: QUEEN_QUIET_ROUND (queen with no enemy head seen by round N sets queen_game; leader messages for the queen carry id|0x8000; receivers set queen_game; QUEEN_LEAD_BONUS applies only when queen_game). Default 0 = v53 ident OK. qq1 running: QQ60, QQ100 (+ QSR200 + QUEEN_LEAD_BONUS 1000 + LEAD_LATE) official vs v56, dev/held/fresh vs v53.
+- 11:51 qq1 on v56 base: official vs v56 QQ60 62/120 (+3-1), QQ100 62 (+2-0); dev/held/fresh 0 flips for both (flag never fires there). qq2 KEEP trauma+stronghold vs v56: QQ60 10/16, QQ100 10/16 (+2-0 vs V56 8); trauma queens fed to 9-26; stronghold unchanged (queen meets enemies early). CPU v57 max 43.4M. SUBMITTED v57 (label v57) = v56 + QUEEN_QUIET_ROUND=100 + QUEEN_LEAD_BONUS=1000 + QUEEN_LEAD_LATE=true (snap42 build tune_runs/ab2/QQ100 -> /Users/UNSW/battlecode/v57); active, rating 1918.
+- 11:52 hourly: rating 1918 #13, v57 active. New: Computers R 2-3 (nr_v57.txt). RANKED CHALLENGES with v57: Cache 952 -> 844709, Stockfish 206 -> 844714, 3.14159265 314 -> 844719, calc 20 -> 844724, Sponge 213 -> 844729, SKKU 249 -> 844734 (compare: v55 11-19, v56 13-17 vs the same six).
+- 12:10 v57 challenges (nr_v57b/c): Cache 4-1, Stockfish 0-5, 3.14 1-4, calc 1-4, Sponge 2-3, SKKU 1-4 = 9-21; rating 1836 #19. Only 1/30 games triggered the quiet queen flag (844710 Trauma vs Cache: queen fed 8->35, won); the rest equal v56 behaviour -> variance (Default 0-5, QoS 0-3, Devil 0-2). USER: research early economy (path planning vs evaluation vs other). Findings: vs top teams units equal at r20-30 and coverage equal, but eating r30-100 is ~2x lower on Schooltime/Trauma/QoS/Trophy; our head visits to fast tiles (gap<=60) r0-100 are half theirs (Schooltime 71|149, QoS 76|164, Trauma 15|53, Trophy 40|73, Devil 75|114). Root cause: evaluation does not model per-tile spawn rate (hot = fountains only; territory weight uses time-to-next-spawn). Literature: renewable-resource foraging (visit frequency ~ rate^1/2 search-limited, ^1/3 service-limited; Pavone/Bullo arXiv 1109.5319); Halite bots: target value per turn + assignment across ships. snap43: RATE_EXP (territory_weight *= min(RATE_CAP, (RATE_REF_GAP / (max observed timer + 1))^RATE_EXP)); default 0 = v53 ident OK. rt1 running: RT05, RT10, HOTW (HOT_TIMER 10, HOT_MAX_GAP 60, HOT_FALSE_TIMER 60) on v57 base.
+- rt1 (spawn-rate territory weighting, base v57 toggles): official vs V57 60/120 -> RT05 48 (+14 -26), RT10 55 (+17 -22), HOTW 58 (+18 -20). dev vs QSR200 89/156: RT05 80, RT10 89, HOTW 94. held 46/80: 48/49/46. fresh 46/80: 40/44/36. REJECTED (no variant better; RT05 significantly worse).
+- Economy root cause (sp1 self-play KEEP v57 vs v53 + ladder): in self-play our fast-tile visits r0-100 equal top teams' ladder numbers (Schooltime 144 vs their 149; ladder ours 72). Gap is maps with income behind portals: spawn/round reachable without portal vs only via portal: Trauma 0.1|13.2, Stronghold 1.0|13.0, Portals 4|21, QoS 0.5|1.6, Schooltime 5.0|2.6 (central [1,20] cluster of 26 tiles unreachable without portal; top teams enter r29, we never).
+- Top teams cross portals at exactly the shortest-path round (QoS r8: 3.14/Cache/Stockfish/WHQ/Sponge every game; Trauma r9). Vision radius 3 -> they almost certainly memorised the official maps; won't transfer to new qualifier maps.
+- Ours (ladder, portsee.py): QoS queen sees portal r8, non-queen first sees r27, crosses r41 (queen saw first 28/33). Trauma non-queen sees r4 but crosses r27 (decision, not knowledge). Candidate general fix: queen->ally portal sharing via sonar + stronger early portal pull when local region is poor. Not implemented yet.
+- 12:50 hourly: rating 1849 #21 (v57). New ranked: Cutlery 2-3, Shannon 3-2, zitian 2-3, y 3-2 (nr_v57d.txt); Peanut_Butter U 10-0 x2 excluded. Later (13:00): fandagong (1965) 1-4, 龙虎豹 4-1, chaoliangUNSW 5-0, ComTamSuonNuong partial (nr_v57e.txt).
+  - Losses: Portals x3 L_queen/longest with our queen dead (r77 wall, r139 self, r9 body), Trophy x2 elim, Trauma x2 with BOTH queens alive (847269 Shannon: our queen 6 vs 7 while our total 83 vs 9; 845316 y: quiet flag fired but queen only 14 vs 43).
+  - Both-queens-alive at r499 over all v55-v57 ladder games (qend_all.txt, 355 games): 11 games, all Trauma, W4 L7; in 6 of the 7 losses our total length exceeded their queen length (feeding would flip them).
+  - Portals (512 cells, queen mode off by QUEEN_MIN_CELLS 600): our queen dies at r9 ('body') in 11/34 games after crossing a portal at r4 into the enemy start; our queen alive at end 0/34.
+  - USER: 847756 (fandagong, Schooltime) opponent protects its queen: their queen L4-6 survives all game, stays >=5 from our heads, light escort; our L3 queen shadowed by two enemy smalls from r116, head-on at r127. They also led on length.
+  - USER asked about https://github.com/Kicky1618/kvmrun (fast unswbc runner, wasm2c + KVM, Linux only, byte-identical replays claimed). Speedup is vs --sandbox; our NOSANDBOX Schooltime 500-round game takes 20 s, so little gain; third-party code, not installed.
+- snap44: QUEEN_GAME_FEED_ROUND (queen_game -> feed_round = min(feed_round, N)), QUEEN_SAFE_ROUND/SPAN (queen with no enemy head seen for SPAN rounds after round R sets queen_game). snap45: + QUEEN_PORTAL_ALL (real queen never uses/scouts portals regardless of map size). Both ident OK vs v53.
+- 13:08 qa1 running: PA (QUEEN_PORTAL_ALL), QF3 (QUEEN_GAME_FEED_ROUND=300), QS (QF3 + QUEEN_SAFE_ROUND=250, SPAN 100) on v57 base: official vs v57 (V57 baseline), dev/held/fresh vs v53 paired with qk3 QSR200 (seed 3000).
+- 13:15 USER: Portals is a map where the sides cannot meet (home regions portal-separated) -> it is a queen contest; size-based queen mode is too crude. Verified (reach.py): enemy start NOT reachable without portals on portals (home 208 cells), trauma (264), stronghold (264); all other official maps connected. snap46: QUEEN_HOME_CLOSED (queen BFS over known-open edges every 2 rounds until HOME_CHECK_ROUND 200; region with no unknown edge, size in [HOME_MIN_CELLS 40, HOME_MAX_FRAC 0.5*cells] -> home_closed + queen_game; is_queen() also true when home_closed). Debug (-v) on official maps: fires only on stronghold (r136, 264 cells); portals/trauma never fully explored by the queen by r200 -> criterion too strict.
+- USER: run Portals only vs v57, expected all wins. pt1 (16 each, seeds 5000): V57 mirror 8, PA 8, QM5 (QUEEN_MIN_CELLS 500) 6, HC 9 - every game decided by longest (both queens dead). v57's queen dies r9-10 after crossing a portal; OUR queen dies later (r49-384) mostly 'self'/'wall'/'body'. pt3: QR (+QUEEN_ROOM 4, DEAD_PENALTY 6000) 6 = no change; QK (QUEEN_KEEP 4) 9. Replays: the protected queen still takes portals via the !any_enterable fallback when boxed in by its own crowded allies (home 208 cells, up to 64 units), then dies among enemies. pt5 (QM5+QK4 base): GW2 (QUEEN_GIVE_WAY 2) 7 (3 W_queen), GW3 11 (+6-2 vs GW2), GWB (GW3+ALLY_BLOCK) 7. pt6 GW3 KEEP 8 games: our queen death rounds r49-359, alive at end 1/8.
+- qa1 (partial) official vs V57: PA 59 (+1-2, portals), QF3 63 (+4-1: trauma +2-1, stronghold +1, big_empty +1), QS identical to QF3; dev 0-1 flips.
+- qa1 final: held PA/QF3 0 flips, QS +1-0; fresh all 0 flips. QF3 (QUEEN_GAME_FEED_ROUND=300) = official +4-1, no change elsewhere -> candidate component.
+- 13:35 USER: 849846 (Cutlery 2060, Schooltime) their queen survives basically every game. Series 849844 1-4 (nr_v57f.txt); rating 1885 #17. Their queen alive 3/5 (other 2 died 'none' = no valid action, never killed by us); grows without early splits (Schooltime L10 r100, L20 r300, L43 r450), roams, no escort. Ours died r10-123 (4 head-ons, 1 wall), length 2-3. qmargin.py (enemy-reach margin): their queen spent 23% of rounds within our kill reach and was never rammed (QUEEN_HUNT off since v55); ours 5% and still died (they hunt).
+- snap47: QUEEN_HUNT_MAX_LEN (only non-queens of length <= N hunt the enemy queen). Ident OK. Sparring bot tune_runs/ab2/QHSPAR = v57 + QUEEN_HUNT + MAX_LEN 4 + QUEEN_CHASE_DIST 8.
+- 13:37 qb1 running (both machines): V57, QF3, H4 (QF3 + hunt len<=4), H4K (+QUEEN_KEEP 4), H4KG (+GIVE_WAY 3) on official x8 vs QHSPAR, then vs v57.
+- 13:51 qb1 official x8 (seed 3000): vs QHSPAR V57 58, QF3 58 (+2-2), H4 57, H4K 54, H4KG 55; vs v57 V57 60, QF3 63 (+4-1), H4 59 (+10-11), H4K 55 (+16-21), H4KG 48 (+16-28). Small-dragon queen hunting and queen keep/give-way REJECTED (no gain even vs the hunter spar). qb2 (dev/held/fresh for H4*) cancelled.
+- 14:00 QF3 confirmation: official seed 1000 +3-0 (trauma, stronghold, big_empty +1 each); trauma/stronghold/portals/schooltime/big_empty x16 seed 7000 +4-3 (trauma +3-1). QF3 totals vs v57 +11-4 (trauma +6-2); dev/held/fresh 0 flips. CPU (sandbox, 3 largest fresh maps) max 43.5M.
+- 14:01 USER authorised "submit v58 if good". SUBMITTED v58 (label v58) = v57 + QUEEN_GAME_FEED_ROUND=300 (snap47 build tune_runs/ab2/QF3 -> /Users/UNSW/battlecode/v58). Active; rating 1878 #18 at activation.
+- 14:05 hourly: v58 just active (no v58 games yet). v57 games since last crawl (nr_v57g.txt): byte_force R 4-1, fandagong R 3-2, Computers R 0-5, Shannon R 4-1, Hieroglyph U 5-5. Trauma losses: 850522 Shannon both queens alive, our queen 3 vs 46 (quiet flag missed; we fed a 34-long non-queen); 850382 Hieroglyph both alive 19 vs 22 (flag fired, fed too late; v58 targets this); 850672 Computers queen fed to 21 then rammed r483. Portals: our queen dies r9 'body' again (850929, 850524) but we won both on longest.
+- qd1 running (both machines): on v58 base, SF300 (QUEEN_SAFE_ROUND=300, SPAN 0 = every queen alive at r300 on maps >=600 cells sets queen_game -> feed queen from r300), SS250 (SAFE_ROUND 250, SPAN 50). Official x8 vs v58 + 5 big maps x16 vs v58, dev/held/fresh vs v53 paired with qk3 QSR200 (= v58 there, QF3 had 0 flips).
+- 14:25 USER: crawl v58 games. Rating 1913 #12 (v58 active since 14:01, was 1878). nr_v58.txt: ranked Cache 2-3, 3.14 1-4, Sponge 2-3, SSS 1-4, forgot_to_mention 3-2, Cutlery 3-2, zitian 5-0 (17-18); unranked Delusion_Tax 8-2; Peanut_Butter U 10-0 excluded. Win types: W_queen 9 (Schooltime 3, Trauma 3). Portals 1-5 (all longest, both queens dead; our queen dies r9 body/ram, r49/r100 wall, r128/r273 self; their queen also dead in all 6 -> our surviving queen would win them all). Opponents consolidate on Portals into one dragon (50/50/1, 71/71/1) while our total is split (40/49/5, 41/56/6). Trauma 3-2: both losses with both queens alive and OUR QUEEN LEN 3 (852471 SSS 3 vs 32, 852408 Cutlery 3 vs 58): queen_game never fired.
+- qd1 partial: official vs v58 SF300 60/120 (+4-4), SS250 61 (+2-1); 5 big maps x16 SF300 50/80 (+11-1), SS250 43 (+5-2); dev 0 flips both.
+- 14:32 qd1 final: SF300 official +4-4 (schooltime +1-2, stronghold +3-2), 5 big maps x16 +11-1 (trauma +4-0, stronghold +4-1, big_empty +2, schooltime +1), total +15-5 (sign test p~0.04; 11 of the gains are queen wins); dev 0, held +1-1, fresh 0. SS250 +7-3, held +1. CPU SF300 sandbox: big_empty 64x64 max 53.4M (v58 same), fresh large max 43.5M.
+- 14:35 USER authorised "submit v59 if good". SUBMITTED v59 (label v59) = v58 + QUEEN_SAFE_ROUND=300, QUEEN_SAFE_SPAN=0 (every alive queen on maps >=600 cells sets queen_game at r300 -> fed from r300). Build tune_runs/ab2/SF300 (snap47) -> /Users/UNSW/battlecode/v59. Active; rating 1859 #20 at activation (v58 fell 1913 -> 1859 after ranked calc 1-4 and Cutlery 1-4).
+- NEW MAPS on the server: Cutlery unranked 853100 includes Around_UNSW, Australia, Islands, Maze, Stripes, Tower_Defense, weakhold (not in unswbc 1.2.3 official123). Reconstruct from replays (edges + dragons; TILE gaps hidden -> estimate from pearl appearance events) for a new test set.
+- 14:40 USER: reconstruct the new maps and test on them. mkfrom2.py (edges/dragons from replay; pearl gaps from pearl-appearance waits after the tile was emptied, corpse pearls excluded; calibration on official maps: spawn-tile sets exact on Trauma, rates underestimated) -> tune_runs/newmaps: around_unsw 64x64 (10 dragons/side), australia 64x64, islands 56x40, maze 48x24, stripes 24x12, tower_defense 32x16, weakhold 40x15 (newset.txt; ab2 MAP_DIRS includes tune_runs/newmaps). Cutlery U 853100: we lost 2-13 (new maps 1-6, only Stripes W).
+- USER: Tower Defense - we basically never leave home (Cutlery visited 451 cells, us 73). Local repro v59 vs v53: our two dragons loop inside the 7x7 home room (period ~14) then circle a 2x2 for ~30 rounds; all target bonuses vanish beyond ~6.5 steps, territory is a flat Voronoi count (unknown rivals -> every unseen cell is ours) so no direction to explore.
+- USER: idle timeout is not enough (first to the fountain wins; reconsider the evaluation). snap48 FAR_IDLE (unused), snap49 TERRITORY_DECAY (territory cells weighted exp(-(steps-1)/tau)); ident OK. td1 tower_defense x16 vs v59: TD15 7, TD30 8, TD60 8, FG3 (FAR_GAIN=3 from r0: +3 per step toward the nearest pearl/soon/hot/unseen target, range 80) 14/16 (+6-0).
+- 14:55 qe1 running: FG2/FG3/FG6 on v59 base: newmaps x8 + official x8 vs v59, dev/held/fresh vs v53 paired with qd1 SF300 (= v59).
+- 14:50 hourly: rating 1866 #19 (v59). NEW MAPS ARE NOW IN THE LADDER POOL (ranked forgot_to_mention 853743 2-3 included Tower_Defense L, Australia L). nr_v59.txt: ftm R 2-3, dev_test_1_:P U 10-7 (17 maps), Tony_S U 2-1. New-map economy is far behind: Australia totals r200 46 vs 257 and 27 vs 323, Islands 100 vs 193 (final 13 vs 486), Tower_Defense r100 5 vs 57 (ftm). Confirms the exploration problem; qe1 (FAR_GAIN) running.
+- 15:19 qe1 (FAR_GAIN on v59 base): newmaps x8 vs v59 (V59 28/56): FG2 33 (+14-9), FG3 25 (+7-10), FG6 27 (+13-14); official x8 vs v59 (60/120): FG2 67 (+28-21), FG3 72 (+31-19), FG6 59; dev vs SF300 89/156: FG2 91 (+27-25), FG3 92 (+31-28), FG6 83; held 46/80: FG2 52 (+16-10), FG3 41 (+11-16), FG6 49; fresh 46/80: FG2 55 (+17-8), FG3 47, FG6 40. FG2 positive on all five sets (+102-73, p~0.03) but huge flip counts and non-monotonic in gain. qe2 confirmation running: new seeds (official+newmaps seed 1000: V59/FG2/FG15; held/fresh seed 5000: V59/FG2 vs v53).
+- 15:34 qe2 (new seeds): newmaps+official seed 1000: FG2 92/176 vs V59 88 (+30-26; newmaps +10-5, official +20-21), FG15 90 (+29-27); held seed 5000 FG2 38 vs 46 (+14-22); fresh 49 vs 49 (+13-13). FG2 both seed sets: newmaps+official +72-56, dev +27-25, held +30-32, fresh +30-21 (total +159-134). CPU sandbox: FG2 maxima 52.7-61.3M on around_unsw/australia (6 samples), big_empty 55.0M, fresh large 43.7M; v59 itself hit 66.0M on around_unsw (10 dragons/side) -> CPU margin on 64x64 new maps ~35-40% below the 100M cap, same for both; consider lowering CELL_BUDGET.
+- 15:41 USER: submit if no obvious regression (local sims cannot model opponents). SUBMITTED v60 (label v60) = v59 + FAR_GAIN=2 (snap49 build tune_runs/ab2/FG2 -> /Users/UNSW/battlecode/v60). First upload attempts failed (network reset), third succeeded. Active; rating 1853 #19. v59 final: 74 games 46-28 (62%), Australia 0/4.
+- 15:45 hourly: v60 active since 15:41 (rating 1853 #19); Sponge U 17-map series in progress. Last v59 series: zitian R 3-2 (weakhold W, Tower_Defense L, Australia L), Deer_Park R 3-2 (weakhold L, Around_UNSW L) (nr_v59b.txt).
+  - CPU: CELL_BUDGET 10000/8000 do not lower around_unsw maxima (54.7-58.8M / 52.0-62.2M) -> spikes are not survey-budget driven; output is already one buffered write per turn (helper setvbuf + flush at end_turn; WRITE_SYSCALL_COST 2.5M). p50 ~29M per turn is base computation. Left as is (cap 100M).
+  - Australia (v59 0/4): exploration equal to r50; r50-200 we die by our own moves (ftm game: wall 25, self 9, body 15; zitian game: wall 24, self 13, body 22; opponents ~0), many in one small kelp nook (x6-10,y34-37) -> crowding in pockets. dev_test game: we split 24 vs 106.
+  - snap50: ALLY_BLOCK_MAX_LEN (dragons of length <= N treat cells next to ally heads as blocked in the survey, as QUEEN_ALLY_BLOCK does for the queen). Ident OK. qf1 running: AB4, AB8 on newmaps+official x8 vs v60.
+- 16:20 USER: v60 results are in. All v60 series so far are unranked (requested 15:43-15:45 after v60 activation): Sponge U 5-12, dev_test_1_:P U 10-7 and 9-8 (nr_v60.txt). New maps 11-10 (Australia 0/3, Islands 0/3, weakhold 3/3, Tower_Defense 2/3, Maze 2/3). Tower_Defense: 2 of 3 games still stuck at home (49 cells by r200 vs 227/418).
+  - Self-inflicted deaths (wall/self/body) before r200 on Around_UNSW/Australia/Islands/Maze: 782 in 12 games (65/game; 609 at length 2; dev_test ~0-30). Not CPU: replays show no TLE; local sandbox v60 vs v53 on reconstructed Australia: 8 self-deaths, max 57.9M.
+  - Australia 856664: ~70 of our deaths in ONE pocket (53-57,37-40; (53,37) a fountain + ~11 fast tiles) entered through a portal from (34,24). Cycle: L2-3 dragon enters, eats to L10 in ~6 rounds, cannot turn, escape-splits 7 to a child (parent L2 dies on the wall), the child returns and dies too. Mirror pocket at (6-10,23-26). Reconstruction contains it (fountain + 1-20..87 gaps) but local games did not reproduce the dive (portal route / opponent difference).
+- 16:05 USER: in the Tower game vs forgot_to_mention our small dragons crowded and gave one away. 857636 (v60 ranked, ftm 1-4 series; also horse 1-4, Shannon 5-0, Nitronics 3-2): our two start dragons ran parallel lanes west; id 0 (moves first) took (2,7), the only exit of id 2's corner (2,8) -> id 2 died 'self' at r10. Our remaining dragon(s) never left the home room (x<=8) all game; ftm grew to 52 using mass L2 suicides and L2 head trades at our home.
+- snap51: POCKET_CAP/POCKET_DIV/POCKET_PENALTY (portal-free, kelp-bounded component of the destination; if smaller than CAP and length after the move > size/DIV: penalty 1000 per excess and no EAT_BONUS). snap52: EXPLORE_GAIN/RANGE/ROUNDS (score += G*max(0, R - dist_unseen) before round R). Both ident OK.
+- qg1 newmaps+official x8 vs v60 (88/176): PK48 91 (+9-6), PK32 identical, PK48D3 87 (+11-12). qg2 running: PK48 dev/held/fresh paired with qe1 FG2 (= v60).
+- Tower_Defense stay-home debug (DBGSC builds, -v SC logs): EXPLORE_GAIN 5..40 does not get our dragons out (cells by r100 ~43-67 vs v60 52). At the south exit (29,13)->(29,14) the corridor move loses ~600-700 to the threat/exposure penalty: across the x-wrap the exits are ~8 cells from the enemy spawn; our small dragons will not step into enemy reach, while strong teams trade L2s freely. Root cause = threat aversion of small dragons, not the explore drive. Also second dragon gets own_unseen 0 (ally closer to all unseen cells).
+- 16:35 TD stay-home root causes (DBGSC4 per-term logs at the south exit (29,13)->(29,14)): PENALTY_NO_TAIL 600 (1-wide corridor never loops back to the tail, applied regardless of room ahead) and CENTER_PULL 40 per manhattan unit (center_map true for 32x16; pulls dragons against the room's west wall, manhattan ignores walls). snap53: NO_TAIL_ROOM (no-tail penalty only if avail < N*length+8). TD x8 vs v60 cells by r100 (v60 52): NT6 60, EX-gain variants ~48-67, CENTER_PULL=0 100 (7/8 W), CENTER_PULL=0+NT6 152 (7/8 W).
+- qh1 queued after qg2: C2 (PK48 + CENTER_PULL=0), C3 (C2 + NO_TAIL_ROOM=6) on newmaps+official vs v60 (paired with qg1 PK48) and dev/held/fresh (paired with qg2 PK48).
+- 16:46 qh1: C2 (PK48+CENTER_PULL=0) newmaps+official 79/176 vs PK48 91 (autarky/dilemma/stripes 0/8, TD 8/8); C3 (+NO_TAIL_ROOM=6) 76; held C2 47 / C3 42 vs 52. Rejected. qg2: PK48 dev/held/fresh identical to FG2 (0 flips).
+- snap54 = mybot2: CENTER_PATH (center pull uses BFS distance from the center over open+unknown edges, recomputed once per round; manhattan fallback). TD x8 vs v60: CPP 5/8, CPPN (+NO_TAIL_ROOM=6) 8/8.
+- 17:09 qi1: CPP newmaps+official 84 (stripes 1, trophy 0, weakhold 1, TD 5), dev 91 (=), held 53 (+1), fresh 54 (-1). CPPN 89 (TD 8, autarky 6, stripes 1, trophy 1), dev 95 (+4), held 44 (-8), fresh 50 (-5). Both rejected. CPU CPPN around_unsw/australia max 57.4M.
+- Ladder (v60 #9, 1959): nr_v60c/nr_v60d. Portals: our real queen crosses a portal at r4 and dies r9 (body) in 3 series -> map 512 cells < QUEEN_MIN_CELLS so no portal ban; QUEEN_PORTAL_ALL fixes it.
+- USER: Australia and Islands are 0/15 on the ladder. Findings: (1) our queen dies in every game (len 2-4, roams far before r200, killed by enemy sprints r42-262); 11/15 were 'longest' with both queens dead. v60 runs minimal queen rules (threat x1, no pessimist, guard 0). (2) Australia: 12-cell portal-only fountain pocket (6-10,23-26)+mirror; we die 50-94 times per game there (opponents 4-29), entering 17-36 times; dragons enter at len 3 and eat 4 pearls in 3 rounds. PK48 never fires (len <= 6). (3) Islands: 4-cell dead-end corridor (18,13)->(15,12); split child born at the mouth walks in, escape-splits, the head dies, corpse refeeds the next child: loop every 6 rounds. (4) Late game: our top at r400 3-15 vs theirs 18-75 while our total is 100+.
+- qj2 (local): australia x16 vs v60 KEEP PKD2/PKD4/PKD4P; portals vs v60pa (v60+PA, queen stays home) and v60: N/NPA/NPG. qk1 (DIST): PKPA, PKD4PA on newmaps+official vs v60, dev/held/fresh vs v53.
+- 17:26 qj2: australia x16 vs v60 PKD2 11, PKD4 10, PKD4P 10. Portals vs v60pa: N 9, NPA 11 (+5-3), NPG 9. qk1 (stopped after part 1): PKPA 85/176 (stripes 0/8, all eliminations; PA rejected), PKD4PA 87 (australia 3). qk2 PKHC (PK48 + QUEEN_HOME_CLOSED) newmaps+official 96/176 vs PK48 91 (+11-6: dilemma 7, trauma 6, stripes 4 kept). POCKET_PORTAL_BAN (snap55) barely changes pocket entries (dragons have not seen inside). CPU PK48 max 59.3M (v60 61.3M).
+- 17:27 SUBMITTED v61 (label v61) = v60 + POCKET_CAP=48 + QUEEN_HOME_CLOSED=true (tune_runs/ab2/PKHC from snap55 -> /Users/UNSW/battlecode/v61) on the user's order before dev/held/fresh finished; active, rating 1914 #10. qk2 dev/held/fresh and PKHC CPU still running; qm1 (big-map queen guard QG/QGK/QGH on snap55) queued.

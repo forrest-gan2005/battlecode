@@ -1,0 +1,6 @@
+835734 R Team_SKKU 1931 A 835734:Trauma:W:1,835735:Trophy:L:1,835736:Slithery_Fight:L:1,835737:Portals:L:1,835738:Devil:L:1
+835729 R Sponge(Albert_and_Bob) 2019 A 835729:Slithery_Fight:W:1,835730:Trauma:L:1,835731:Queen_Of_Spades:L:1,835732:Autarky:W:1,835733:Default:L:1
+835724 R calc 1997 A 835724:Devil:L:1,835725:Trophy:L:1,835726:Prisoners_Dilemma:W:1,835727:Autarky:L:1,835728:Queen_Of_Spades:L:1
+835719 R 3.14159265 1988 A 835719:Default:W:1,835720:Devil:L:1,835721:Slithery_Fight:L:1,835722:Portals:L:1,835723:Autarky:W:1
+835704 R Stockfish 2028 A 835704:Queen_Of_Spades:L:1,835705:Slithery_Fight:L:1,835706:Portals:L:1,835707:Prisoners_Dilemma:W:1,835708:Devil:L:1
+835699 R Cache_me_outside 1975 A 835699:Slithery_Fight:W:1,835700:Trophy:W:1,835701:Default:W:1,835702:Devil:W:1,835703:Schooltime:L:1

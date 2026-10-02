@@ -1,0 +1,5 @@
+840703 R Team_SKKU 1927 B 840703:Trophy:L:1,840704:Devil:L:1,840705:Queen_Of_Spades:W:1,840706:Trauma:W:1,840707:Default:W:1
+840410 U Just_Keep_Swimming 1712 B 840410:Schooltime:L:1,840411:Portals:W:1,840412:Slithery_Fight:W:1,840413:Queen_Of_Spades:W:1,840414:Default:W:1,840415:Trophy:W:1,840416:Prisoners_Dilemma:W:1,840417:Autarky:W:1,840418:Devil:L:1,840419:Trauma:W:1
+840254 R Team_SKKU 1927 B 840254:Slithery_Fight:L:1,840255:Trophy:L:1,840256:Devil:L:1,840257:Default:W:1,840258:Prisoners_Dilemma:W:1
+839740 R calc 2015 B 839740:Portals:L:1,839741:Prisoners_Dilemma:L:1,839742:Schooltime:L:1,839743:Trophy:L:1,839744:Default:W:1
+839635 U Cache_me_outside 1896 B 839635:Prisoners_Dilemma:L:1,839636:Trophy:W:1,839637:Slithery_Fight:W:1,839638:Schooltime:L:1,839639:Portals:W:1

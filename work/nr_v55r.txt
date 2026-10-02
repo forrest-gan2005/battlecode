@@ -1,0 +1,14 @@
+828707 R Sabotage-d 1880 A 828707:Prisoners_Dilemma:W:1,828708:Schooltime:L:1,828709:Autarky:W:1,828710:Queen_Of_Spades:L:1,828711:Portals:L:1
+828702 R Computers 1878 A 828702:Queen_Of_Spades:L:1,828703:Default:W:1,828704:Trauma:L:1,828705:Prisoners_Dilemma:W:1,828706:Trophy:W:1
+828687 R WeHaveQuizzes 1902 A 828687:Slithery_Fight:L:1,828688:Autarky:W:1,828689:Prisoners_Dilemma:W:1,828690:Trauma:W:1,828691:Portals:L:1
+828682 R Team_SKKU 1933 A 828682:Autarky:W:1,828683:Slithery_Fight:L:1,828684:Schooltime:L:1,828685:Trophy:L:1,828686:Default:L:1
+828677 R calc 1945 A 828677:Prisoners_Dilemma:W:1,828678:Trauma:W:1,828679:Trophy:L:1,828680:Queen_Of_Spades:W:1,828681:Slithery_Fight:L:1
+828672 R Sponge(Albert_and_Bob) 1940 A 828672:Default:L:1,828673:Trophy:W:1,828674:Slithery_Fight:W:1,828675:Prisoners_Dilemma:L:1,828676:Devil:W:1
+828667 R Stockfish 2000 A 828667:Portals:L:1,828668:Default:L:1,828669:Queen_Of_Spades:W:1,828670:Autarky:L:1,828671:Slithery_Fight:L:1
+828657 R Cache_me_outside 2117 A 828657:Trophy:L:1,828658:Trauma:L:1,828659:Prisoners_Dilemma:W:1,828660:Schooltime:W:1,828661:Portals:W:1
+828652 R 3.14159265 1983 A 828652:Trophy:L:1,828653:Slithery_Fight:L:1,828654:Queen_Of_Spades:L:1,828655:Schooltime:W:1,828656:Autarky:L:1
+830012 R STAR 1701 A 830012:Queen_Of_Spades:L:1,830013:Autarky:W:1,830014:Schooltime:W:1,830015:Trauma:W:1,830016:Default:W:1
+829872 U Cache_me_outside 2021 B 829872:Prisoners_Dilemma:W:1,829873:Trophy:L:1,829874:Slithery_Fight:L:1,829875:Schooltime:W:1,829876:Portals:W:1
+829437 R Z-A 1677 A 829437:Autarky:W:1,829438:Slithery_Fight:W:1,829439:Devil:W:1,829440:Schooltime:L:1,829441:Default:W:1
+829092 R 3.14159265 1987 A 829092:Default:L:1,829093:Prisoners_Dilemma:W:1,829094:Trophy:L:1,829095:Trauma:W:1,829096:Autarky:L:1
+829057 R Cache_me_outside 2021 A 829057:Schooltime:L:1,829058:Default:L:1,829059:Portals:L:1,829060:Slithery_Fight:W:1,829061:Prisoners_Dilemma:W:1

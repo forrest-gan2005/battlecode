@@ -1,0 +1,5 @@
+860717 U Just_Keep_Swimming 1739 B 860717:Autarky:W:1,860718:Devil:W:1,860719:Trauma:L:1,860720:Schooltime:W:1,860721:Portals:W:1,860722:Slithery_Fight:L:1,860723:Queen_Of_Spades:L:1,860724:Stripes:W:1,860725:Default:W:1,860726:Tower_Defense:L:1
+860662 R Shannon 1621 A 860662:Prisoners_Dilemma:W:1,860663:Tower_Defense:W:1,860664:weakhold:W:1,860665:Autarky:W:1,860666:Trauma:W:1
+860556 R Deer_Park 1882 A 860556:Tower_Defense:L:1,860557:Trophy:W:1,860558:Stripes:L:1,860559:Maze:W:1,860560:Queen_Of_Spades:L:1
+860380 R Cache_me_outside 1912 B 860380:weakhold:W:1,860381:Queen_Of_Spades:W:1,860382:Around_UNSW:L:1,860383:Prisoners_Dilemma:W:1,860384:Trauma:W:1
+860138 U Tony_S 1689 B 860138:Queen_Of_Spades:W:1,860139:Trauma:W:1,860140:Trophy:W:1

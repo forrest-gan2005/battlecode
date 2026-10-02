@@ -1,0 +1,8 @@
+852584 R Cache_me_outside 1994 A 852584:Default:L:1,852585:Devil:L:1,852586:Autarky:L:1,852587:Portals:W:1,852588:Prisoners_Dilemma:W:1
+852524 R 3.14159265 2021 A 852524:Portals:L:1,852525:Devil:L:1,852526:Schooltime:W:1,852527:Slithery_Fight:L:1,852528:Queen_Of_Spades:L:1
+852514 R Sponge(Albert_and_Bob) 2031 A 852514:Prisoners_Dilemma:W:1,852515:Trophy:W:1,852516:Default:L:1,852517:Schooltime:L:1,852518:Autarky:L:1
+852469 R SSS 2051 A 852469:Devil:L:1,852470:Trophy:W:1,852471:Trauma:L:1,852472:Prisoners_Dilemma:L:1,852473:Portals:L:1
+852409 R forgot_to_mention 2012 A 852409:Portals:L:1,852410:Schooltime:W:1,852411:Trauma:W:1,852412:Autarky:W:1,852413:Slithery_Fight:L:1
+852404 R Cutlery 2060 A 852404:Portals:L:1,852405:Default:W:1,852406:Trophy:W:1,852407:Slithery_Fight:W:1,852408:Trauma:L:1
+851754 U Delusion_Tax 1903 B 851754:Schooltime:W:1,851755:Portals:L:1,851756:Slithery_Fight:W:1,851757:Queen_Of_Spades:W:1,851758:Default:W:1,851759:Trophy:L:1,851760:Prisoners_Dilemma:W:1,851761:Autarky:W:1,851762:Devil:W:1,851763:Trauma:W:1
+851619 R zitian 1862 A 851619:Trauma:W:1,851620:Slithery_Fight:W:1,851621:Schooltime:W:1,851622:Default:W:1,851623:Prisoners_Dilemma:W:1

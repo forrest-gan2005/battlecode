@@ -1,0 +1,6 @@
+841466 R Team_SKKU 1927 A 841466:Autarky:W:1,841467:Schooltime:L:1,841468:Prisoners_Dilemma:L:1,841469:Portals:L:1,841470:Devil:L:1
+841461 R Sponge(Albert_and_Bob) 1991 A 841461:Default:W:1,841462:Devil:L:1,841463:Portals:L:1,841464:Prisoners_Dilemma:W:1,841465:Queen_Of_Spades:W:1
+841456 R calc 2015 A 841456:Queen_Of_Spades:L:1,841457:Schooltime:L:1,841458:Autarky:L:1,841459:Trauma:W:1,841460:Slithery_Fight:W:1
+841451 R 3.14159265 1995 A 841451:Trauma:W:1,841452:Slithery_Fight:W:1,841453:Autarky:L:1,841454:Queen_Of_Spades:L:1,841455:Devil:L:1
+841446 R Stockfish 1989 A 841446:Schooltime:L:1,841447:Default:W:1,841448:Trauma:W:1,841449:Queen_Of_Spades:L:1,841450:Slithery_Fight:W:1
+841441 R Cache_me_outside 1896 A 841441:Autarky:L:1,841442:Devil:W:1,841443:Default:L:1,841444:Portals:W:1,841445:Queen_Of_Spades:L:1

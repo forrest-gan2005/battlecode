@@ -1,0 +1,15 @@
+826832 R Computers 1914 B 826832:Slithery_Fight:L:1,826833:Prisoners_Dilemma:W:1,826834:Devil:L:1,826835:Trauma:L:1,826836:Schooltime:L:1
+826822 U Stockfish 1984 A 826822:Autarky:W:1,826823:Default:L:1,826824:Devil:W:1,826825:Portals:L:1,826826:Prisoners_Dilemma:W:1,826827:Queen_Of_Spades:W:1,826828:Schooltime:L:1,826829:Slithery_Fight:L:1,826830:Trauma:L:1,826831:Trophy:L:1
+826592 U Peanut_Butter 1657 B 826592:Schooltime:L:1,826593:Portals:W:1,826594:Slithery_Fight:W:1,826595:Trophy:W:1,826596:Prisoners_Dilemma:W:1,826597:Queen_Of_Spades:W:1,826598:Default:W:1,826599:Autarky:W:1,826600:Devil:W:1,826601:Trauma:L:1
+826422 R UnderTheC 1627 A 826422:Slithery_Fight:W:1,826423:Portals:L:1,826424:Devil:W:1,826425:Autarky:W:1,826426:Default:W:1
+826292 R WeHaveQuizzes 1902 A 826292:Devil:W:1,826293:Schooltime:W:1,826294:Slithery_Fight:L:1,826295:Trauma:L:1,826296:Prisoners_Dilemma:L:1
+826207 R Sponge(Albert_and_Bob) 1944 A 826207:Autarky:L:1,826208:Default:W:1,826209:Schooltime:L:1,826210:Prisoners_Dilemma:W:1,826211:Slithery_Fight:W:1
+826202 R Cache_me_outside 2138 A 826202:Autarky:L:1,826203:Schooltime:L:1,826204:Slithery_Fight:L:1,826205:Portals:L:1,826206:Queen_Of_Spades:L:1
+826197 R Cache_me_outside 2138 A 826197:Trophy:L:1,826198:Devil:L:1,826199:Default:L:1,826200:Trauma:L:1,826201:Prisoners_Dilemma:W:1
+826174 R Cache_me_outside 2138 A 826174:Queen_Of_Spades:L:1,826175:Trauma:L:1,826176:Autarky:L:1,826177:Trophy:L:1,826178:Devil:W:1
+826132 U Cache_me_outside 2138 A 826132:Autarky:W:1,826133:Default:L:1,826134:Devil:W:1,826135:Portals:W:1,826136:Prisoners_Dilemma:L:1,826137:Queen_Of_Spades:W:1,826138:Schooltime:W:1,826139:Slithery_Fight:W:1,826140:Trauma:L:1,826141:Trophy:L:1
+828427 R Computers 1880 A 828427:Autarky:W:1,828428:Portals:W:1,828429:Queen_Of_Spades:W:1,828430:Schooltime:L:1,828431:Prisoners_Dilemma:W:1
+827925 R Weneedmoretokens 1650 B 827925:Slithery_Fight:W:1,827926:Trauma:L:1,827927:Devil:W:1,827928:Default:L:1,827929:Trophy:W:1
+827848 U Cache_me_outside 2146 B 827848:Portals:L:1,827849:Slithery_Fight:W:1,827850:Autarky:L:1,827851:Prisoners_Dilemma:L:1,827852:Devil:L:1
+827502 U winner 1085 B 827502:Portals:L:1,827503:Queen_Of_Spades:W:1,827504:Trophy:W:1
+827337 R Settlers_of_Battlecode 1829 B 827337:Schooltime:L:1,827338:Autarky:L:1,827339:Prisoners_Dilemma:W:1,827340:Slithery_Fight:L:1,827341:Portals:L:1

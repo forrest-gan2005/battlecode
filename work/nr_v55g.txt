@@ -1,0 +1,4 @@
+838957 U Deep_Sea_Dragons 1464 B 838957:Trophy:W:1,838958:Prisoners_Dilemma:W:1,838959:Schooltime:L:1,838960:Portals:L:1,838961:Slithery_Fight:W:1
+838562 U Peanut_Butter 1472 B 838562:Schooltime:L:1,838563:Portals:W:1,838564:Slithery_Fight:W:1,838565:Trophy:W:1,838566:Prisoners_Dilemma:L:1,838567:Queen_Of_Spades:W:1,838568:Default:W:1,838569:Autarky:W:1,838570:Devil:W:1,838571:Trauma:L:1
+837927 R WeHaveQuizzes 1865 A 837927:Trauma:W:1,837928:Prisoners_Dilemma:L:1,837929:Default:W:1,837930:Queen_Of_Spades:W:1,837931:Trophy:W:1
+837857 U Cache_me_outside 1975 B 837857:Prisoners_Dilemma:L:1,837858:Trophy:L:1,837859:Slithery_Fight:W:1,837860:Schooltime:L:1,837861:Portals:W:1

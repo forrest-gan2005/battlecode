@@ -61,7 +61,7 @@ class Message:
             start += 8 * size
 
     def root(self):
-        return Struct(self, 0, 0, 1, 1).pointer(0)
+        return follow(self, 0, 0)
 
     def word(self, seg, index):
         return struct.unpack_from("<Q", self.segments[seg], 8 * index)[0]

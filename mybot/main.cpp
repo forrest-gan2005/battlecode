@@ -17,25 +17,24 @@ constexpr int BLOCKED_FOREVER = 1 << 28;
 
 constexpr bool DEBUG_LOG = false;
 constexpr int TIE_SEED = 0;
-constexpr bool DEBUG_SPLIT = false;
-constexpr bool DEBUG_STATS = false;
 
-constexpr bool USE_VORONOI = true;
-constexpr bool VORONOI_ALLIES = false;
-constexpr bool AVOID_ALLY_HEADS = true;
 constexpr double CONTESTED_SHARE = 0.5;
 constexpr double PENALTY_HEAD_RACE = 450.0;
+constexpr int THREAT_REACH_MIN = 2;
+constexpr int THREAT_REACH_MAX = 6;
+constexpr double THREAT_LENGTH_SCALE = 4.0;
+constexpr int SMALL_UNIT_THREAT_REACH = 1;
+constexpr int SPRINT_ESCAPE_MIN_LENGTH = 8;
+constexpr double SPRINT_ESCAPE_COST = 400.0;
+constexpr int SPRINT_ESCAPE_MAX_EVALS = 4;
 
-constexpr int SPLIT_LAST_ROUND = 400;
+constexpr int SPLIT_LAST_ROUND = 495;
 constexpr int SPLIT_MIN_LENGTH = 4;
-constexpr bool SPLIT_IN_HALF = false;
 constexpr int SPLIT_SOFT_LIMIT = 60;
 
-constexpr bool USE_FEEDER_SACRIFICE = true;
-constexpr bool USE_SONAR_LEADER = true;
 constexpr int ENDGAME_ROUND = 400;
 constexpr int LEADER_GROW_ROUND = 300;
-constexpr bool LEADER_ZONE_EARLY = true;
+constexpr int LEADER_GROW_ROUND_BIG = 150;
 constexpr int FEEDER_KEEP_UNITS = 3;
 constexpr int FEEDER_APPROACH = 15;
 constexpr int FEEDER_DROP_MIN = 4;
@@ -45,32 +44,160 @@ constexpr int FEEDER_THROTTLE = 3;
 constexpr int FEEDER_THROTTLE_PERIOD = 5;
 constexpr int LEADER_PEARL_RADIUS = 9;
 constexpr int SONAR_STALE = 25;
-// 自杀前领队情报必须这么新（回合数），否则领队可能已经死了，白送。视野里看到领队也算新。
+
 constexpr int FEEDER_FRESH_ROUNDS = 5;
+
+constexpr int FEEDER_DIE_DIST = 3;
+constexpr int FEEDER_FRONT_CLEAR = 3;
+constexpr int FEEDER_ENEMY_CLEAR = 4;
+constexpr double ZONE_PEARL_PENALTY = 600.0;
+
+constexpr double LEADER_ENDGAME_PEARL_MULT = 4.0;
+
+constexpr int FEED_CAP_UNITS = 56;
+constexpr int FEED_CAP_ROUND = 200;
+constexpr int RALLY_FRESH = 0;
+
+constexpr int PLAN_ROUNDS = 0;
+constexpr int PLAN_MAX_LENGTH = 6;
+constexpr double PLAN_K = 2.0;
+constexpr double PLAN_SOON_VALUE = 0.7;
+constexpr int PLAN_SOON_MAX = 25;
+constexpr double PLAN_HOT_VALUE = 0.9;
+constexpr double PLAN_EXPLORE_VALUE = 0.5;
+constexpr int PLAN_PEARL_STALE = 20;
+constexpr double PLAN_KEEP = 0.7;
+constexpr double PLAN_VETO = 2500.0;
+constexpr double PLAN_OVERRIDE = 1e7;
+
+constexpr bool PLAN_SOON_HOLD = false;
+constexpr bool PLAN_NO_PORTAL = false;
+
+constexpr bool BARREN_ESCAPE = true;
+constexpr int BARREN_MIN_SEEN = 40;
+constexpr double BARREN_MAX_SPAWN = 0.06;
+constexpr int BARREN_REGION_CAP = 600;
+constexpr int BARREN_ROUNDS = 100;
+constexpr int POVERTY_ROUNDS = 0;
+constexpr int POVERTY_RADIUS = 6;
+constexpr int POVERTY_SOON = 10;
+constexpr int POCKET_MAX_CELLS = 0;
+constexpr int POCKET_WAIT = 12;
+constexpr int POCKET_SPLIT_CELLS = 0;
+constexpr int POCKET_CROWD = 0;
+constexpr int POCKET_CROWD_CELLS = 40;
+constexpr bool POCKET_CROWD_IDLE = false;
+constexpr bool POCKET_SPLIT_CROWDED = false;
 constexpr double FEEDER_REWARD = 3000.0;
 constexpr double FEEDER_DECAY = 60.0;
 constexpr double LEADER_HEAD_MULT = 2.0;
 
-constexpr bool USE_TRADE_ATTACK = true;
-constexpr int TRADE_MAX_LENGTH = 3;
+constexpr int TRADE_MAX_LENGTH = 4;
 constexpr int TRADE_MIN_UNITS = 8;
+
+constexpr int TRADE_TARGET_MIN_PARTS = 5;
+
+constexpr int RAM_MAX_STEPS = 4;
+constexpr int AGGRESSIVE_MAX_CELLS = 1200;
+constexpr int AGGRESSIVE_TRADE_MIN_UNITS = 1;
+constexpr int AGGRESSIVE_RAM_MAX_STEPS = 3;
+constexpr int TRADE_LOCAL_EDGE = 1;
+constexpr int DEFEND_MIN_PARTS = 10;
+constexpr int DEFEND_RADIUS = 6;
 constexpr double TRADE_REWARD = 2500.0;
 constexpr double TRADE_DECAY = 80.0;
+constexpr bool PORTAL_PROBE = false;
+constexpr int GRAB_MAX_STEPS = 0;
+constexpr int GRAB_MIN_NET = 0;
+constexpr int GRAB_SLACK = 0;
+constexpr bool GRAB_SAFE = false;
+constexpr bool GRAB_GREEDY = false;
+constexpr int DENY_MAX_STEPS = 0;
+constexpr int DENY_MIN_GAIN = 1;
+constexpr bool DENY_SAFE = true;
+constexpr int DENY_MIN_NET = -100;
+constexpr double EAT_BONUS = 0.0;
+constexpr double EAT_CONTEST_BONUS = 0.0;
+constexpr int MERGE_ROUND = 0;
+constexpr int MERGE_DIST = 2;
+constexpr int MERGE_RATIO = 1;
+constexpr int FINAL_ROUNDS = 0;
+constexpr int FINAL_APPROACH = 25;
+constexpr int LOOP_WINDOW = 30;
+constexpr int LOOP_IDLE = 0;
+constexpr double LOOP_PENALTY = 0.0;
+constexpr bool PORTAL_GOSSIP = false;
+constexpr bool MOUTH_WARN = false;
+constexpr double UNSEEN_FAR_DECAY = 0.0;
+constexpr double UNSEEN_FAR_WEIGHT = 0.2;
+constexpr int SPLIT_ENEMY_RADIUS = 0;
+constexpr int SPLIT_ENEMY_MIN_LEN = 6;
+constexpr bool PORTAL_SELF_CHECK = false;
+constexpr int LEADER_GUARD_ROUNDS = 0;
+constexpr int LEADER_GUARD_RADIUS = 6;
+constexpr double LEADER_GUARD_PENALTY = 2000.0;
+constexpr int REPEL_ROUNDS = 0;
+constexpr bool UNSEEN_CLAIM = false;
+constexpr bool HARVEST_SPLIT = false;
+constexpr bool NO_REVERSE = false;
+constexpr int FEED_BOOT_LEN = 0;
+constexpr double PEARL_FAR_DECAY = 0.0;
+constexpr double PORTAL_FAR_DECAY = 0.0;
+constexpr int PORTAL_FAR_ROUNDS = 0;
+constexpr int REPEL_RADIUS = 6;
+constexpr double REPEL_WEIGHT = 50.0;
+constexpr double PORTAL_LOITER = 0.0;
+constexpr int HUNT_MIN_PARTS = 10;
+constexpr int HUNT_MARGIN = 4;
+constexpr int HUNT_MAX_LENGTH = 10;
+constexpr int HUNT_MAX_STEPS = 8;
+constexpr bool HUNT_GUARD = true;
+constexpr int END_HUNT_MIN_PARTS = 0;
+constexpr int END_HUNT_RATIO = 2;
+constexpr bool END_HUNT_RESERVE = false;
+constexpr int ALERT_MIN_PARTS = 0;
+constexpr int ALERT_FRESH = 3;
+constexpr int ALERT_RADIUS = 12;
+constexpr bool PORTAL_FALLBACK = false;
+constexpr bool NOMOVE_PORTAL = false;
+constexpr int FEED_LEN_RATIO = 2;
+constexpr bool FEED_VISIBLE = false;
 
-constexpr bool USE_ESCAPE_SPLIT = true;
-// 被困时任何能分裂的长度都逃生：不分裂就是整条没，分裂至少保住尾巴那段。
 constexpr int ESCAPE_MIN_LENGTH = 4;
+constexpr int ESCAPE_TAIL_CLEAR = 2;
 constexpr double ESCAPE_ROOM_MAX = 4.0;
 constexpr double ESCAPE_MARGIN = 4.0;
 
-// 声呐消息里坐标各 7 位，地图边长超过这个值就不再用声呐传领队。
+constexpr double HARVEST_SEGMENT_VALUE = 150.0;
+
+constexpr int HARVEST_MIN_NET = 1;
+
+constexpr int HARVEST_MAX_LENGTH = 6;
+constexpr int HARVEST_INSIDE_SLACK = 2;
+
+constexpr int LONG_SAFE_MIN_LENGTH = 8;
+constexpr double LONG_THREAT_VETO = 1e6;
+constexpr int DODGE_MIN_LENGTH = 12;
+constexpr int BIG_GUARD_MIN_LENGTH = 15;
+constexpr int BIG_REACH_BONUS = 2;
+constexpr int BIG_SPRINT_EVALS = 8;
+constexpr int GHOST_ROUNDS = 3;
+constexpr int BIG_DEAD_LEVEL = 2;
+
+constexpr int CONTEST_MAX_LENGTH = 4;
+constexpr int CONTEST_SLACK = 1;
+constexpr double CHILD_MIN_ROOM = 4.0;
+constexpr int ESCAPE_RESERVE = 2;
+
 constexpr int SONAR_COORD_MAX = 127;
 
-constexpr bool USE_PORTALS = true;
 constexpr int PORTAL_NONE = -1;
 constexpr int PORTAL_UNKNOWN = -2;
 constexpr int PORTAL_SCOUT_MAX_LENGTH = 6;
 constexpr double PORTAL_SAFETY_MARGIN = 6.0;
+constexpr int PORTAL_GUARD_LENGTH = 10;
+constexpr int PORTAL_GUARD_ENEMY_CLEAR = 4;
+constexpr int PORTAL_GUARD_LEADER_MIN = 6;
 
 constexpr std::uint8_t EDGE_UNKNOWN = 0;
 constexpr std::uint8_t EDGE_OPEN = 1;
@@ -80,19 +207,46 @@ constexpr std::uint8_t EDGE_PORTAL = 3;
 constexpr double WEIGHT_SPACE = 1.5;
 constexpr double WEIGHT_TERRITORY = 1.5;
 constexpr double UNSEEN_DISCOUNT = 0.5;
+constexpr double BARREN_TERRITORY = 0.3;
+constexpr double TERRITORY_TIME_SCALE = 80.0;
 constexpr double PENALTY_TIGHT = 400.0;
 constexpr double PENALTY_TRAPPED = 5000.0;
 constexpr double TARGET_REWARD = 260.0;
-constexpr double TARGET_DECAY = 16.0;
+constexpr double TARGET_DECAY = 40.0;
 constexpr double WEIGHT_PEARL = 1.0;
 constexpr double WEIGHT_SOON = 0.45;
+
+constexpr int SOON_SLACK = 6;
+constexpr int HOT_TIMER = 4;
+constexpr int HOT_MIN_GAP = 6;
+constexpr int HOT_MAX_GAP = 25;
+constexpr int HOT_FALSE_TIMER = 8;
+constexpr int HOT_ENEMY_SLACK = 1;
+constexpr double WEIGHT_HOT = 1.2;
+constexpr double CENTER_PULL = 40.0;
+constexpr int CENTER_ROUNDS = 60;
+constexpr int CENTER_MAX_LENGTH = 4;
+constexpr int CENTER_MAX_CELLS = 1000;
+constexpr int CENTER_SMALL_CELLS = 700;
+constexpr int CENTER_SMALL_ROUNDS = 30;
+constexpr int CENTER_OUTNUMBER_MARGIN = 0;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
-constexpr double SCORE_PORTAL = -100000.0;
-constexpr bool USE_PORTAL_SCOUT = true;
+constexpr double SCORE_PORTAL = -1e9;
+
+constexpr double PORTAL_LEAP_PENALTY = 150.0;
+constexpr double PORTAL_LEAP_SMALL = 0.0;
+constexpr int BOX_MAX_CELLS = 40;
 constexpr double WEIGHT_PORTAL_SCOUT = 0.40;
 constexpr double SCORE_REJECT = -1e15;
+
+struct Ghost {
+    int id = -1;
+    Position pos{};
+    int round = -1;
+    int parts = 0;
+};
 
 struct Survey {
     int area_seen = 0;
@@ -101,10 +255,13 @@ struct Survey {
     double own_unseen = 0;
     int dist_pearl = -1;
     int dist_soon = -1;
+    int dist_hot = -1;
     int dist_unseen = -1;
     int dist_feed = -1;
+    int dist_plan = -1;
     int dist_trade = -1;
     int dist_portal = -1;
+    int pearls = 0;
     bool reaches_tail = false;
 };
 
@@ -123,8 +280,16 @@ class Bot {
         pearl_here.assign(cells, 0);
         pearl_timer.assign(cells, -2);
         seen_round.assign(cells, -1);
+        hot.assign(cells, 0);
+        low_seen.assign(cells, -1000);
         enter_time.assign(cells, 0);
-        enemy_head_stamp.assign(cells, -1);
+        trade_target_stamp.assign(cells, -1);
+        hunt_stamp.assign(cells, -1);
+        threat_stamp.assign(cells, 0);
+        threat_depth.assign(cells, 0);
+        threat_depth_small.assign(cells, 0);
+        bfs_parent.assign(cells, -1);
+        bfs_via.assign(cells, 'N');
         rival_dist.assign(cells, 0);
         rival_stamp.assign(cells, 0);
         ally_dist.assign(cells, 0);
@@ -132,41 +297,194 @@ class Bot {
         visit_stamp.assign(cells, 0);
         step_count.assign(cells, 0);
         eaten_count.assign(cells, 0);
-        bfs_queue.resize(static_cast<std::size_t>(cells));
+        bfs_queue.resize(static_cast<std::size_t>(cells) * 2);
+        bfs_beyond.resize(static_cast<std::size_t>(cells) * 2);
+        beyond_portal.assign(cells, 0);
         sonar_tag = controller.get_team().value == unswbc::Team::A ? 0x2 : 0x1;
-        sonar_enabled = USE_SONAR_LEADER && width <= SONAR_COORD_MAX + 1 && height <= SONAR_COORD_MAX + 1;
+        sonar_enabled = width <= SONAR_COORD_MAX + 1 && height <= SONAR_COORD_MAX + 1;
+        aggressive = cells <= AGGRESSIVE_MAX_CELLS;
+        grow_round = aggressive ? LEADER_GROW_ROUND : LEADER_GROW_ROUND_BIG;
+        center_map = cells <= CENTER_MAX_CELLS && (width >= 2 * height || cells <= CENTER_SMALL_CELLS);
+        center_rounds = width >= 2 * height ? CENTER_ROUNDS : CENTER_SMALL_ROUNDS;
+        center_margin = width >= 2 * height ? cells : CENTER_OUTNUMBER_MARGIN;
+    }
+
+    void split_off(int child) {
+        split_now = true;
+        ct.do_split(child);
     }
 
     void take_turn() {
+        act_dirs.clear();
+        split_now = false;
+        act();
+        broadcast_leader();
+    }
+
+    void act() {
         observe();
 
-        if (DEBUG_STATS) {
-            ct.output_log("STAT", length);
+        std::vector<Direction> hunt;
+        if (hunt_path(hunt)) {
+            ct.make_moves(hunt);
+            act_dirs = hunt;
+            remember_path(hunt);
+            return;
         }
 
-        broadcast_leader();
+        if (merge_ready()) {
+            ct.output_log("MERGEDIE", length);
+            return;
+        }
 
         if (ready_to_die()) {
             ct.output_log("FEEDDIE", length, known_leader_id, known_leader_len);
             return;
         }
 
-        int const child = split_child_size();
-        if (child > 0) {
-            ct.do_split(child);
+        
+        plan_update();
+        escape_update();
+        route_target = escape_target >= 0 ? escape_target : plan_target;
+        rally_on = false;
+        if (route_target < 0 && rally_ready()) {
+            route_target = index_of(known_leader_pos);
+            rally_on = true;
+        }
+        if (route_target < 0 && alert_route()) {
+            route_target = index_of(alert_pos);
+            rally_on = true;
+        }
+        Direction const best = pick_direction();
+
+        std::vector<Direction> path;
+        if (ram_path(path)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
             return;
         }
 
-        Direction const best = pick_direction();
-        int const escape = escape_child_size();
-        if (escape > 0) {
-            if (DEBUG_SPLIT) {
-                ct.output_log("ESC len", length, "room", chosen_room);
+        
+        
+        if (PORTAL_FALLBACK && portal_fallback >= 0 && length >= LONG_SAFE_MIN_LENGTH &&
+            (!any_enterable || (chosen_scored && chosen_room <= ESCAPE_ROOM_MAX && !chosen_reaches_tail))) {
+            Direction const through = Direction::get_direction_list()[static_cast<std::size_t>(portal_fallback)];
+            ct.make_move(through);
+            act_dirs.assign(1, through);
+            return;
+        }
+
+        if (NOMOVE_PORTAL && !any_enterable) {
+            int known = -1;
+            int blind = -1;
+            auto const directions = Direction::get_direction_list();
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (edge_at(head, directions[k]) != EDGE_PORTAL) {
+                    continue;
+                }
+                int const exit = portal_exit(head, directions[k]);
+                if (MOUTH_WARN && (exit >= 0 ? mouth_fresh(exit) : mouth_fresh(-1))) {
+                    continue;
+                }
+                if (PORTAL_SELF_CHECK && exit >= 0 && on_own_body(exit)) {
+                    continue;
+                }
+                if (exit >= 0 && enter_time[exit] <= 1 && known < 0) {
+                    known = static_cast<int>(k);
+                } else if (exit < 0 && blind < 0) {
+                    blind = static_cast<int>(k);
+                }
             }
-            ct.do_split(escape);
+            int const pick = known >= 0 ? known : blind;
+            if (pick >= 0) {
+                Direction const through = directions[static_cast<std::size_t>(pick)];
+                ct.make_move(through);
+                act_dirs.assign(1, through);
+                return;
+            }
+        }
+
+        if (!any_enterable) {
+            int const escape = escape_child_size();
+            if (escape > 0) {
+                split_off(escape);
+                return;
+            }
+        }
+
+        if (cornered && is_big() && sprint_escape(path, true)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
+            return;
+        }
+
+        if (cornered && tail_index >= 0 && threat_at(tail_index) == 0) {
+            int const tail_part = length - unswbc::Constants::MIN_SIZE;
+            if (ct.can_split(tail_part) && tail_room() >= CHILD_MIN_ROOM) {
+                split_off(tail_part);
+                return;
+            }
+        }
+
+        harvesting_now = chosen_harvest || harvest_round == round - 1;
+        if (chosen_harvest) {
+            harvest_round = round;
+        }
+        int const escape = harvesting_now ? escape_child_size() : 0;
+        if (escape > 0) {
+            split_off(escape);
+            return;
+        }
+
+        if (deny_path(path)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
+            return;
+        }
+
+        int const child = split_child_size();
+        if (child > 0) {
+            split_off(child);
+            return;
+        }
+
+        int const late_escape = harvesting_now ? 0 : escape_child_size();
+        if (late_escape > 0) {
+            split_off(late_escape);
+            return;
+        }
+        if (grab_path(path)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
+            return;
+        }
+        if (sprint_escape(path, false)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
             return;
         }
         ct.make_move(best);
+        act_dirs.assign(1, best);
+    }
+
+    
+    void remember_path(std::vector<Direction> const& path) {
+        pending_path.clear();
+        Position cell = head;
+        for (Direction const direction : path) {
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                pending_path.clear();
+                return;
+            }
+            cell = position_of(next);
+            pending_path.push_back(cell);
+        }
     }
 
   private:
@@ -174,33 +492,98 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
-        if (round > LEADER_GROW_ROUND && length > SPLIT_MIN_LENGTH) {
+        if (round > grow_round && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
         if (ct.get_unit_count() >= SPLIT_SOFT_LIMIT) {
             return 0;
         }
-        int const child = SPLIT_IN_HALF ? length / 2 : unswbc::Constants::MIN_SIZE;
+        if (in_pocket()) {
+            return 0;
+        }
+        if (SPLIT_ENEMY_RADIUS > 0 && length < SPLIT_ENEMY_MIN_LEN) {
+            for (Position const& enemy : enemy_heads) {
+                if (manhattan(enemy, head) <= SPLIT_ENEMY_RADIUS) {
+                    return 0;
+                }
+            }
+        }
+        
+        
+        if (harvesting_now && !HARVEST_SPLIT) {
+            return 0;
+        }
+        int const child = unswbc::Constants::MIN_SIZE;
         if (!ct.can_split(child)) {
             return 0;
         }
-        // 分裂这一回合原地不动，敌头能踩到我头就先别分。
-        if (can_step_to(enemy_heads, head)) {
+        
+        if (tail_index < 0) {
+            return child;
+        }
+        
+        
+        if (!child_has_exit() || tail_room() < CHILD_MIN_ROOM) {
             return 0;
         }
-        // 子龙的头落在我的尾巴上，尾巴那边的空地要够它活：一格死角它第一步就死，一条短死胡同也撑不了几步。
-        if (tail_index < 0 || tail_room() < child + 2.0) {
+        
+        if (child_spans_portal(child)) {
             return 0;
+        }
+        if (MOUTH_WARN) {
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(trail.back(), direction) == EDGE_PORTAL) {
+                    return 0;
+                }
+            }
         }
         return child;
     }
 
+    bool tail_threatened() const {
+        if (ESCAPE_TAIL_CLEAR <= 0 || trail.empty()) {
+            return false;
+        }
+        Position const tail = trail.back();
+        for (Position const& enemy : enemy_heads) {
+            if (manhattan(enemy, tail) <= ESCAPE_TAIL_CLEAR) {
+                return true;
+            }
+        }
+        for (Ghost const& ghost : ghosts) {
+            if (manhattan(ghost.pos, tail) <= ESCAPE_TAIL_CLEAR + round - ghost.round) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool child_has_exit() const {
+        Position const tail = trail.back();
+        for (Direction const direction : Direction::get_direction_list()) {
+            int const next = step_index(tail, direction);
+            if (next >= 0 && enter_time[next] == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool child_spans_portal(int child) const {
+        for (int k = length - child; k + 1 < length; k++) {
+            if (manhattan(trail[static_cast<std::size_t>(k)], trail[static_cast<std::size_t>(k) + 1]) != 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     int escape_child_size() {
-        if (!USE_ESCAPE_SPLIT || length < ESCAPE_MIN_LENGTH) {
+        if (length < ESCAPE_MIN_LENGTH) {
             return 0;
         }
-        // no_move: 四个方向物理上都进不去，这回合走必死。
-        // boxed: 最好的方向也只剩几格且追不上自己的尾巴，几步内必死。
+        
+        
         bool const no_move = !any_enterable;
         bool const boxed = chosen_scored && chosen_room <= ESCAPE_ROOM_MAX && !chosen_reaches_tail;
         if (!no_move && !boxed) {
@@ -210,25 +593,68 @@ class Bot {
         if (!ct.can_split(child)) {
             return 0;
         }
+        if (length < LONG_SAFE_MIN_LENGTH && ct.get_unit_count() >= gm.get_unit_limit() - ESCAPE_RESERVE) {
+            return 0;
+        }
         if (no_move) {
-            // 反正要死，把身体交给子龙；父龙留 2 节原地不动，说不定子龙尾巴挪开后还有活路。
+            
             return child;
         }
-        // trail 不完整（刚分裂出来的子龙）时不知道尾巴在哪，也评估不了后方空间，只在必死时才分。
+        
         if (tail_index < 0) {
             return 0;
         }
-        double const behind = tail_room();
-
-        if (DEBUG_SPLIT) {
-            ct.output_log("TRAP len", length, "room", chosen_room, "units", ct.get_unit_count(), "trail",
-                          static_cast<int>(trail.size()), "behind", behind);
+        if (defer_escape() || tail_threatened()) {
+            return 0;
         }
+        double const behind = tail_room();
         return behind >= chosen_room + ESCAPE_MARGIN ? child : 0;
     }
 
+    
+    bool harvestable(int pocket_pearls, double pocket_room, bool inside) {
+        int const min_size = unswbc::Constants::MIN_SIZE;
+        if (is_feeder() || is_leader() || tail_index < 0) {
+            return false;
+        }
+        
+        if (inside ? length > HARVEST_MAX_LENGTH + HARVEST_INSIDE_SLACK || pocket_pearls < 1
+                   : length > HARVEST_MAX_LENGTH || pocket_pearls - min_size < HARVEST_MIN_NET) {
+            return false;
+        }
+        if (length + pocket_pearls < 2 * min_size || length + pocket_pearls <= pocket_room) {
+            return false;
+        }
+        if (ct.get_unit_count() >= gm.get_unit_limit() - ESCAPE_RESERVE) {
+            return false;
+        }
+        if (behind_round != round) {
+            behind_round = round;
+            behind_room = tail_room();
+        }
+        return behind_room >= length + 2.0;
+    }
+
+    
+    
+    bool defer_escape() {
+        if (!chosen_harvest || chosen_pearls <= 0 || chosen_index < 0) {
+            return false;
+        }
+        if (pearl_here[chosen_index]) {
+            return true;
+        }
+        if (static_cast<int>(trail.size()) < 2) {
+            return false;
+        }
+        Survey const next = survey_from(trail[trail.size() - 2], true, false);
+        double const next_room = next.area_seen + UNSEEN_DISCOUNT * next.area_unseen - 1.0;
+        return next_room >= chosen_room + ESCAPE_MARGIN;
+    }
+
     double tail_room() {
-        Survey const survey = survey_from(trail.back(), true);
+        
+        Survey const survey = survey_from(trail.back(), true, false);
         return survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen - 1.0;
     }
 
@@ -317,7 +743,7 @@ class Bot {
             return -1;
         }
         if (edge == EDGE_PORTAL) {
-            int const exit = USE_PORTALS ? portal_exit(position, direction) : PORTAL_NONE;
+            int const exit = portal_exit(position, direction);
             return exit >= 0 ? exit : -1;
         }
         return index_of(position.add_dir(direction));
@@ -331,8 +757,28 @@ class Bot {
     void observe() {
         round = gm.get_round_num();
         length = ct.get_length();
+        if (prev_length >= 0 && length > prev_length) {
+            last_eat_round = round;
+        }
+        prev_length = length;
+        if (LOOP_PENALTY > 0.0) {
+            head_history.emplace_back(round, index_of(ct.get_position()));
+            while (!head_history.empty() && round - head_history.front().first >= LOOP_WINDOW) {
+                head_history.pop_front();
+            }
+        }
         head = ct.get_position();
 
+        if (!pending_path.empty()) {
+            if (pending_path.back() == head) {
+                for (std::size_t k = 0; k + 1 < pending_path.size(); k++) {
+                    if (trail.empty() || !(trail.front() == pending_path[k])) {
+                        trail.push_front(pending_path[k]);
+                    }
+                }
+            }
+            pending_path.clear();
+        }
         if (trail.empty() || !(trail.front() == head)) {
             trail.push_front(head);
         }
@@ -344,17 +790,26 @@ class Bot {
             enter_time[touched] = 0;
         }
         dirty.clear();
-        other_heads.clear();
         ally_heads.clear();
         ally_head_ids.clear();
         ally_head_dirs.clear();
         seen_ids.clear();
         seen_parts.clear();
         enemy_heads.clear();
+        enemy_head_ids.clear();
         own_parts.clear();
         expire_leader();
-        // 自己的长度是精确值，先报自己再听别人。
+        {
+            auto const echoes = ct.get_sonar_echoes();
+            probe_hit = probe_round == round - 1 && echoes.ally + echoes.ally_head + echoes.enemy + echoes.enemy_head > 0;
+        }
+        
         hear_exact(ct.get_id(), length, round, head, ct.get_dir());
+        if (MOUTH_WARN) {
+            mouths.erase(std::remove_if(mouths.begin(), mouths.end(),
+                                        [this](std::pair<int, int> const& entry) { return round - entry.second > 1; }),
+                         mouths.end());
+        }
         hear_sonar();
 
         for (auto const& tile : ct.get_tiles()) {
@@ -364,6 +819,7 @@ class Bot {
             pearl_here[index] = tile.has_pearl() ? 1 : 0;
             pearl_timer[index] = tile.get_pearl_time();
             seen_round[index] = round;
+            note_hot(index);
 
             for (Direction const direction : Direction::get_direction_list()) {
                 remember_edge(position, direction, tile.get_edge(direction));
@@ -375,21 +831,18 @@ class Bot {
             }
             if (part->get_id() != ct.get_id()) {
                 mark_blocked(index);
-                if (part->get_team() == ct.get_team()) {
-                    count_ally_part(part->get_id());
-                }
+                count_part(part->get_id());
             } else {
                 own_parts.push_back(index);
             }
             if (part->is_head() && part->get_id() != ct.get_id()) {
-                other_heads.push_back(position);
                 if (part->get_team() == ct.get_team()) {
                     ally_heads.push_back(position);
                     ally_head_ids.push_back(part->get_id());
                     ally_head_dirs.push_back(part->get_dir());
                 } else {
                     enemy_heads.push_back(position);
-                    enemy_head_stamp[index] = round;
+                    enemy_head_ids.push_back(part->get_id());
                 }
             }
         }
@@ -419,10 +872,48 @@ class Bot {
         pick_feed_target();
         refresh_leader_zone();
         map_rivals();
+        map_threats();
+        mark_trade_targets();
+        mark_hunt_targets();
+        note_alert();
     }
 
-    // trail 只记录见过的头位置，开局和刚分裂出来的子龙都不知道自己身体在哪。
-    // 身体段的朝向指向前一节，所以可以从头开始沿视野把身体走出来。
+    void note_alert() {
+        alert_new = alert_new && alert_heard_round == round;
+        if (ALERT_MIN_PARTS <= 0 || !sonar_enabled || !feeding_phase()) {
+            return;
+        }
+        int best = -1;
+        int best_parts = ALERT_MIN_PARTS - 1;
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const parts = visible_parts(enemy_head_ids[k]);
+            if (parts > best_parts) {
+                best_parts = parts;
+                best = static_cast<int>(k);
+            }
+        }
+        if (best < 0) {
+            return;
+        }
+        alert_id = enemy_head_ids[static_cast<std::size_t>(best)];
+        alert_parts = best_parts;
+        alert_round = round;
+        alert_pos = enemy_heads[static_cast<std::size_t>(best)];
+        alert_new = true;
+    }
+
+    bool alert_route() const {
+        if (ALERT_MIN_PARTS <= 0 || alert_round < 0 || round - alert_round > ALERT_FRESH || !feeding_phase() ||
+            is_leader() || is_feeder() || is_trader() || known_leader_id < 0 || known_leader_id == ct.get_id() ||
+            length >= known_leader_len || length < 3 || (END_HUNT_RESERVE && length * 2 > known_leader_len)) {
+            return false;
+        }
+        int const dist = manhattan(head, alert_pos);
+        return dist > 3 && dist <= ALERT_RADIUS;
+    }
+
+    
+    
     void extend_trail_from_vision() {
         while (static_cast<int>(trail.size()) < length) {
             Position const last = trail.back();
@@ -455,7 +946,22 @@ class Bot {
         }
     }
 
-    void count_ally_part(int id) {
+    void note_hot(int index) {
+        int const timer = pearl_timer[index];
+        if (timer >= 0 && timer <= HOT_TIMER) {
+            int const gap = round - low_seen[index];
+            if (gap >= HOT_MIN_GAP && gap <= HOT_MAX_GAP) {
+                hot[index] = 1;
+            }
+            if (gap >= HOT_MIN_GAP) {
+                low_seen[index] = round;
+            }
+        } else if (timer > HOT_FALSE_TIMER) {
+            hot[index] = 0;
+        }
+    }
+
+    void count_part(int id) {
         for (std::size_t slot = 0; slot < seen_ids.size(); slot++) {
             if (seen_ids[slot] == id) {
                 seen_parts[slot]++;
@@ -489,7 +995,7 @@ class Bot {
         return sum;
     }
 
-    // 消息布局（低位起）：id 16 | len 12 | when 9 | x 7 | y 7 | face 2 | tag 2 | 校验 8，共 63 位。
+    
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
         std::uint64_t const body = (static_cast<std::uint64_t>(id) & 0xFFFF) |
                                    ((static_cast<std::uint64_t>(len) & 0xFFF) << 16) |
@@ -504,7 +1010,7 @@ class Bot {
     bool unpack_leader(std::uint64_t message, int& id, int& len, int& when, Position& pos,
                        Direction& facing) const {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 53) & 0x3) != sonar_tag) {
+        if ((message >> 63) != 0 || ((body >> 53) & 0x3) != sonar_tag) {
             return false;
         }
         if (sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55)) {
@@ -540,8 +1046,8 @@ class Bot {
         }
     }
 
-    // 精确情报：来源是那条龙自己的汇报（自己这回合，或别人原样转发的声呐）。
-    // 同一条龙更新的消息直接覆盖，长度变短（分裂了）也照样接受；旧转发因为 when 更早会被忽略。
+    
+    
     void hear_exact(int id, int len, int when, Position pos, Direction facing) {
         if (!plausible_report(id, len, when, pos)) {
             return;
@@ -564,7 +1070,7 @@ class Bot {
         }
     }
 
-    // 视野里看到的友军头：位置和朝向是准的，可见节数只是长度下界，不能当精确长度用。
+    
     void hear_sighting(int id, int visible, Position pos, Direction facing) {
         if (id == known_leader_id) {
             known_leader_len = std::max(known_leader_len, visible);
@@ -591,22 +1097,197 @@ class Bot {
             int when = -1;
             Position pos{};
             Direction facing = dir_of(Direction::NORTH);
-            // 关于我自己的消息是别人的转发，不会比我自己知道得更准。
+            
             if (unpack_leader(message, id, len, when, pos, facing) && id != ct.get_id()) {
                 hear_exact(id, len, when, pos, facing);
+            } else if (PORTAL_GOSSIP && (message >> 63) != 0 && learn_portal(message)) {
+                continue;
+            } else if (MOUTH_WARN && (message >> 63) != 0 && learn_mouth(message)) {
+                continue;
+            } else if (ALERT_MIN_PARTS > 0 && (message >> 63) != 0 &&
+                       unpack_leader(message & ~(1ULL << 63), id, len, when, pos, facing) && round - when <= ALERT_FRESH &&
+                       (when > alert_round || (when == alert_round && len > alert_parts))) {
+                alert_id = id;
+                alert_parts = len;
+                alert_round = when;
+                alert_pos = pos;
+                alert_new = true;
+                alert_heard_round = round;
             }
         }
     }
 
     void broadcast_leader() {
-        if (!sonar_enabled || known_leader_id < 0) {
+        std::uint64_t const message =
+            sonar_enabled && known_leader_id >= 0
+                ? pack_leader(known_leader_id, known_leader_len, known_leader_round, known_leader_pos, known_leader_dir)
+                : 0;
+        if (PORTAL_PROBE && send_probe(message)) {
             return;
         }
-        std::uint64_t const message =
-            pack_leader(known_leader_id, known_leader_len, known_leader_round, known_leader_pos, known_leader_dir);
-        for (Direction const direction : Direction::get_direction_list()) {
-            ct.send_sonar(direction, message);
+        if (ALERT_MIN_PARTS > 0 && sonar_enabled && alert_new && round - alert_round <= ALERT_FRESH) {
+            std::uint64_t const alert = pack_leader(alert_id, alert_parts, alert_round, alert_pos, dir_of(Direction::NORTH)) |
+                                        (1ULL << 63);
+            for (Direction const direction : Direction::get_direction_list()) {
+                ct.send_sonar(direction, alert);
+            }
+            return;
         }
+        if (!sonar_enabled) {
+            return;
+        }
+        auto const directions = Direction::get_direction_list();
+        int gossip_dir = -1;
+        int neck_dir = -1;
+        std::uint64_t gossip = 0;
+        if (PORTAL_GOSSIP && !feeding_phase()) {
+            std::vector<int> known;
+            for (std::size_t id = 0; id < portal_edges.size(); id++) {
+                if (portal_edges[id][0] >= 0 && portal_edges[id][1] >= 0) {
+                    known.push_back(static_cast<int>(id));
+                }
+            }
+            if (!known.empty()) {
+                int const pick = known[static_cast<std::size_t>((round / 4 + ct.get_id()) % static_cast<int>(known.size()))];
+                gossip = pack_portal(pick, portal_edges[static_cast<std::size_t>(pick)][0],
+                                     portal_edges[static_cast<std::size_t>(pick)][1]);
+                gossip_dir = (round + ct.get_id()) % 4;
+                if (split_now && trail.size() >= 2) {
+                    for (std::size_t k = 0; k < directions.size(); k++) {
+                        if (step_index(head, directions[k]) == index_of(trail[1])) {
+                            neck_dir = static_cast<int>(k);
+                        }
+                    }
+                }
+            }
+        }
+        int mouth_dir = -1;
+        Position post = head;
+        if (MOUTH_WARN) {
+            bool ok = true;
+            for (Direction const direction : act_dirs) {
+                int const next = step_index(post, direction);
+                if (next < 0) {
+                    ok = false;
+                    break;
+                }
+                post = position_of(next);
+            }
+            for (std::size_t k = 0; ok && k < directions.size() && mouth_dir < 0; k++) {
+                if (edge_at(post, directions[k]) == EDGE_PORTAL) {
+                    mouth_dir = static_cast<int>(k);
+                }
+            }
+        }
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            if (static_cast<int>(k) == mouth_dir) {
+                ct.send_sonar(directions[k], pack_mouth(index_of(post)));
+            } else if (static_cast<int>(k) == gossip_dir || static_cast<int>(k) == neck_dir) {
+                ct.send_sonar(directions[k], gossip);
+            } else if (known_leader_id >= 0) {
+                ct.send_sonar(directions[k], message);
+            }
+        }
+    }
+
+    std::uint64_t pack_mouth(int cell) const {
+        std::uint64_t const body = (static_cast<std::uint64_t>(cell) & 0x3FFF) |
+                                   ((static_cast<std::uint64_t>(round) & 0x1FF) << 14) |
+                                   (static_cast<std::uint64_t>(0xA5) << 38) | ((sonar_tag & 0x3) << 53);
+        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+    }
+
+    bool learn_mouth(std::uint64_t message) {
+        std::uint64_t const body = message & ((1ULL << 55) - 1);
+        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
+            ((body >> 38) & 0x7FFF) != 0xA5 || ((body >> 23) & 0x7FFF) != 0) {
+            return false;
+        }
+        int const cell = static_cast<int>(body & 0x3FFF);
+        int const when = static_cast<int>((body >> 14) & 0x1FF);
+        if (cell >= cells || when > round || round - when > 1) {
+            return false;
+        }
+        mouths.emplace_back(cell, when);
+        return true;
+    }
+
+    bool on_own_body(int cell) const {
+        for (Position const& part : trail) {
+            if (index_of(part) == cell) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool mouth_fresh(int cell) const {
+        for (auto const& entry : mouths) {
+            if (round - entry.second <= 1 && (cell < 0 || entry.first == cell)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::uint64_t pack_portal(int id, int key0, int key1) const {
+        std::uint64_t const body = (static_cast<std::uint64_t>(key0) & 0x7FFF) |
+                                   ((static_cast<std::uint64_t>(key1) & 0x7FFF) << 15) |
+                                   ((static_cast<std::uint64_t>(id) & 0xFF) << 30) |
+                                   ((sonar_tag & 0x3) << 53);
+        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+    }
+
+    bool learn_portal(std::uint64_t message) {
+        std::uint64_t const body = message & ((1ULL << 55) - 1);
+        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
+            ((body >> 38) & 0x7FFF) != 0) {
+            return false;
+        }
+        int const key0 = static_cast<int>(body & 0x7FFF);
+        int const key1 = static_cast<int>((body >> 15) & 0x7FFF);
+        int const id = static_cast<int>((body >> 30) & 0xFF);
+        if (key0 == key1 || key0 >= 2 * cells || key1 >= 2 * cells) {
+            return false;
+        }
+        for (int const key : {key0, key1}) {
+            int const index = key / 2;
+            bool const horizontal = key % 2 == 0;
+            (horizontal ? north_edge : west_edge)[index] = EDGE_PORTAL;
+            remember_portal(index, horizontal, id);
+        }
+        return true;
+    }
+
+    bool send_probe(std::uint64_t message) {
+        Position cell = head;
+        for (Direction const direction : act_dirs) {
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                return false;
+            }
+            cell = position_of(next);
+        }
+        auto const directions = Direction::get_direction_list();
+        int chosen = -1;
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            if (edge_at(cell, directions[k]) == EDGE_PORTAL &&
+                (chosen < 0 || (!act_dirs.empty() && directions[k].value == act_dirs.back().value))) {
+                chosen = static_cast<int>(k);
+            }
+        }
+        if (chosen < 0) {
+            return false;
+        }
+        ct.send_sonar(directions[static_cast<std::size_t>(chosen)], message);
+        probe_dir = chosen;
+        probe_round = round;
+        probe_from = index_of(cell);
+        return true;
+    }
+
+    bool probe_blocks(int k) const {
+        return PORTAL_PROBE && probe_hit && k == probe_dir && index_of(head) == probe_from;
     }
 
     bool leader_in_vision() const {
@@ -681,8 +1362,8 @@ class Bot {
         return manhattan(cell, live_leader_head()) <= FEEDER_KEEP_OFF;
     }
 
-    // 投放点：领队前方 FEEDER_DROP_MIN..FEEDER_DROP_MAX 格的路两侧。
-    // 沿着领队朝向用 step_index 走，遇到海草就停：墙后面的格子领队到不了，送了也白送。
+    
+    
     void compute_drop_cells() {
         drop_cells.clear();
         if (known_leader_id < 0 || known_leader_id == ct.get_id()) {
@@ -702,7 +1383,7 @@ class Bot {
             Direction const sides[2] = {facing.get_left(), facing.get_right()};
             for (Direction const side : sides) {
                 int const cell = step_index(along, side);
-                if (cell < 0 || enter_time[cell] >= BLOCKED_FOREVER) {
+                if (cell < 0 || enter_time[cell] >= BLOCKED_FOREVER || pearl_here[cell]) {
                     continue;
                 }
                 Position const position = position_of(cell);
@@ -719,17 +1400,19 @@ class Bot {
         return std::find(drop_cells.begin(), drop_cells.end(), index) != drop_cells.end();
     }
 
-    // 节流只管"开始"当喂食者；已经在路上的保持角色，直到条件不满足或领队换人。
+    
     void pick_feed_target() {
         bool const was_feeding = feed_id >= 0 && feed_id == known_leader_id;
         feed_index = -1;
         feed_id = -1;
-        if (!USE_FEEDER_SACRIFICE || round <= ENDGAME_ROUND || known_leader_id < 0 ||
-            known_leader_id == ct.get_id() || known_leader_len < 2 || length * 2 > known_leader_len ||
-            ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+        bool const final_phase = FINAL_ROUNDS > 0 && round >= unswbc::Constants::MAX_ROUNDS - FINAL_ROUNDS;
+        if (!feeding_phase() || known_leader_id < 0 ||
+            known_leader_id == ct.get_id() || known_leader_len < 2 ||
+            (final_phase ? length >= known_leader_len : !feed_len_ok()) ||
+            (!final_phase && ct.get_unit_count() <= FEEDER_KEEP_UNITS)) {
             return;
         }
-        if (manhattan(head, live_leader_head()) > FEEDER_APPROACH) {
+        if (manhattan(head, live_leader_head()) > (final_phase ? FINAL_APPROACH : FEEDER_APPROACH)) {
             return;
         }
         if (!was_feeding && ct.get_id() % FEEDER_THROTTLE != (round / FEEDER_THROTTLE_PERIOD) % FEEDER_THROTTLE) {
@@ -744,11 +1427,28 @@ class Bot {
                 feed_index = cell;
             }
         }
+        if (feed_index < 0) {
+            
+            feed_index = index_of(live_leader_head());
+        }
+    }
+
+    
+    bool blocks_leader_front(Position cell) const {
+        Position const origin = live_leader_head();
+        Direction const facing = live_leader_dir();
+        int const along = forward_along(cell, origin, facing);
+        return across_axis(cell, origin, facing) == 0 && along > 0 && along <= FEEDER_FRONT_CLEAR;
+    }
+
+    bool beside_visible_leader() const {
+        return leader_in_vision() && manhattan(head, live_leader_head()) <= FEEDER_DIE_DIST &&
+               !blocks_leader_front(head);
     }
 
     void refresh_leader_zone() {
         zone_active = false;
-        if (round <= (LEADER_ZONE_EARLY ? LEADER_GROW_ROUND : ENDGAME_ROUND) || known_leader_id < 0 ||
+        if (round <= grow_round || known_leader_id < 0 ||
             known_leader_id == ct.get_id()) {
             return;
         }
@@ -802,13 +1502,10 @@ class Bot {
     }
 
     void map_rivals() {
-        if (!USE_VORONOI) {
-            return;
-        }
         rival_mark++;
         flood_heads(enemy_heads, rival_dist, rival_stamp, rival_mark);
         ally_mark++;
-        flood_heads(VORONOI_ALLIES ? other_heads : ally_heads, ally_dist, ally_stamp, ally_mark);
+        flood_heads(ally_heads, ally_dist, ally_stamp, ally_mark);
     }
 
     int rival_steps(int index) const {
@@ -826,7 +1523,437 @@ class Bot {
         enter_time[index] = BLOCKED_FOREVER;
     }
 
-    Survey survey_from(Position start, bool strict_bodies = false) {
+    
+    
+    
+    
+    void update_ghosts() {
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const id = enemy_head_ids[k];
+            auto found = std::find_if(ghosts.begin(), ghosts.end(), [id](Ghost const& g) { return g.id == id; });
+            if (found == ghosts.end()) {
+                ghosts.push_back(Ghost{id, enemy_heads[k], round, visible_parts(id)});
+            } else {
+                found->pos = enemy_heads[k];
+                found->round = round;
+                found->parts = std::max(found->parts, visible_parts(id));
+            }
+        }
+        ghosts.erase(std::remove_if(ghosts.begin(), ghosts.end(),
+                                    [this](Ghost const& g) { return round - g.round > GHOST_ROUNDS; }),
+                     ghosts.end());
+    }
+
+    void map_threats() {
+        threat_mark++;
+        update_ghosts();
+        std::size_t const sources = enemy_heads.size() + (is_big() ? ghosts.size() : 0);
+        for (std::size_t k = 0; k < sources; k++) {
+            bool const ghost = k >= enemy_heads.size();
+            Ghost const* g = ghost ? &ghosts[k - enemy_heads.size()] : nullptr;
+            if (ghost && g->round == round) {
+                continue;
+            }
+            int const parts = ghost ? g->parts : visible_parts(enemy_head_ids[k]);
+            bool const small = !ghost && parts < TRADE_TARGET_MIN_PARTS;
+            int const reach = std::clamp(parts + (is_big() ? BIG_REACH_BONUS : 0), THREAT_REACH_MIN, THREAT_REACH_MAX) +
+                              (ghost ? round - g->round : 0);
+            Position const from = ghost ? g->pos : enemy_heads[k];
+            visit_mark++;
+            int queue_head = 0;
+            int queue_tail = 0;
+            int const origin = index_of(from);
+            visit_stamp[origin] = visit_mark;
+            step_count[origin] = 0;
+            bfs_queue[queue_tail++] = from;
+            while (queue_head < queue_tail) {
+                Position const position = bfs_queue[queue_head++];
+                int const steps = step_count[index_of(position)];
+                if (steps >= reach) {
+                    continue;
+                }
+                for (Direction const direction : Direction::get_direction_list()) {
+                    int const next = step_index(position, direction);
+                    if (next < 0 || visit_stamp[next] == visit_mark) {
+                        continue;
+                    }
+                    if (enter_time[next] != 0 && enter_time[next] != 2) {
+                        continue;
+                    }
+                    visit_stamp[next] = visit_mark;
+                    step_count[next] = steps + 1;
+                    int const depth = std::min(reach - steps, THREAT_REACH_MAX);
+                    if (threat_stamp[next] != threat_mark) {
+                        threat_stamp[next] = threat_mark;
+                        threat_depth[next] = 0;
+                        threat_depth_small[next] = 0;
+                    }
+                    threat_depth[next] = std::max(threat_depth[next], depth);
+                    if (small && steps + 1 <= SMALL_UNIT_THREAT_REACH) {
+                        threat_depth_small[next] = std::max(threat_depth_small[next], 1);
+                    }
+                    bfs_queue[queue_tail++] = position_of(next);
+                }
+            }
+        }
+    }
+
+    bool is_big() const { return length >= BIG_GUARD_MIN_LENGTH; }
+
+    int exposure_at(int index) const { return threat_stamp[index] == threat_mark ? threat_depth[index] : 0; }
+
+    int threat_at(int index) const {
+        if (threat_stamp[index] != threat_mark) {
+            return 0;
+        }
+        return length <= TRADE_MAX_LENGTH ? threat_depth_small[index] : threat_depth[index];
+    }
+
+    void mark_hunt_targets() {
+        hunt_targets = 0;
+        if (END_HUNT_MIN_PARTS > 0 && feeding_phase() && !is_leader() && known_leader_id >= 0 &&
+            known_leader_id != ct.get_id() && length < known_leader_len &&
+            (!END_HUNT_RESERVE || length * 2 <= known_leader_len)) {
+            for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+                int const parts = visible_parts(enemy_head_ids[k]);
+                if (parts >= END_HUNT_MIN_PARTS && parts * END_HUNT_RATIO >= length) {
+                    hunt_stamp[index_of(enemy_heads[k])] = round;
+                    hunt_targets++;
+                }
+            }
+            if (hunt_targets > 0) {
+                return;
+            }
+        }
+        if (HUNT_MIN_PARTS <= 0 || is_leader() || length > HUNT_MAX_LENGTH) {
+            return;
+        }
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const parts = visible_parts(enemy_head_ids[k]);
+            bool const big = parts >= HUNT_MIN_PARTS && parts >= length + HUNT_MARGIN;
+            if (big || (HUNT_GUARD && guards_big_ally(enemy_heads[k]))) {
+                hunt_stamp[index_of(enemy_heads[k])] = round;
+                hunt_targets++;
+            }
+        }
+    }
+
+    bool hunt_path(std::vector<Direction>& path) {
+        if (hunt_targets == 0) {
+            return false;
+        }
+        int const reach = std::min(length - 1, HUNT_MAX_STEPS);
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        step_count[start] = 0;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const index = index_of(position);
+            int const steps = step_count[index];
+            if (steps >= reach) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                if (hunt_stamp[next] == round) {
+                    path.clear();
+                    path.push_back(direction);
+                    for (int at = index; at != start; at = bfs_parent[at]) {
+                        path.insert(path.begin(), Direction(bfs_via[at]));
+                    }
+                    return true;
+                }
+                if (enter_time[next] != 0) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_parent[next] = index;
+                bfs_via[next] = static_cast<char>(direction.value);
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        return false;
+    }
+
+    void mark_trade_targets() {
+        trade_targets = 0;
+        bool const at_cap = ct.get_unit_count() >= std::min(gm.get_unit_limit(), SPLIT_SOFT_LIMIT) - 1;
+        bool const normal_ok = round <= ENDGAME_ROUND &&
+                               ct.get_unit_count() >= (aggressive ? AGGRESSIVE_TRADE_MIN_UNITS : TRADE_MIN_UNITS) &&
+                               static_cast<int>(ally_heads.size()) + 1 - static_cast<int>(enemy_heads.size()) >= TRADE_LOCAL_EDGE;
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const parts = visible_parts(enemy_head_ids[k]);
+            bool const worth = at_cap || aggressive ? parts >= length : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
+            if ((normal_ok && worth) || guards_big_ally(enemy_heads[k])) {
+                trade_target_stamp[index_of(enemy_heads[k])] = round;
+                trade_targets++;
+            }
+        }
+    }
+
+    bool guards_big_ally(Position enemy) const {
+        for (std::size_t k = 0; k < ally_heads.size(); k++) {
+            if (visible_parts(ally_head_ids[k]) >= DEFEND_MIN_PARTS && manhattan(ally_heads[k], enemy) <= DEFEND_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    
+    bool ram_path(std::vector<Direction>& path) {
+        if (!is_trader()) {
+            return false;
+        }
+        int const reach = std::min(length - 1, aggressive ? AGGRESSIVE_RAM_MAX_STEPS : RAM_MAX_STEPS);
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        step_count[start] = 0;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const index = index_of(position);
+            int const steps = step_count[index];
+            if (steps >= reach) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                if (is_trade_target_cell(next)) {
+                    path.clear();
+                    path.push_back(direction);
+                    for (int at = index; at != start; at = bfs_parent[at]) {
+                        path.insert(path.begin(), Direction(bfs_via[at]));
+                    }
+                    return true;
+                }
+                if (enter_time[next] != 0) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_parent[next] = index;
+                bfs_via[next] = static_cast<char>(direction.value);
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        return false;
+    }
+
+    
+    bool deny_path(std::vector<Direction>& path) {
+        if (DENY_MAX_STEPS < 2 || is_feeder() || is_leader() || enemy_heads.empty()) {
+            return false;
+        }
+        std::vector<Direction> current;
+        std::vector<int> cells;
+        int best_gain = DENY_MIN_GAIN - 1;
+        int best_pearls = 0;
+        bool found = false;
+        auto const directions = Direction::get_direction_list();
+        int const start = index_of(head);
+        auto search = [&](auto&& self, Position at, int size, int pearls, int lost) -> void {
+            int const steps = static_cast<int>(current.size());
+            if (steps >= 2 && lost > 0) {
+                int const gain = 2 * lost - (steps - 1);
+                int const net = pearls - (steps - 1);
+                int const end = cells.back();
+                bool const safe = !DENY_SAFE || (threat_at(end) == 0 && !enemy_can_step_to(position_of(end)));
+                if (safe && net >= DENY_MIN_NET && (gain > best_gain || (gain == best_gain && found && pearls > best_pearls))) {
+                    best_gain = gain;
+                    best_pearls = pearls;
+                    path = current;
+                    found = true;
+                }
+            }
+            if (steps >= DENY_MAX_STEPS) {
+                return;
+            }
+            for (Direction const direction : directions) {
+                if (edge_at(at, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = step_index(at, direction);
+                if (next < 0 || next == start || enter_time[next] != 0 || seen_round[next] != round ||
+                    std::find(cells.begin(), cells.end(), next) != cells.end()) {
+                    continue;
+                }
+                int after = size - (steps >= 1 ? 1 : 0);
+                if (after < unswbc::Constants::MIN_SIZE) {
+                    continue;
+                }
+                bool const pearl = pearl_here[next] != 0;
+                after += pearl ? 1 : 0;
+                bool const theirs = pearl && rival_steps(next) <= steps + 1;
+                current.push_back(direction);
+                cells.push_back(next);
+                self(self, position_of(next), after, pearls + (pearl ? 1 : 0), lost + (theirs ? 1 : 0));
+                current.pop_back();
+                cells.pop_back();
+            }
+        };
+        search(search, head, length, 0, 0);
+        return found;
+    }
+
+    bool grab_path(std::vector<Direction>& path) {
+        if (GRAB_MAX_STEPS < 2 || length < 3 || is_feeder() || enemy_heads.empty()) {
+            return false;
+        }
+        int const max_steps = std::min(GRAB_MAX_STEPS, length - 1);
+        std::vector<Direction> current;
+        std::vector<int> cells;
+        int best_net = GRAB_MIN_NET - 1;
+        int best_contested = 0;
+        int best_pearls = 0;
+        std::size_t best_len = 0;
+        bool found = false;
+        auto const directions = Direction::get_direction_list();
+        int const start = index_of(head);
+        auto search = [&](auto&& self, Position at, int pearls, int contested) -> void {
+            int const steps = static_cast<int>(current.size());
+            if (steps >= 2 && contested > 0) {
+                int const net = pearls - (steps - 1);
+                int const end = cells.back();
+                bool const safe = (length <= TRADE_MAX_LENGTH && !GRAB_SAFE) ||
+                                  (threat_at(end) == 0 && !enemy_can_step_to(position_of(end)));
+                bool const better =
+                    GRAB_GREEDY
+                        ? (!found || pearls > best_pearls || (pearls == best_pearls && net > best_net) ||
+                           (pearls == best_pearls && net == best_net && contested > best_contested))
+                        : (net > best_net || (net == best_net && contested > best_contested) ||
+                           (net == best_net && contested == best_contested && current.size() < best_len));
+                if (safe && net >= GRAB_MIN_NET && better) {
+                    best_net = net;
+                    best_pearls = pearls;
+                    best_contested = contested;
+                    best_len = current.size();
+                    path = current;
+                    found = true;
+                }
+            }
+            if (steps >= max_steps) {
+                return;
+            }
+            for (Direction const direction : directions) {
+                if (edge_at(at, direction) != EDGE_OPEN && edge_at(at, direction) != EDGE_UNKNOWN) {
+                    continue;
+                }
+                int const next = step_index(at, direction);
+                if (next < 0 || next == start || enter_time[next] != 0 ||
+                    std::find(cells.begin(), cells.end(), next) != cells.end()) {
+                    continue;
+                }
+                int const reach = steps + 1;
+                bool const pearl = pearl_here[next] != 0;
+                bool const fight = pearl && reach >= 2 && rival_steps(next) <= reach + GRAB_SLACK;
+                current.push_back(direction);
+                cells.push_back(next);
+                self(self, position_of(next), pearls + (pearl ? 1 : 0), contested + (fight ? 1 : 0));
+                current.pop_back();
+                cells.pop_back();
+            }
+        };
+        search(search, head, 0, 0);
+        return found;
+    }
+
+    bool sprint_escape(std::vector<Direction>& path, bool force) {
+        if (length < SPRINT_ESCAPE_MIN_LENGTH || !chosen_scored || chosen_index < 0 || threat_at(chosen_index) == 0) {
+            return false;
+        }
+        double best = force ? SCORE_REJECT * 0.5 : chosen_score;
+        bool found = false;
+        int evals = 0;
+        int const max_evals = force ? BIG_SPRINT_EVALS : SPRINT_ESCAPE_MAX_EVALS;
+        int const start = index_of(head);
+        for (int const steps : {2, 3}) {
+            if (found || (steps == 3 && (!force || length <= 3))) {
+                break;
+            }
+            for (Direction const first : Direction::get_direction_list()) {
+                if (edge_at(head, first) == EDGE_PORTAL) {
+                    continue;
+                }
+                int const c1 = step_index(head, first);
+                if (c1 < 0 || enter_time[c1] > 1) {
+                    continue;
+                }
+                Position const p1 = position_of(c1);
+                for (Direction const second : Direction::get_direction_list()) {
+                    if (second == first.get_opposite() || edge_at(p1, second) == EDGE_PORTAL) {
+                        continue;
+                    }
+                    int const c2 = step_index(p1, second);
+                    if (c2 < 0 || c2 == start) {
+                        continue;
+                    }
+                    int const free2 = enter_time[c2];
+                    if (!(free2 == 0 || (free2 == 2 && !pearl_here[c1]))) {
+                        continue;
+                    }
+                    if (steps == 2) {
+                        if (threat_at(c2) > 0) {
+                            continue;
+                        }
+                        if (evals++ >= max_evals) {
+                            return found;
+                        }
+                        double const score = score_step(position_of(c2)) - SPRINT_ESCAPE_COST;
+                        if (score > best) {
+                            best = score;
+                            path = {first, second};
+                            found = true;
+                        }
+                        continue;
+                    }
+                    if (free2 != 0) {
+                        continue;
+                    }
+                    Position const p2 = position_of(c2);
+                    for (Direction const third : Direction::get_direction_list()) {
+                        if (third == second.get_opposite() || edge_at(p2, third) == EDGE_PORTAL) {
+                            continue;
+                        }
+                        int const c3 = step_index(p2, third);
+                        if (c3 < 0 || c3 == start || c3 == c1 || threat_at(c3) > 0) {
+                            continue;
+                        }
+                        int const free3 = enter_time[c3];
+                        if (!(free3 == 0 || (free3 <= 3 && free3 >= 2 && !pearl_here[c1] && !pearl_here[c2]))) {
+                            continue;
+                        }
+                        if (evals++ >= max_evals) {
+                            return found;
+                        }
+                        double const score = score_step(position_of(c3)) - 2.0 * SPRINT_ESCAPE_COST;
+                        if (score > best) {
+                            best = score;
+                            path = {first, second, third};
+                            found = true;
+                        }
+                    }
+                }
+            }
+        }
+        return found;
+    }
+
+    Survey survey_from(Position start, bool strict_bodies = false, bool expand_unseen = true) {
         Survey result;
         visit_mark++;
 
@@ -835,66 +1962,102 @@ class Bot {
 
         int const start_index = index_of(start);
         visit_stamp[start_index] = visit_mark;
+        beyond_portal[start_index] = 0;
         step_count[start_index] = 1;
         eaten_count[start_index] = pearl_here[start_index];
+        bfs_beyond[queue_tail] = 0;
         bfs_queue[queue_tail++] = start;
 
         bool const scouting = can_scout_portals();
+        bool const guard = portal_guarded();
         while (queue_head < queue_tail) {
+            bool const beyond = bfs_beyond[queue_head] != 0;
             Position const position = bfs_queue[queue_head++];
             int const index = index_of(position);
+            if (beyond && !beyond_portal[index]) {
+                continue;
+            }
             int const steps = step_count[index];
             int const eaten = eaten_count[index];
-
-            int const theirs = rival_steps(index);
-            double share = steps < theirs ? 1.0 : steps == theirs ? CONTESTED_SHARE : 0.0;
-            if (ally_race_steps(index) < steps) {
-                share = 0.0;
-            }
-            if (seen_round[index] < 0) {
-                result.area_unseen++;
-                result.own_unseen += share;
+            if (beyond) {
+                if (index == tail_index) {
+                    result.reaches_tail = true;
+                }
             } else {
-                result.area_seen++;
-                result.own_seen += share;
-            }
-            if (index == tail_index) {
-                result.reaches_tail = true;
-            }
-            if (result.dist_feed < 0 && index == feed_index) {
-                result.dist_feed = steps;
-            }
-            if (share >= 1.0 && result.dist_pearl < 0 && pearl_here[index] && !in_leader_pearl_zone(index)) {
-                result.dist_pearl = steps;
-            }
-            if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
-                !in_leader_pearl_zone(index)) {
-                int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
-                if (spawns_in <= steps + 1) {
-                    result.dist_soon = steps;
+                int const theirs = rival_steps(index);
+                double share = steps < theirs ? 1.0 : steps == theirs ? CONTESTED_SHARE : 0.0;
+                if (ally_race_steps(index) < steps) {
+                    share = 0.0;
+                }
+                if (seen_round[index] < 0) {
+                    result.area_unseen++;
+                    result.own_unseen += share;
+                } else {
+                    result.area_seen++;
+                    result.own_seen += share * territory_weight(index);
+                }
+                if (index == tail_index) {
+                    result.reaches_tail = true;
+                }
+                if (result.dist_feed < 0 && index == feed_index) {
+                    result.dist_feed = steps;
+                }
+                if (result.dist_plan < 0 && index == route_target) {
+                    result.dist_plan = steps;
+                }
+                bool const contest = length <= CONTEST_MAX_LENGTH && steps <= theirs + CONTEST_SLACK &&
+                                     ally_race_steps(index) >= steps;
+                if ((share >= 1.0 || contest) && result.dist_pearl < 0 && pearl_here[index] &&
+                    !in_leader_pearl_zone(index)) {
+                    result.dist_pearl = steps;
+                }
+                if (share > 0.0 && pearl_here[index] && !in_leader_pearl_zone(index)) {
+                    result.pearls++;
+                }
+                if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
+                    !in_leader_pearl_zone(index)) {
+                    int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
+                    if (spawns_in <= steps + SOON_SLACK) {
+                    
+                        result.dist_soon = steps + std::max(0, spawns_in - steps);
+                    }
+                }
+                if (hot[index] && result.dist_hot < 0 && ally_race_steps(index) >= steps &&
+                    steps <= theirs + HOT_ENEMY_SLACK && !in_leader_pearl_zone(index)) {
+                    int const spawns_in = pearl_here[index] ? 0 : pearl_timer[index] - (round - seen_round[index]);
+                    result.dist_hot = steps + std::max(0, spawns_in - steps);
+                }
+                if (result.dist_unseen < 0 && seen_round[index] < 0 &&
+                    (!UNSEEN_CLAIM || feeding_phase() || ally_race_steps(index) >= steps)) {
+                    result.dist_unseen = steps;
                 }
             }
-            if (result.dist_unseen < 0 && seen_round[index] < 0) {
-                result.dist_unseen = steps;
+            if (!expand_unseen && seen_round[index] < 0) {
+                continue;
             }
 
             for (Direction const direction : Direction::get_direction_list()) {
                 int const next_index = step_index(position, direction);
+                if (survey_back >= 0 && index == start_index && next_index == survey_back) {
+                    continue;
+                }
                 if (next_index < 0) {
                     if (scouting && result.dist_portal < 0 && leads_to_unknown(position, direction)) {
                         result.dist_portal = steps + 1;
                     }
                     continue;
                 }
-                if (visit_stamp[next_index] == visit_mark) {
+                bool const next_beyond = beyond || (guard && edge_at(position, direction) == EDGE_PORTAL &&
+                                                    !portal_exit_safe(next_index));
+                if (visit_stamp[next_index] == visit_mark && (next_beyond || !beyond_portal[next_index])) {
                     continue;
                 }
                 int const free_at = enter_time[next_index];
                 if (free_at >= BLOCKED_FOREVER || steps + 1 - eaten < free_at) {
-                    if (result.dist_feed < 0 && next_index == feed_index) {
+                    if (!next_beyond && result.dist_feed < 0 && next_index == feed_index) {
                         result.dist_feed = steps + 1;
                     }
-                    if (result.dist_trade < 0 && is_enemy_head_cell(next_index)) {
+                    if (!next_beyond && result.dist_trade < 0 && is_trade_target_cell(next_index)) {
                         result.dist_trade = steps + 1;
                     }
                     continue;
@@ -903,12 +2066,28 @@ class Bot {
                     continue;
                 }
                 visit_stamp[next_index] = visit_mark;
+                beyond_portal[next_index] = next_beyond ? 1 : 0;
                 step_count[next_index] = steps + 1;
                 eaten_count[next_index] = eaten + pearl_here[next_index];
+                bfs_beyond[queue_tail] = next_beyond ? 1 : 0;
                 bfs_queue[queue_tail++] = position_of(next_index);
             }
         }
         return result;
+    }
+
+    double territory_weight(int index) const {
+        if (pearl_here[index]) {
+            return 1.0;
+        }
+        if (pearl_timer[index] < 0) {
+            return BARREN_TERRITORY;
+        }
+        if (TERRITORY_TIME_SCALE <= 0.0) {
+            return 1.0;
+        }
+        int const spawns_in = std::max(0, pearl_timer[index] - (round - seen_round[index]));
+        return TERRITORY_TIME_SCALE / (TERRITORY_TIME_SCALE + spawns_in);
     }
 
     double target_bonus(int distance, double weight) const {
@@ -932,6 +2111,15 @@ class Bot {
 
     bool enemy_can_step_to(Position cell) const { return can_step_to(enemy_heads, cell); }
 
+    bool is_ally_head(Position position) const {
+        for (Position const& ally : ally_heads) {
+            if (ally == position) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool is_enemy_head(Position position) const {
         for (Position const& enemy : enemy_heads) {
             if (enemy == position) {
@@ -941,66 +2129,554 @@ class Bot {
         return false;
     }
 
-    bool is_enemy_head_cell(int index) const { return enemy_head_stamp[index] == round; }
+    bool is_trade_target_cell(int index) const { return trade_target_stamp[index] == round; }
     bool is_leader() const {
-        return round > LEADER_GROW_ROUND && known_leader_id == ct.get_id();
+        return round > grow_round && known_leader_id == ct.get_id();
     }
 
     bool is_trader() const {
-        return USE_TRADE_ATTACK && round <= ENDGAME_ROUND && length <= TRADE_MAX_LENGTH && !is_leader() &&
-               ct.get_unit_count() >= TRADE_MIN_UNITS;
+        return length <= TRADE_MAX_LENGTH && !is_leader() && trade_targets > 0;
     }
 
     bool can_scout_portals() const {
-        return USE_PORTALS && USE_PORTAL_SCOUT && length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() &&
-               !is_leader();
+        
+        return length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() &&
+               !is_leader() && tail_index >= 0;
+    }
+
+    bool portal_guarded() const {
+        return PORTAL_GUARD_LENGTH > 0 &&
+               (length >= PORTAL_GUARD_LENGTH || (is_leader() && length > PORTAL_GUARD_LEADER_MIN));
+    }
+
+    bool portal_exit_safe(int exit) const {
+        if (exit < 0 || seen_round[exit] != round || exposure_at(exit) > 0) {
+            return false;
+        }
+        Position const cell = position_of(exit);
+        for (Position const& enemy : enemy_heads) {
+            if (manhattan(enemy, cell) <= PORTAL_GUARD_ENEMY_CLEAR) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool boxed_in() {
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        visit_stamp[index_of(head)] = visit_mark;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const index = index_of(position);
+            if (pearl_here[index] || pearl_timer[index] != -1) {
+                return false;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_UNKNOWN) {
+                    return false;
+                }
+                if (edge != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                if (queue_tail >= BOX_MAX_CELLS) {
+                    return false;
+                }
+                visit_stamp[next] = visit_mark;
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        return true;
     }
 
     bool leads_to_unknown(Position position, Direction direction) const {
         return edge_at(position, direction) == EDGE_PORTAL && portal_exit(position, direction) < 0;
     }
 
-    bool is_feeder() const {
-        return USE_FEEDER_SACRIFICE && feed_index >= 0;
+    bool plan_active() const {
+        return PLAN_ROUNDS > 0 && round <= PLAN_ROUNDS && length <= PLAN_MAX_LENGTH && !is_leader() &&
+               !is_feeder() && !is_trader();
     }
 
-    bool ready_to_die() const { return is_feeder() && on_drop_cell(head) && leader_info_fresh(); }
+    
+    void plan_update() {
+        int const previous = plan_target;
+        plan_target = -1;
+        if (!plan_active()) {
+            return;
+        }
+        if (plan_stamp.empty()) {
+            plan_stamp.assign(cells, 0);
+            plan_steps.assign(cells, 0);
+            plan_eaten.assign(cells, 0);
+            plan_queue.assign(cells, 0);
+        }
+        plan_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        plan_stamp[start] = plan_mark;
+        plan_steps[start] = 0;
+        plan_eaten[start] = 0;
+        plan_queue[queue_tail++] = start;
+        double best = 0.0;
+        int best_cell = -1;
+        double keep = 0.0;
+        while (queue_head < queue_tail) {
+            int const index = plan_queue[queue_head++];
+            int const steps = plan_steps[index];
+            if (steps >= 1) {
+                double const value = plan_value(index, steps);
+                if (value > best) {
+                    best = value;
+                    best_cell = index;
+                }
+                if (index == previous) {
+                    keep = value;
+                }
+            }
+            Position const position = position_of(index);
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (PLAN_NO_PORTAL && edge_at(position, direction) == EDGE_PORTAL) {
+                    continue;
+                }
+                int const next = step_index(position, direction);
+                if (next < 0 || plan_stamp[next] == plan_mark) {
+                    continue;
+                }
+                int const free_at = enter_time[next];
+                if (free_at >= BLOCKED_FOREVER || steps + 1 - plan_eaten[index] < free_at) {
+                    continue;
+                }
+                plan_stamp[next] = plan_mark;
+                plan_steps[next] = steps + 1;
+                plan_eaten[next] = plan_eaten[index] + pearl_here[next];
+                plan_queue[queue_tail++] = next;
+            }
+        }
+        plan_target = previous >= 0 && keep > 0.0 && keep >= PLAN_KEEP * best ? previous : best_cell;
+        plan_spawn_round = -1;
+        if (plan_target >= 0 && !pearl_here[plan_target] && !hot[plan_target] && seen_round[plan_target] >= 0) {
+            plan_spawn_round = seen_round[plan_target] + pearl_timer[plan_target];
+        }
+    }
+
+    double plan_value(int index, int steps) const {
+        int const theirs = rival_steps(index);
+        if (theirs < steps || ally_race_steps(index) < steps || in_leader_pearl_zone(index)) {
+            return 0.0;
+        }
+        double const share = theirs == steps ? CONTESTED_SHARE : 1.0;
+        if (pearl_here[index]) {
+            return round - seen_round[index] <= PLAN_PEARL_STALE ? share / (steps + PLAN_K) : 0.0;
+        }
+        if (hot[index]) {
+            return share * PLAN_HOT_VALUE / (steps + PLAN_K);
+        }
+        if (seen_round[index] >= 0) {
+            if (pearl_timer[index] < 0) {
+                return 0.0;
+            }
+            int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
+            if (spawns_in < 1) {
+                return 0.0;
+            }
+            int const eta = std::max(steps, spawns_in);
+            return eta <= PLAN_SOON_MAX ? share * PLAN_SOON_VALUE / (eta + PLAN_K) : 0.0;
+        }
+        Position const cell = position_of(index);
+        bool frontier = false;
+        for (Direction const direction : Direction::get_direction_list()) {
+            frontier = frontier || seen_round[index_of(cell.add_dir(direction))] >= 0;
+        }
+        if (!frontier) {
+            return 0.0;
+        }
+        int unseen = 0;
+        for (int dy = -3; dy <= 3; dy++) {
+            for (int dx = -3; dx <= 3; dx++) {
+                Position const near{((cell.x + dx) % width + width) % width, ((cell.y + dy) % height + height) % height};
+                unseen += seen_round[index_of(near)] < 0 ? 1 : 0;
+            }
+        }
+        return share * PLAN_EXPLORE_VALUE * unseen / 49.0 / (steps + PLAN_K);
+    }
+
+    
+    
+    int pocket_rivals() const {
+        int count = 0;
+        for (std::size_t k = 0; k < ally_heads.size(); k++) {
+            if (ally_head_ids[k] < ct.get_id() && escape_stamp[index_of(ally_heads[k])] == escape_mark) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    bool in_pocket() {
+        if (POCKET_SPLIT_CELLS <= 0) {
+            return false;
+        }
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        visit_stamp[index_of(head)] = visit_mark;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_KELP || edge == EDGE_PORTAL) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                if (queue_tail >= POCKET_SPLIT_CELLS) {
+                    return false;
+                }
+                visit_stamp[next] = visit_mark;
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        if (POCKET_SPLIT_CROWDED) {
+            for (Position const& ally : ally_heads) {
+                if (visit_stamp[index_of(ally)] == visit_mark) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+    void escape_update() {
+        escape_target = -1;
+        escape_through = -1;
+        bool const barren_on = BARREN_ESCAPE && round <= BARREN_ROUNDS;
+        bool const poverty_on = POVERTY_ROUNDS > 0 && round <= POVERTY_ROUNDS;
+        bool const pocket_on = POCKET_MAX_CELLS > 0 || POCKET_CROWD > 0;
+        if ((!barren_on && !poverty_on && !pocket_on) || !can_scout_portals() || is_trader()) {
+            return;
+        }
+        if (escape_stamp.empty()) {
+            escape_stamp.assign(cells, 0);
+            escape_steps.assign(cells, 0);
+            escape_queue.assign(cells, 0);
+        }
+        escape_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        escape_stamp[start] = escape_mark;
+        escape_steps[start] = 0;
+        escape_queue[queue_tail++] = start;
+        int seen = 0;
+        int spawn = 0;
+        int portal_cell = -1;
+        int portal_dir = -1;
+        bool portal_unknown = false;
+        int unknown_cell = -1;
+        int unknown_dir = -1;
+        bool productive = false;
+        int good_steps = BLOCKED_FOREVER;
+        int soonest = BLOCKED_FOREVER;
+        auto const directions = Direction::get_direction_list();
+        while (queue_head < queue_tail) {
+            int const index = escape_queue[queue_head++];
+            if (seen_round[index] >= 0) {
+                if (pearl_here[index] || hot[index]) {
+                    productive = true;
+                    good_steps = std::min(good_steps, escape_steps[index]);
+                } else if (pearl_timer[index] >= 0) {
+                    int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
+                    if (spawns_in >= 0 && spawns_in <= POVERTY_SOON) {
+                        good_steps = std::min(good_steps, escape_steps[index]);
+                    }
+                    soonest = std::min(soonest, std::max(0, spawns_in));
+                }
+                seen++;
+                spawn += pearl_timer[index] >= 0 ? 1 : 0;
+            }
+            Position const position = position_of(index);
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                std::uint8_t const edge = edge_at(position, directions[k]);
+                if (edge == EDGE_KELP) {
+                    continue;
+                }
+                if (edge == EDGE_PORTAL) {
+                    bool const unknown = portal_exit(position, directions[k]) < 0;
+                    if (portal_cell < 0 || (unknown && !portal_unknown)) {
+                        portal_cell = index;
+                        portal_dir = static_cast<int>(k);
+                        portal_unknown = unknown;
+                    }
+                    if (unknown && unknown_cell < 0) {
+                        unknown_cell = index;
+                        unknown_dir = static_cast<int>(k);
+                    }
+                    continue;
+                }
+                int const next = index_of(position.add_dir(directions[k]));
+                if (escape_stamp[next] == escape_mark || queue_tail >= BARREN_REGION_CAP) {
+                    continue;
+                }
+                escape_stamp[next] = escape_mark;
+                escape_steps[next] = escape_steps[index] + 1;
+                escape_queue[queue_tail++] = next;
+            }
+        }
+        int target = -1;
+        int through = -1;
+        if (barren_on && !productive && seen >= BARREN_MIN_SEEN && spawn <= BARREN_MAX_SPAWN * seen && portal_cell >= 0) {
+            target = portal_cell;
+            through = portal_dir;
+        } else if (POCKET_MAX_CELLS > 0 && !productive && queue_tail < POCKET_MAX_CELLS && portal_cell >= 0 &&
+                   soonest > POCKET_WAIT) {
+            target = portal_cell;
+            through = portal_dir;
+        } else if (POCKET_CROWD > 0 && queue_tail < POCKET_CROWD_CELLS && portal_cell >= 0 &&
+                   (!POCKET_CROWD_IDLE || !productive) && pocket_rivals() >= POCKET_CROWD) {
+            target = portal_cell;
+            through = portal_dir;
+        } else if (poverty_on && good_steps > POVERTY_RADIUS && unknown_cell >= 0 &&
+                   ally_race_steps(unknown_cell) >= escape_steps[unknown_cell]) {
+            target = unknown_cell;
+            through = unknown_dir;
+        }
+        if (target < 0) {
+            return;
+        }
+        escape_target = target;
+        if (target == start) {
+            escape_through = through;
+        }
+    }
+
+    
+    void apply_plan(std::array<double, 4>& scores, std::array<bool, 4> const& scored,
+                    std::array<bool, 4> const& closed, std::array<int, 4> const& dests,
+                    std::array<int, 4> const& plan_dist) const {
+        if (route_target < 0 || escape_through >= 0 || (escape_target < 0 && !rally_on && !plan_active())) {
+            return;
+        }
+        double top = SCORE_REJECT;
+        for (std::size_t k = 0; k < 4; k++) {
+            if (scored[k] && scores[k] > SCORE_REJECT * 0.5) {
+                top = std::max(top, scores[k]);
+            }
+        }
+        std::array<bool, 4> safe{};
+        int nearest = BLOCKED_FOREVER;
+        for (std::size_t k = 0; k < 4; k++) {
+            if (!scored[k] || dests[k] < 0 || scores[k] <= SCORE_REJECT * 0.5 || closed[k] ||
+                scores[k] < top - PLAN_VETO || plan_dist[k] < 0) {
+                continue;
+            }
+            Position const cell = position_of(dests[k]);
+            if (threat_at(dests[k]) > 0 || enemy_can_step_to(cell) || can_step_to(ally_heads, cell)) {
+                continue;
+            }
+            if (PLAN_NO_PORTAL && edge_at(head, Direction::get_direction_list()[k]) == EDGE_PORTAL) {
+                continue;
+            }
+            safe[k] = true;
+            nearest = std::min(nearest, plan_dist[k]);
+        }
+        if (PLAN_SOON_HOLD && escape_target < 0 && plan_spawn_round >= 0 && nearest <= 2 &&
+            round + nearest <= plan_spawn_round) {
+            return;
+        }
+        for (std::size_t k = 0; k < 4; k++) {
+            if (safe[k] && plan_dist[k] == nearest) {
+                scores[k] += PLAN_OVERRIDE;
+            }
+        }
+    }
+
+    bool is_feeder() const {
+        return feed_index >= 0;
+    }
+
+    bool feed_len_ok() const {
+        if (known_leader_len < FEED_BOOT_LEN) {
+            return length <= known_leader_len;
+        }
+        return length * FEED_LEN_RATIO <= known_leader_len;
+    }
+
+    bool rally_ready() const {
+        if (RALLY_FRESH <= 0 || !feeding_phase() || is_feeder() || is_leader() || is_trader() ||
+            known_leader_id < 0 || known_leader_id == ct.get_id() || known_leader_round < 0 ||
+            round - known_leader_round > RALLY_FRESH || !feed_len_ok() ||
+            ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+            return false;
+        }
+        return manhattan(head, known_leader_pos) > FEEDER_APPROACH;
+    }
+
+    bool feeding_phase() const {
+        return round > ENDGAME_ROUND ||
+               (FEED_CAP_UNITS > 0 && round > FEED_CAP_ROUND && ct.get_unit_count() >= FEED_CAP_UNITS);
+    }
+
+    bool merge_ready() const {
+        if (MERGE_ROUND <= 0 || round <= MERGE_ROUND || is_leader() || known_leader_id == ct.get_id() ||
+            ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+            return false;
+        }
+        for (Position const& enemy : enemy_heads) {
+            if (manhattan(head, enemy) <= FEEDER_ENEMY_CLEAR) {
+                return false;
+            }
+        }
+        for (std::size_t k = 0; k < ally_heads.size(); k++) {
+            if (manhattan(head, ally_heads[k]) <= MERGE_DIST && visible_parts(ally_head_ids[k]) > length &&
+                visible_parts(ally_head_ids[k]) >= MERGE_RATIO * length) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool ready_to_die() const {
+        if (!is_feeder()) {
+            return false;
+        }
+        for (Position const& enemy : enemy_heads) {
+            if (manhattan(head, enemy) <= FEEDER_ENEMY_CLEAR) {
+                return false;
+            }
+        }
+        return (on_drop_cell(head) && leader_info_fresh() && (!FEED_VISIBLE || leader_in_vision())) ||
+               beside_visible_leader();
+    }
 
     double score_step(Position destination) {
+        survey_back = NO_REVERSE ? index_of(head) : -1;
         Survey const survey = survey_from(destination);
+        survey_back = -1;
 
         double const room = survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen;
         double const territory = survey.own_seen + UNSEEN_DISCOUNT * survey.own_unseen;
         last_room = room;
         last_seen_room = survey.area_seen;
         last_reaches_tail = survey.reaches_tail;
-        double score = WEIGHT_SPACE * room + WEIGHT_TERRITORY * territory;
+        double const space = WEIGHT_SPACE * room + WEIGHT_TERRITORY * territory;
 
         double const room_wanted = 3.0 * length + 8.0;
+        double cramped = 0.0;
         if (room < room_wanted) {
-            score -= PENALTY_TIGHT * (room_wanted - room);
+            cramped += PENALTY_TIGHT * (room_wanted - room);
         }
         if (room < length + 2.0) {
-            score -= PENALTY_TRAPPED * (length + 2.0 - room);
+            cramped += PENALTY_TRAPPED * (length + 2.0 - room);
         }
-
         if (tail_index >= 0 && !survey.reaches_tail) {
-            score -= PENALTY_NO_TAIL;
+            cramped += PENALTY_NO_TAIL;
         }
+        last_space = space;
+        last_cramped = cramped;
+        last_dist_plan = survey.dist_plan;
+        last_pearls = survey.pearls;
+        last_dead_end = tail_index >= 0 && !survey.reaches_tail && room < room_wanted;
+        double score = space - cramped;
 
-        last_bonus = std::max({target_bonus(survey.dist_pearl, WEIGHT_PEARL),
+        double const pearl_weight = is_leader() && feeding_phase() ? WEIGHT_PEARL * LEADER_ENDGAME_PEARL_MULT
+                                                                          : WEIGHT_PEARL;
+        last_bonus = std::max({PEARL_FAR_DECAY > 0.0 && survey.dist_pearl >= 0
+                                   ? pearl_weight * std::max(0.0, TARGET_REWARD - std::min(TARGET_DECAY, PEARL_FAR_DECAY) * survey.dist_pearl)
+                                   : target_bonus(survey.dist_pearl, pearl_weight),
                                target_bonus(survey.dist_soon, WEIGHT_SOON),
-                               target_bonus(survey.dist_unseen, WEIGHT_UNSEEN),
-                               target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
+                               target_bonus(survey.dist_hot, WEIGHT_HOT),
+                               UNSEEN_FAR_DECAY > 0.0 && survey.dist_unseen >= 0
+                                   ? UNSEEN_FAR_WEIGHT * std::max(0.0, TARGET_REWARD - UNSEEN_FAR_DECAY * survey.dist_unseen)
+                                   : target_bonus(survey.dist_unseen, WEIGHT_UNSEEN),
+                               PORTAL_FAR_DECAY > 0.0 && survey.dist_portal >= 0 &&
+                                       (PORTAL_FAR_ROUNDS <= 0 || round <= PORTAL_FAR_ROUNDS)
+                                   ? WEIGHT_PORTAL_SCOUT * std::max(0.0, TARGET_REWARD - PORTAL_FAR_DECAY * survey.dist_portal)
+                                   : target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
         score += last_bonus;
 
-        if (AVOID_ALLY_HEADS && can_step_to(ally_heads, destination)) {
+        if (EAT_BONUS + EAT_CONTEST_BONUS > 0.0 && pearl_here[index_of(destination)] && !is_feeder() &&
+            !in_leader_pearl_zone(index_of(destination))) {
+            score += EAT_BONUS;
+            if (rival_steps(index_of(destination)) <= 2) {
+                score += EAT_CONTEST_BONUS;
+            }
+        }
+        if (LOOP_PENALTY > 0.0 && !is_feeder() && round - last_eat_round > LOOP_IDLE) {
+            int const dest = index_of(destination);
+            int visits = 0;
+            for (auto const& seen : head_history) {
+                visits += seen.second == dest ? 1 : 0;
+            }
+            score -= LOOP_PENALTY * visits;
+        }
+        if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
+            score -= ZONE_PEARL_PENALTY;
+        }
+        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
+            static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
+            std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
+            score -= CENTER_PULL * manhattan(destination, Position{width / 2, height / 2});
+        }
+        if (can_step_to(ally_heads, destination)) {
             score -= PENALTY_ENEMY_HEAD;
         }
-        if (!is_trader() && enemy_can_step_to(destination)) {
-            score -= is_leader() ? PENALTY_HEAD_RACE * LEADER_HEAD_MULT : PENALTY_HEAD_RACE;
+        if (PORTAL_LOITER > 0.0) {
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(destination, direction) == EDGE_PORTAL) {
+                    score -= PORTAL_LOITER;
+                    break;
+                }
+            }
+        }
+        if (!is_trader()) {
+            int const depth = threat_at(index_of(destination));
+            if (depth > 0) {
+                double penalty = PENALTY_HEAD_RACE * std::max(0.5, length / THREAT_LENGTH_SCALE) * (0.5 + 0.5 * depth);
+                if (is_leader()) {
+                    penalty *= LEADER_HEAD_MULT;
+                }
+                score -= penalty;
+            }
         }
 
+        if (REPEL_ROUNDS > 0 && round <= REPEL_ROUNDS) {
+            for (Position const& ally : ally_heads) {
+                int const gap = manhattan(destination, ally);
+                if (gap < REPEL_RADIUS) {
+                    score -= REPEL_WEIGHT * (REPEL_RADIUS - gap);
+                }
+            }
+        }
+        if (LEADER_GUARD_ROUNDS > 0 && is_leader() && round >= unswbc::Constants::MAX_ROUNDS - LEADER_GUARD_ROUNDS) {
+            for (Position const& enemy : enemy_heads) {
+                int const gap = manhattan(destination, enemy);
+                if (gap <= LEADER_GUARD_RADIUS) {
+                    score -= LEADER_GUARD_PENALTY * (LEADER_GUARD_RADIUS + 1 - gap);
+                }
+            }
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.round == round) {
+                    continue;
+                }
+                int const gap = manhattan(destination, ghost.pos) - (round - ghost.round);
+                if (gap <= LEADER_GUARD_RADIUS) {
+                    score -= LEADER_GUARD_PENALTY * (LEADER_GUARD_RADIUS + 1 - std::max(0, gap));
+                }
+            }
+        }
         if (is_feeder() && survey.dist_feed >= 0) {
             score += std::max(0.0, FEEDER_REWARD - FEEDER_DECAY * survey.dist_feed);
         }
@@ -1010,17 +2686,24 @@ class Bot {
         return score;
     }
 
-    // usable: 传送门两端都认识，出口能进，且（大龙）出口那边看得见的空间够。
+    
     double score_portal_step(Direction direction, bool& usable) {
         usable = false;
-        if (!USE_PORTALS) {
-            return SCORE_PORTAL;
-        }
         int const exit = portal_exit(head, direction);
-        if (exit < 0 || enter_time[exit] > 1) {
+        if (exit >= 0 && enter_time[exit] > 1) {
+            return SCORE_REJECT;
+        }
+        if (MOUTH_WARN && (exit >= 0 ? mouth_fresh(exit) : mouth_fresh(-1))) {
+            return SCORE_REJECT;
+        }
+        if (PORTAL_SELF_CHECK && exit >= 0 && on_own_body(exit)) {
+            return SCORE_REJECT;
+        }
+        if (exit < 0 || (portal_guarded() && !portal_exit_safe(exit))) {
             return SCORE_PORTAL;
         }
-        double const score = score_step(position_of(exit));
+        double const leap = length <= PORTAL_SCOUT_MAX_LENGTH && boxed_in() ? PORTAL_LEAP_SMALL : PORTAL_LEAP_PENALTY;
+        double const score = score_step(position_of(exit)) - leap;
         if (length > PORTAL_SCOUT_MAX_LENGTH && last_seen_room < length + PORTAL_SAFETY_MARGIN) {
             return SCORE_PORTAL;
         }
@@ -1034,14 +2717,31 @@ class Bot {
         chosen_room = 0.0;
         chosen_scored = false;
         chosen_reaches_tail = false;
+        chosen_index = -1;
+        chosen_score = SCORE_REJECT * 2.0;
         any_enterable = false;
+        portal_fallback = -1;
+        chosen_pearls = 0;
+        chosen_harvest = false;
 
         auto const directions = Direction::get_direction_list();
         std::array<double, 4> scores{};
         std::array<double, 4> rooms{};
         std::array<bool, 4> blind{};
-        std::array<bool, 4> scored{};   // 真正跑过 score_step，rooms[k] 才有意义
+        std::array<bool, 4> scored{};   
         std::array<bool, 4> reaches{};
+        std::array<int, 4> dests{};
+        dests.fill(-1);
+        std::array<int, 4> plan_dist{};
+        plan_dist.fill(-1);
+        std::array<double, 4> spaces{};
+        std::array<double, 4> others{};
+        std::array<int, 4> pearls{};
+        std::array<bool, 4> dead{};
+        std::array<bool, 4> harvest{};
+        double best_open_space = SCORE_REJECT;
+        std::array<bool, 4> closed{};
+        std::array<bool, 4> imminent{};
         double best_base = SCORE_REJECT;
         bool const scouting = can_scout_portals();
 
@@ -1052,29 +2752,101 @@ class Bot {
 
             last_room = 0.0;
             last_reaches_tail = false;
-            if (edge == EDGE_PORTAL) {
+            last_dist_plan = -1;
+            if (edge == EDGE_PORTAL && probe_blocks(static_cast<int>(k))) {
+                score = SCORE_REJECT * 0.5;
+            } else if (edge == EDGE_PORTAL) {
                 bool usable = false;
                 score = score_portal_step(direction, usable);
+                dests[k] = usable ? portal_exit(head, direction) : -1;
                 scored[k] = usable;
                 any_enterable = any_enterable || usable;
-                blind[k] = scouting && !usable && leads_to_unknown(head, direction);
+                blind[k] = scouting && !usable && leads_to_unknown(head, direction) && !(MOUTH_WARN && mouth_fresh(-1));
+                if (!usable && portal_fallback < 0) {
+                    int const exit = portal_exit(head, direction);
+                    if (exit >= 0 && enter_time[exit] == 0) {
+                        portal_fallback = static_cast<int>(k);
+                    }
+                }
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
+                dests[k] = index_of(destination);
                 bool const enterable = enter_time[index_of(destination)] <= 1;
                 any_enterable = any_enterable || enterable;
-                if (is_feeder() && (in_leader_keep_off(destination) || on_leader_ray(destination))) {
+                if (is_feeder() && !is_ally_head(destination) &&
+                    (in_leader_keep_off(destination) || on_leader_ray(destination))) {
                     score = SCORE_REJECT;
                 } else if (enterable) {
                     score = score_step(destination);
                     scored[k] = true;
                     best_base = std::max(best_base, score - last_bonus);
+                    spaces[k] = last_space;
+                    others[k] = score - last_space + last_cramped - last_bonus;
+                    pearls[k] = last_pearls;
+                    dead[k] = last_dead_end;
+                    closed[k] = !last_reaches_tail && last_room < length + 2.0;
+                    if (!last_dead_end) {
+                        best_open_space = std::max(best_open_space, last_space);
+                    }
                 } else if (is_enemy_head(destination)) {
-                    score = is_trader() ? TRADE_REWARD : SCORE_REJECT * 0.5;
+                    score = is_trader() && is_trade_target_cell(index_of(destination)) ? TRADE_REWARD
+                                                                                      : SCORE_REJECT * 0.5;
+                } else if (is_ally_head(destination)) {
+                    
+                    score = SCORE_REJECT * 1.5;
                 }
             }
             scores[k] = score;
             rooms[k] = last_room;
             reaches[k] = last_reaches_tail;
+            plan_dist[k] = scored[k] ? last_dist_plan : -1;
+        }
+
+        
+        
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            if (dead[k] && scores[k] > SCORE_REJECT * 0.5 &&
+                harvestable(pearls[k], rooms[k], best_open_space <= SCORE_REJECT * 0.5)) {
+                double const space = best_open_space > SCORE_REJECT * 0.5 ? best_open_space : spaces[k];
+                scores[k] = space + others[k] +
+                            HARVEST_SEGMENT_VALUE * (pearls[k] - unswbc::Constants::MIN_SIZE);
+                harvest[k] = true;
+            }
+        }
+
+        apply_plan(scores, scored, closed, dests, plan_dist);
+
+        cornered = false;
+        if (length >= LONG_SAFE_MIN_LENGTH) {
+            std::array<int, 4> level{};
+            level.fill(-2);
+            int best_level = -2;
+            bool any_scored = false;
+            bool all_imminent = true;
+            bool all_exposed = true;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (!scored[k] || dests[k] < 0 || scores[k] <= SCORE_REJECT * 0.5) {
+                    continue;
+                }
+                any_scored = true;
+                imminent[k] = enemy_can_step_to(position_of(dests[k]));
+                all_imminent = all_imminent && imminent[k];
+                all_exposed = all_exposed && exposure_at(dests[k]) > 0;
+                level[k] = closed[k] || (dead[k] && !is_big()) ? -1 : THREAT_REACH_MAX + 1 - exposure_at(dests[k]);
+                if (dead[k] && !closed[k] && is_big()) {
+                    level[k] = std::min(level[k], BIG_DEAD_LEVEL);
+                }
+                if (imminent[k] && !closed[k] && is_big()) {
+                    level[k] = 0;
+                }
+                best_level = std::max(best_level, level[k]);
+            }
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (level[k] > -2 && level[k] < best_level) {
+                    scores[k] -= LONG_THREAT_VETO * (best_level - level[k]);
+                }
+            }
+            cornered = any_scored && ((all_imminent && length >= DODGE_MIN_LENGTH) || (is_big() && all_exposed));
         }
 
         for (std::size_t k = 0; k < directions.size(); k++) {
@@ -1082,6 +2854,9 @@ class Bot {
             double score = scores[k];
             if (blind[k] && best_base > SCORE_REJECT * 0.5) {
                 score = best_base + target_bonus(1, WEIGHT_PORTAL_SCOUT);
+            }
+            if (static_cast<int>(k) == escape_through && score > SCORE_REJECT * 0.5) {
+                score += PLAN_OVERRIDE * 10.0;
             }
 
             score += 0.25 * ((TIE_SEED * 101 + ct.get_id() * 31 + round * 17 + static_cast<int>(k) * 7) % 5);
@@ -1098,6 +2873,10 @@ class Bot {
                 chosen_room = rooms[k];
                 chosen_scored = scored[k];
                 chosen_reaches_tail = reaches[k];
+                chosen_index = dests[k];
+                chosen_score = score;
+                chosen_pearls = pearls[k];
+                chosen_harvest = harvest[k];
             }
         }
 
@@ -1122,11 +2901,11 @@ class Bot {
     std::vector<std::uint8_t> pearl_here;
     std::vector<int> pearl_timer;
     std::vector<int> seen_round;
+    std::vector<std::uint8_t> hot;
+    std::vector<int> low_seen;
 
     std::vector<int> enter_time;
-    std::vector<int> enemy_head_stamp;
     std::vector<int> dirty;
-    std::vector<Position> other_heads;
     std::vector<Position> ally_heads;
     std::vector<int> ally_head_ids;
     std::vector<Direction> ally_head_dirs;
@@ -1140,11 +2919,34 @@ class Bot {
     int known_leader_round = -1;
     std::uint64_t sonar_tag = 0x2;
     bool sonar_enabled = false;
+    bool aggressive = false;
+    int grow_round = LEADER_GROW_ROUND;
+    int center_rounds = CENTER_ROUNDS;
+    int center_margin = CENTER_OUTNUMBER_MARGIN;
+    bool center_map = false;
     Position known_leader_pos{};
     Direction known_leader_dir = dir_of(Direction::NORTH);
     bool zone_active = false;
     Position zone_head{};
     std::vector<Position> enemy_heads;
+    std::vector<int> enemy_head_ids;
+    std::vector<int> trade_target_stamp;
+    int trade_targets = 0;
+    std::vector<int> hunt_stamp;
+    int hunt_targets = 0;
+    std::vector<Direction> act_dirs;
+    int probe_dir = -1;
+    int probe_round = -10;
+    int probe_from = -1;
+    bool probe_hit = false;
+    std::vector<int> threat_stamp;
+    std::vector<Ghost> ghosts;
+    std::vector<int> threat_depth;
+    std::vector<int> threat_depth_small;
+    int threat_mark = 0;
+    std::vector<int> bfs_parent;
+    std::vector<char> bfs_via;
+    std::vector<Position> pending_path;
     std::vector<int> own_parts;
     std::deque<Position> trail;
     int tail_index = -1;
@@ -1157,11 +2959,53 @@ class Bot {
     int ally_mark = 0;
 
     double chosen_room = 0.0;
+    double chosen_score = 0.0;
+    int chosen_index = -1;
     bool chosen_scored = false;
     bool chosen_reaches_tail = false;
     bool any_enterable = false;
+    int portal_fallback = -1;
+    int prev_length = -1;
+    bool split_now = false;
+    std::vector<std::pair<int, int>> mouths;
+    int last_eat_round = 0;
+    std::deque<std::pair<int, int>> head_history;
+    int alert_id = -1;
+    int alert_parts = 0;
+    int alert_round = -1;
+    int alert_heard_round = -1;
+    bool alert_new = false;
+    Position alert_pos{};
     double last_room = 0.0;
+    int last_dist_plan = -1;
+    int plan_target = -1;
+    int plan_spawn_round = -1;
+    int route_target = -1;
+    bool rally_on = false;
+    int escape_target = -1;
+    int escape_through = -1;
+    std::vector<int> escape_stamp;
+    std::vector<int> escape_steps;
+    std::vector<int> escape_queue;
+    int escape_mark = 0;
+    int plan_mark = 0;
+    std::vector<int> plan_stamp;
+    std::vector<int> plan_steps;
+    std::vector<int> plan_eaten;
+    std::vector<int> plan_queue;
     double last_bonus = 0.0;
+    double last_space = 0.0;
+    double last_cramped = 0.0;
+    int last_pearls = 0;
+    bool last_dead_end = false;
+    int chosen_pearls = 0;
+    bool chosen_harvest = false;
+    bool harvesting_now = false;
+    int survey_back = -1;
+    bool cornered = false;
+    int harvest_round = -1;
+    int behind_round = -1;
+    double behind_room = 0.0;
     double last_seen_room = 0.0;
     bool last_reaches_tail = false;
 
@@ -1169,10 +3013,12 @@ class Bot {
     std::vector<int> step_count;
     std::vector<int> eaten_count;
     std::vector<Position> bfs_queue;
+    std::vector<std::uint8_t> bfs_beyond;
+    std::vector<std::uint8_t> beyond_portal;
     int visit_mark = 0;
 };
 
-// 兜底：只看这一回合的视野，挑一个没海草也没龙的邻格，找不到就向北。
+
 Direction fallback_direction(unswbc::Controller const& controller) {
     Position const here = controller.get_position();
     auto const* here_tile = controller.get_tile(here);
