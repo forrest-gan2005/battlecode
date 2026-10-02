@@ -51,3 +51,31 @@ One section per wave, facts only.
 
 ### Wave 2 close (04:28 KST)
 - Open runs: phaseB.sh pid 30425 (B_main, est. 05:40); h12.sh pid 47893 (est. 07:00); h4.sh pid 26722 (est. 08:30); mech.sh pid 28961 (est. 09:15). No verdicts this wave (no H results yet). H5 not chained: CPU after the chain is kept for SEED0=5000 confirm runs of any PASS.
+
+## Wave 3 — 2026-10-03 05:03 KST
+- Phase B main finished 04:48 (`B_main.json`, `B_main.log`). B61 88/176 vs v61 (identical builds, 50%). P1 78/176 (+34 -44, net -10), P2 74/176 (+26 -40, net -14). P1 vs P2 on main: +35 -39 (74 flips).
+- Fact: on held both placebos are near 0 (+5, -3); on main both are below B61 (-10, -14). v61 was tuned on the official maps, so a no-effect perturbation already loses ~12 on main. Main net is biased against any change; this is why held carries the verdict.
+- From the wave 1 rule: Nh = 5, Nm = 14. PASS bar: held net >= 9 and main net >= -14.
+- `ident_B61.txt`: identical (h12.sh step 0). H12 held started 04:52.
+
+### Pre-registration: H5 (TRADE_MIN_UNITS on maps over 1200 cells)
+- Variants (existing constant, no code): TM4 = B61 + TRADE_MIN_UNITS=4; TM1 = B61 + TRADE_MIN_UNITS=1.
+- Runs (`loop/h5.sh`, after `mech_done` and while no `loop/results/HOLD_H5` exists): held heldset_sq+freshset x2 SEED0=3000 vs v61 -> `H5_held.json`; main official+newset x8 SEED0=3000 -> `H5_main.json`; paired vs B61 in `B_held.json` / `B_main.json`.
+- Only maps over 1200 cells can change (small maps already use AGGRESSIVE_TRADE_MIN_UNITS=1). Games on smaller maps should be identical; any flip there is a bug signal.
+- Same rule as H1: PASS = held net >= 9 and main net >= -14; CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism + CPU. Mechanism (KEEP replays, large generated maps): our head_ram per game rises vs B61 and our unit count at r200 does not fall by more than 10%. REJECTED: held net <= 0, or no rise in head_ram. Otherwise INCONCLUSIVE.
+
+### H1 / H2 held results (`H12_held.json`, finished 05:17)
+- Paired vs B61 (`python3 loop/tools/judge.py loop/results/B_held.json loop/results/H12_held.json`):
+  - PR3 23/160, +11 -68, net -57. By size: small 1/40 wins (+0 -20), medium 2 (+1 -24), large 20 (+10 -24). sqheld -31, fresh -26. Wiped (eliminated) 71/160 vs B61 28/160. dlen -19.3.
+  - SR2 69/160, +25 -36, net -11. Small -3, medium -9, large +1. sqheld -8, fresh -3. Wiped 33 vs 28.
+- **H1 (TR_PRESS_ROOM=3): REJECTED** (held net -57 <= 0).
+- **H2 (SMALL_UNIT_THREAT_REACH=2): REJECTED** (held net -11 <= 0).
+- H12 main batch was stopped at 05:18 (both verdicts already fixed by held; main cannot change a REJECTED). Killing `ab3.py` alone leaves its multiprocessing workers alive; they kept starting games until killed (pids 95671-95679). No H12_main.json. h12.sh touched H12_done; h4.sh started at 05:18.
+- Code reading for H1: the press block uses `rival_dist`, a BFS from every visible enemy head over the whole map, and it cuts the survey BFS, so it removes every cell the enemy reaches first anywhere (a Voronoi split), not only the closing ring. It also hides pearls, feed and trade targets behind that boundary. A blunt implementation, not a clean test of the claim. MPR3 replays from `mech.sh` will show what happened.
+
+### Pre-registration: H1b (TR_PRESS_DEPTH, local press ring only)
+- Code: `TR_PRESS_DEPTH` (int, 0 = unlimited, the H1 behaviour). With > 0 the press block applies only to survey cells at steps < DEPTH from the destination. Toggle-off object file byte-identical to the previous mybot2 (clang++ -O2 md5 aee4013d... before and after), so ident vs v61 carries over from B61c.
+- Variants: PD2 = B61 + TR_PRESS_ROOM=3, TR_PRESS_DEPTH=2; PD4 = B61 + TR_PRESS_ROOM=3, TR_PRESS_DEPTH=4.
+- Runs (`loop/h1b.sh`, after `H5_done`, while no `HOLD_H1B`): held x2 SEED0=3000 -> `H1b_held.json`; main x8 SEED0=3000 -> `H1b_main.json`; paired vs B61.
+- PASS = held net >= 9 and main net >= -14. CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (pressure deaths per 100 unit-rounds >= 15% below B61 and wiped count not above B61 by more than 10%) + CPU. REJECTED = held net <= 0 or no drop in pressure deaths. Otherwise INCONCLUSIVE.
+- Kill early: if the held net of both variants is <= 0, the main batch may be skipped.

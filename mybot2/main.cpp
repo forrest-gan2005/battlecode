@@ -201,6 +201,7 @@ constexpr bool BARREN_KNOWN = false;
 constexpr bool NO_REVERSE = false;
 constexpr int TR_PRESS_ROOM = 0;
 constexpr int TR_PRESS_MAX_LEN = 8;
+constexpr int TR_PRESS_DEPTH = 0;
 constexpr int CB_TRAP_TRADE = 0;
 constexpr bool CB_TRAP_DEAD = false;
 constexpr int RALLY_FRESH = 0;
@@ -2358,7 +2359,8 @@ class Bot {
                 if (strict_bodies && free_at != 0) {
                     continue;
                 }
-                if (survey_press && !next_beyond && rival_steps(next_index) <= steps + 1) {
+                if (survey_press && !next_beyond && (TR_PRESS_DEPTH == 0 || steps < TR_PRESS_DEPTH) &&
+                    rival_steps(next_index) <= steps + 1) {
                     continue;
                 }
                 visit_stamp[next_index] = visit_mark;

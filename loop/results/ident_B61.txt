@@ -1,0 +1,21 @@
+OK   B61A default.map
+OK   B61B default.map
+OK   B61A trauma.map
+OK   B61B trauma.map
+OK   B61A queen_of_spades.map
+OK   B61B queen_of_spades.map
+OK   B61A schooltime.map
+OK   B61B schooltime.map
+OK   B61A portals_v0.map
+OK   B61B portals_v0.map
+OK   B61A slithery_fight_v0.map
+OK   B61B slithery_fight_v0.map
+OK   B61A autarky_v0.map
+OK   B61B autarky_v0.map
+OK   B61A devil_v0.map
+OK   B61B devil_v0.map
+OK   B61A prisoners_dilemma_v0.map
+OK   B61B prisoners_dilemma_v0.map
+OK   B61A trophy.map
+OK   B61B trophy.map
+identical

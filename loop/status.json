@@ -1,141 +1,167 @@
 {
-  "phase": "B",
-  "updated": "2026-10-03T04:28:00+09:00",
-  "current": "웨이브 2: held 노이즈 측정 완료(플라시보 순 +5/−3, 뒤집힘 ~40%); Phase B main 진행 중(~05:40); H4 토글 구현 후 H12→H4→메커니즘 체인 대기",
-  "running": [
-    {
-      "what": "Phase B main: B61·P1·P2 vs v61, official+newset x8, SEED0=3000",
-      "result_file": "loop/results/B_main.json (끝나면 B_done)",
-      "pid": 30425,
-      "started": "2026-10-03T04:24:17+09:00"
-    },
-    {
-      "what": "B_done 후: B61 ident → H1 PR3 + H2 SR2 held x2, main x8",
-      "result_file": "loop/results/ident_B61.txt, H12_held.json, H12_main.json (H12_done)",
-      "pid": 47893,
-      "started": "2026-10-03T04:00:00+09:00"
-    },
-    {
-      "what": "H12_done 후: B61c(현 mybot2) ident → H4 TT5·TT5D held x2, main x8",
-      "result_file": "loop/results/ident_B61c.txt, H4_held.json, H4_main.json (H4_done)",
-      "pid": 26722,
-      "started": "2026-10-03T04:25:30+09:00"
-    },
-    {
-      "what": "H4_done 후: 메커니즘 리플레이(생성맵 10개 x4), MB61/MPR3/MSR2/MTT5/MTT5D",
-      "result_file": "loop/results/mech.json, mech_press.txt (mech_done)",
-      "pid": 28961,
-      "started": "2026-10-03T04:26:00+09:00"
-    }
-  ],
-  "baseline": {
-    "main": "대기 중",
-    "held": "80/160",
-    "ident": "토글 off 빌드는 v61과 가드된 코드만 다름; ident는 체인에서 실행(ident_B61, ident_B61c)"
+ "phase": "C",
+ "updated": "2026-10-03T05:22:00+09:00",
+ "current": "웨이브 3: H1·H2 기각(held 순 −57/−11); H4 held 진행 중(~05:45), 이후 메커니즘→H5→H1b 체인",
+ "running": [
+  {
+   "what": "H4 TT5·TT5D: B61c ident → held x2, main x8",
+   "result_file": "loop/results/ident_B61c.txt, H4_held.json, H4_main.json (H4_done)",
+   "pid": 26722,
+   "started": "2026-10-03T05:18:00+09:00"
   },
-  "noise": {
-    "placebo1": "held +34 −29 (순 +5)",
-    "placebo2": "held +35 −38 (순 −3)",
-    "note": "held 160판 중 ~40% 뒤집힘, 순승 SD≈8; 사전등록 기준 held 순 ≥ 9는 약 1SD라 SEED0=5000 확인과 메커니즘이 핵심. main 노이즈 대기"
+  {
+   "what": "H4_done 후: 메커니즘 리플레이(생성맵 10개 x4), MB61/MPR3/MSR2/MTT5/MTT5D",
+   "result_file": "loop/results/mech.json, mech_press.txt (mech_done)",
+   "pid": 28961,
+   "started": "2026-10-03T04:26:00+09:00"
   },
-  "hypotheses": [
-    {
-      "id": "H1",
-      "area": "TR",
-      "title": "압박 공간: 적 머리 근처에서 적이 먼저 닿는 칸은 공간으로 안 셈",
-      "status": "running",
-      "prereg": "웨이브1 LEDGER: held 순 ≥ 9(Nh+4), main 순 ≥ −Nm; SEED0=5000 held 순 > 0; 압박사 단위당 −15%",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": ""
-    },
-    {
-      "id": "H2",
-      "area": "CB",
-      "title": "SMALL_UNIT_THREAT_REACH=2: 작은 적 머리가 중형 드래곤을 위협",
-      "status": "running",
-      "prereg": "H1과 같은 기준; 메커니즘 L4-9 head_rammed −15%",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": ""
-    },
-    {
-      "id": "H3",
-      "area": "EC",
-      "title": "중반 유닛 증가: 분할 가드 완화",
-      "status": "rejected",
-      "prereg": "",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": "래더 분석으로 기각: L4+ 분할률 우리 42.7 vs 상대 34.3, 단위당 성장 동일"
-    },
-    {
-      "id": "H4",
-      "area": "CB",
-      "title": "갇힌 소형(L≤5)이 벽사 대신 인접 적 머리와 맞교환 (CB_TRAP_TRADE)",
-      "status": "running",
-      "prereg": "웨이브2 LEDGER: H1과 같은 기준(held 순 ≥ 9 등); 메커니즘은 L≤5 head_ram 증가 + L≤5 자멸 감소 둘 다 필요, 발동 없으면 기각",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": ""
-    },
-    {
-      "id": "H5",
-      "area": "CB",
-      "title": "큰 맵 맞교환 기준 TRADE_MIN_UNITS=4",
-      "status": "queued",
-      "prereg": "",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": ""
-    },
-    {
-      "id": "H6",
-      "area": "OP",
-      "title": "오프닝: 결손 없음, 낮은 우선순위",
-      "status": "queued",
-      "prereg": "",
-      "held": "",
-      "main": "",
-      "confirm": "",
-      "mechanism": "",
-      "verdict": ""
-    }
-  ],
-  "findings": [
-    "래더 120/228; S 61/101, M 38/68, L 21/59; ≥1950 상대 8/42",
-    "r100 총길이 앞섬 79-33, 뒤짐 35-73",
-    "패배 시 r50-r100 상대 유닛 12→24, 우리 11→16",
-    "압박 자멸(적 머리 3칸 내) r100-300 우리 29.8 vs 상대 20.4/게임, 단위당 ~2배",
-    "우리 분할률은 상대보다 높음(42.7 vs 34.3); 단위당 성장 동일; 사망이 이득의 ~70% 소모",
-    "우리 퀸 사망 159/228, 중앙값 r123 (QWQ 영역)",
-    "r300 전 소형(L≤5) 자멸 중 적 머리 인접: 우리 7.1 vs 상대 3.8/게임; 소형 head_ram 우리 9.8 vs 상대 22.8",
-    "로컬 노이즈: TIE_SEED만 바꿔도 held 160판 중 ~40% 결과 뒤집힘"
-  ],
-  "runner": {
-    "state": "웨이브 2 진행 중 (04:23부터)",
-    "waves": [
-      {
-        "n": 1,
-        "start": "2026-10-03T03:42:57.884185+09:00",
-        "minutes": 28,
-        "exit": "adopted",
-        "turns": 62,
-        "cost_usd": 3.2152906000000003,
-        "is_error": false,
-        "summary": "Wave 1 finished the ladder analysis of all 228 games (we won 120): having more total length at round 100 predicted the result (79–33 when ahead, 35–73 when behind), and our dragons die by their own move with an enemy head nearby about twice as often per unit as the opponents'. That second number is the main lead, so the queue's first test, H1, is a new off-by-default toggle (`TR_PRESS_ROOM`) aimed at it. H2 (an existing threat-reach setting) is queued next, and H3 (splitting more in the midgame) was dropped without any games because we already split more often than the opponents. No game results yet: the baseline and placebo noise batch is about halfway through the held-out maps (held set du",
-        "tokens": 6102801
-      }
-    ]
+  {
+   "what": "mech_done 후: H5 TM4·TM1 held x2, main x8 (HOLD_H5 있으면 대기)",
+   "result_file": "loop/results/H5_held.json, H5_main.json (H5_done)",
+   "pid": 38751,
+   "started": "2026-10-03T05:04:12+09:00"
+  },
+  {
+   "what": "H5_done 후: H1b PD2·PD4(압박 칸 제한 깊이 2/4) held x2, main x8 (HOLD_H1B 있으면 대기)",
+   "result_file": "loop/results/H1b_held.json, H1b_main.json (H1b_done)",
+   "pid": 11892,
+   "started": "2026-10-03T05:20:11+09:00"
   }
+ ],
+ "baseline": {
+  "main": "88/176",
+  "held": "80/160",
+  "ident": "ident_B61: identical; TR_PRESS_DEPTH 추가 후 토글 off 오브젝트 파일 바이트 동일"
+ },
+ "noise": {
+  "placebo1": "held +34 −29 (+5) / main +34 −44 (−10)",
+  "placebo2": "held +35 −38 (−3) / main +26 −40 (−14)",
+  "note": "Nh=5, Nm=14 → 통과 기준 held 순 ≥ 9, main 순 ≥ −14. main은 v61이 공식맵에 튜닝돼 있어 무효 변경도 약 −12 손해(편향); held가 판정 기준"
+ },
+ "hypotheses": [
+  {
+   "id": "H1",
+   "area": "TR",
+   "title": "압박 공간: 적 머리 근처에서 적이 먼저 닿는 칸은 공간으로 안 셈",
+   "status": "rejected",
+   "prereg": "웨이브1 LEDGER: held 순 ≥ 9(Nh+4), main 순 ≥ −Nm; SEED0=5000 held 순 > 0; 압박사 단위당 −15%",
+   "held": "23/160, +11 −68 (순 −57); 전멸 71 vs B61 28",
+   "main": "중단(held로 판정 확정)",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": "기각: held 순 ≤ 0. 구현이 맵 전체를 적 기준 보로노이로 잘라 먹이·공간을 숨김 → H1b로 재설계"
+  },
+  {
+   "id": "H1b",
+   "area": "TR",
+   "title": "압박 공간 국소판: 목적지 주변 깊이 2/4칸 안에서만 적이 먼저 닿는 칸 제외 (TR_PRESS_DEPTH)",
+   "status": "queued",
+   "prereg": "웨이브3 LEDGER: held 순 ≥ 9, main 순 ≥ −14; 확인 SEED0=5000 held > 0; 압박사 단위당 −15% & 전멸 +10% 이내",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H2",
+   "area": "CB",
+   "title": "SMALL_UNIT_THREAT_REACH=2: 작은 적 머리가 중형 드래곤을 위협",
+   "status": "rejected",
+   "prereg": "H1과 같은 기준; 메커니즘 L4-9 head_rammed −15%",
+   "held": "69/160, +25 −36 (순 −11); 소 −3, 중 −9, 대 +1",
+   "main": "중단(held로 판정 확정)",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": "기각: held 순 ≤ 0"
+  },
+  {
+   "id": "H3",
+   "area": "EC",
+   "title": "중반 유닛 증가: 분할 가드 완화",
+   "status": "rejected",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": "래더 분석으로 기각: L4+ 분할률 우리 42.7 vs 상대 34.3, 단위당 성장 동일"
+  },
+  {
+   "id": "H4",
+   "area": "CB",
+   "title": "갇힌 소형(L≤5)이 벽사 대신 인접 적 머리와 맞교환 (CB_TRAP_TRADE)",
+   "status": "running",
+   "prereg": "웨이브2 LEDGER: H1과 같은 기준(held 순 ≥ 9 등); 메커니즘은 L≤5 head_ram 증가 + L≤5 자멸 감소 둘 다 필요, 발동 없으면 기각",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H5",
+   "area": "CB",
+   "title": "큰 맵 맞교환 기준 TRADE_MIN_UNITS=4",
+   "status": "queued",
+   "prereg": "웨이브3 LEDGER: TM4/TM1, held 순 ≥ 9, main 순 ≥ −14; 1200칸 이하 맵은 동일해야 함; 메커니즘 head_ram 증가 + r200 유닛 −10% 이내",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H6",
+   "area": "OP",
+   "title": "오프닝: 결손 없음, 낮은 우선순위",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  }
+ ],
+ "findings": [
+  "래더 120/228; S 61/101, M 38/68, L 21/59; ≥1950 상대 8/42",
+  "r100 총길이 앞섬 79-33, 뒤짐 35-73",
+  "패배 시 r50-r100 상대 유닛 12→24, 우리 11→16",
+  "압박 자멸(적 머리 3칸 내) r100-300 우리 29.8 vs 상대 20.4/게임, 단위당 ~2배",
+  "우리 분할률은 상대보다 높음(42.7 vs 34.3); 단위당 성장 동일; 사망이 이득의 ~70% 소모",
+  "우리 퀸 사망 159/228, 중앙값 r123 (QWQ 영역)",
+  "r300 전 소형(L≤5) 자멸 중 적 머리 인접: 우리 7.1 vs 상대 3.8/게임; 소형 head_ram 우리 9.8 vs 상대 22.8",
+  "로컬 노이즈: TIE_SEED만 바꿔도 held 160판 중 ~40% 결과 뒤집힘",
+  "main 세트에서 무효 플라시보 둘 다 B61 대비 −10/−14: 공식맵은 현 v61 쪽으로 편향",
+  "H1 PR3 붕괴(전멸 71/160): 적 머리 기준 전체 맵 컷은 소형의 공간·먹이 인식을 망가뜨림",
+  "SMALL_UNIT_THREAT_REACH=2는 중형 맵에서 손해(−9)"
+ ],
+ "runner": {
+  "state": "웨이브 3 진행 중 (05:03부터)",
+  "waves": [
+   {
+    "n": 1,
+    "start": "2026-10-03T03:42:57.884185+09:00",
+    "minutes": 28,
+    "exit": "adopted",
+    "turns": 62,
+    "cost_usd": 3.2152906000000003,
+    "is_error": false,
+    "summary": "Wave 1 finished the ladder analysis of all 228 games (we won 120): having more total length at round 100 predicted the result (79–33 when ahead, 35–73 when behind), and our dragons die by their own move with an enemy head nearby about twice as often per unit as the opponents'. That second number is the main lead, so the queue's first test, H1, is a new off-by-default toggle (`TR_PRESS_ROOM`) aimed at it. H2 (an existing threat-reach setting) is queued next, and H3 (splitting more in the midgame) was dropped without any games because we already split more often than the opponents. No game results yet: the baseline and placebo noise batch is about halfway through the held-out maps (held set du",
+    "tokens": 6102801
+   },
+   {
+    "n": 2,
+    "start": "2026-10-03T04:23:07.714956+09:00",
+    "minutes": 5,
+    "exit": 0,
+    "turns": 44,
+    "cost_usd": 1.8456261999999994,
+    "is_error": false,
+    "summary": "웨이브 2에서는 노이즈 측정 중 held 세트 결과가 나왔습니다. 기준선 B61이 80/160이고, 효과가 없도록 만든 플라시보 두 개는 순승 +5와 −3이었습니다. 그런데 판 결과가 약 40%나 뒤집혀서, 사전에 정한 통과 기준(순승 ≥ 9)은 노이즈 크기의 1배 정도밖에 안 되므로 판정은 다른 시드 재확인과 리플레이 확인에 기대야 합니다. H4는 갇힌 길이 5 이하 드래곤이 벽에 박는 대신 바로 옆 적 머리와 맞교환하게 하는 토글로, 기본 off로 구현했고 컴파일과 사전등록까지 마쳤습니다(래더에서 r300 전 해당 상황 우리 7.1회/게임, 상대 3.8회). v61과 똑같이 두는지 확인하는 ident는 아직 안 돌렸고 체인 안에서 실행됩니다. 지금은 main 노이즈 측정(~05:40), H1/H2(~07:00), H4(~08:30), 리플레이 확인(~09:15)이 순서대로 백그라운드에서 돌고 있으며, 판정은 아직 하나도 없습니다.",
+    "tokens": 3237579
+   }
+  ]
+ }
 }
