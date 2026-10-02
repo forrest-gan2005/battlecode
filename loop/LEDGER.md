@@ -119,3 +119,15 @@ One section per wave, facts only.
 - H1 (MPR3): the whole-map press block raised pressure deaths per unit by 75% and self deaths per unit by 56%. This weakens the H1 claim as implemented; H1b still runs under its pre-registered rule, but behind H7.
 - Chain change (06:03): `HOLD_H1B` created; h7.sh restarted (pid 38919) to wait on `H5_done` instead of `H1b_done`; it removes `HOLD_H1B` after `H7_done`. Order now H5 -> H7 -> H1b. h5.sh started H5 held at 06:02.
 - Tool: `loop/tools/mech7.py` (KEEP replays, maps over 1200 cells: splits r150-300, units/top/total at r300). MB61 on mechset: 16 games, splits 443:443 (mirror games), units r300 57.6.
+
+### H5 held results (`H5_held.json`, finished 06:28)
+- Paired vs B61: TM4 80/160, +0 -0, net 0; TM1 80/160, +0 -0, net 0. Every game identical to B61 (length 42.7:42.7), on all sizes.
+- Code reading: TRADE_MIN_UNITS only gates trades while our unit count is below it (`mark_trade_targets`, `normal_ok`). On maps over 1200 cells our count is above 8 almost all game, so lowering it never changes a decision. The binding trade conditions are TRADE_LOCAL_EDGE and the target size rule (parts >= max(TRADE_TARGET_MIN_PARTS, length + 2)).
+- **H5: REJECTED** (held net 0 <= 0; a no-op). H5 main batch stopped at 06:29 (killed ab3, spawn workers and unswbc runs), `H5_done` touched by hand. No H5_main.json.
+- h7.sh started H7 held at 06:29 (ab3 pid 94934). `HOLD_H1B` still in place; h7.sh removes it after `H7_done`.
+
+## Wave 4 close — 06:31 KST
+- Ran: ladder unit-flow, split-age and large-map split analyses; mech.sh finished; H5 held.
+- Verdicts: H4 TT5D INCONCLUSIVE (closed: fires, no drop in small self deaths); H5 REJECTED (no-op).
+- Code: `EC_SPLIT_ROUND_BIG` toggle (off, object-identical). Tools: `unitflow.py`, `l2age.py`, `splitgap2.py`, `mech7.py`.
+- Open runs: h7.sh pid 38919 (H7 held started 06:29, est. held ~06:55, main ~07:30), h1b.sh pid 11892 (after H7, est. ~08:30).

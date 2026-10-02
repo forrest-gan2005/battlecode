@@ -1,22 +1,16 @@
 {
  "phase": "C",
- "updated": "2026-10-03T06:06:00+09:00",
- "current": "웨이브 4: H5 held 진행 중(06:02 시작, ~06:28). 체인 순서 변경 H5 → H7 → H1b. H4 TT5D 미결로 종료",
+ "updated": "2026-10-03T06:31:00+09:00",
+ "current": "웨이브 4 종료: H5 기각(무효 — 160판 전부 동일), H4 TT5D 미결 종료. H7 held 진행 중(06:29 시작) → main → H1b",
  "running": [
   {
-   "what": "H5 TM4·TM1 held x2 진행 중, 이어서 main x8",
-   "result_file": "loop/results/H5_held.json, H5_main.json (H5_done)",
-   "pid": 38751,
-   "started": "2026-10-03T06:02:00+09:00"
-  },
-  {
-   "what": "H5_done 후: H7 ES225·ES300 held x2, main x8 (HOLD_H7 있으면 대기), 끝나면 HOLD_H1B 삭제",
+   "what": "H7 ES225·ES300 held x2 진행 중(~06:55), 이어서 main x8(~07:30), 끝나면 HOLD_H1B 삭제",
    "result_file": "loop/results/H7_held.json, H7_main.json (H7_done)",
    "pid": 38919,
-   "started": "2026-10-03T06:02:52+09:00"
+   "started": "2026-10-03T06:29:00+09:00"
   },
   {
-   "what": "HOLD_H1B 삭제 후(H7 종료 후): H1b PD2·PD4 held x2, main x8",
+   "what": "HOLD_H1B 삭제 후(H7 종료 후): H1b PD2·PD4 held x2, main x8 (~08:30)",
    "result_file": "loop/results/H1b_held.json, H1b_main.json (H1b_done)",
    "pid": 11892,
    "started": "2026-10-03T05:20:11+09:00"
@@ -97,13 +91,13 @@
    "id": "H5",
    "area": "CB",
    "title": "큰 맵 맞교환 기준 TRADE_MIN_UNITS=4",
-   "status": "running",
+   "status": "rejected",
    "prereg": "웨이브3 LEDGER: TM4/TM1, held 순 ≥ 9, main 순 ≥ −14; 1200칸 이하 맵은 동일해야 함; 메커니즘 head_ram 증가 + r200 유닛 −10% 이내",
-   "held": "",
-   "main": "",
+   "held": "TM4 80/160 (+0 −0), TM1 80/160 (+0 −0): 전 게임 동일",
+   "main": "중단(판정 불변)",
    "confirm": "",
    "mechanism": "",
-   "verdict": ""
+   "verdict": "기각 — 무효 변경. TRADE_MIN_UNITS는 유닛 8개 미만일 때만 작동하는데 대형맵에선 항상 그 이상. 실제 제약은 TRADE_LOCAL_EDGE와 상대 크기 조건"
   },
   {
    "id": "H6",
@@ -121,7 +115,7 @@
    "id": "H7",
    "area": "EC",
    "title": "대형맵(1200칸 초과)에서 r150 이후에도 비리더 드래곤 분열 유지",
-   "status": "queued",
+   "status": "running",
    "prereg": "ES225/ES300 (EC_SPLIT_ROUND_BIG). 통과: held 순 ≥ 9, main 순 ≥ −14. 후보: +SEED0=5000 held 순 > 0 + 메커니즘(r150-300 분열 ≥ MB61의 +20%, r300 유닛 증가, 최장 드래곤 −25% 이내) + CPU. 기각: held 순 ≤ 0 또는 분열 증가 없음",
    "held": "",
    "main": "",
@@ -146,7 +140,8 @@
   "대형맵 r150-300: 우리 분열 83 vs 상대 166/게임(승리 90:171, 패배 80:163); 1200칸 초과 맵은 r150 이후 길이 >4 드래곤 전체가 분열 중단",
   "분열 직후(1라운드 내) L2 자멸 49:44/게임 — 꼬리 탈출 분열 후 남은 머리, 양측 동일한 게임 메커니즘",
   "패배 시 머리 충돌 사망 수는 양측 거의 같음(r50-100 5.9:6.7); 상대가 먼저 들이받을 뿐",
-  "MPR3(H1) 리플레이: 단위당 압박 자멸 +75%, 자멸 +56% — 맵 전체 차단은 역효과"
+  "MPR3(H1) 리플레이: 단위당 압박 자멸 +75%, 자멸 +56% — 맵 전체 차단은 역효과",
+  "TRADE_MIN_UNITS 변경은 무효(held 160판 전부 동일): 대형맵 트레이드를 막는 건 국지 수적 우위·상대 크기 조건"
  ],
  "runner": {
   "state": "웨이브 4 진행 중 (05:48부터)",
