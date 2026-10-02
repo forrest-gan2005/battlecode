@@ -206,3 +206,44 @@ One section per wave, facts only.
 - Verdicts: H1b PD2 REJECTED (net -42), PD4 REJECTED (net -47); H7b ES300 REJECTED (net -4; combined with H7 net 0 over 320 games).
 - Code: none in mybot2. Tools: `loop/tools/mech9.py`, `loop/h9.sh`.
 - Open runs: h8.sh pid 94571 running H8 SL62 held x2 SEED0=3000 (started ~07:50, est. ~08:10) -> `H8_held.json`, `H8_done`; h9.sh pid 78255 then runs H9 TE held x2 (est. ~08:30) -> `H9_held.json`, `H9_done`.
+
+## Wave 7 — 2026-10-03 07:52 KST
+- Start: h8.sh running H8 SL62 held x2 (started 07:50); h9.sh waiting on `H8_done`.
+
+### Ladder: size-class unit and death profile (`ladan.pkl`, all 228 games)
+- Median units us:them in losses: maps <= 800 cells (N=40) r50 5:6, r100 7.5:14, r150 9:23; 801-1200 (N=22) r50 7:8, r100 10.5:17, r150 16:22. Wins mirror this (S r100 21:5, M r100 17:10). Total length at r25 is equal in S/M losses (10:11, 11.5:13); the gap opens r50-r100 (S 12:14 -> 18.5:35.5). On these sizes the side that wins the early food race starves the other; our r25-150 self deaths in S/M losses are not higher than the opponents'.
+- Most r25-150 self deaths on all sizes are length-2 deaths with no enemy head within 3 (e.g. maps > 1200 losses: wall 31.9 us vs 25.5 them). These include deliberate feeder deaths, so they are not a clean terrain signal.
+
+### Ladder: who initiates head-ons by local edge (`loop/tools/edge10.py`, `edge10.pkl`)
+- Initiator head-on deaths (head_ram) r < 300, per game, binned by edge = own heads within 6 + 1 - enemy heads within 6 (target included), at the start of the round.
+- Maps > 1200 cells (N=70): us edge <= 0: 4.0, edge >= 1: 8.2; them edge <= 0: 14.4, edge >= 1: 34.3.
+- 801-1200 (N=57): us <= 0: 2.9, >= 1: 7.7; them <= 0: 5.8, >= 1: 9.7. <= 800 (N=101): us 2.3, 4.9; them 3.4, 4.5.
+- Reading: on large maps the opponents' extra head-ons come at every local edge, about 30% of them while locally even or outnumbered. `TRADE_LOCAL_EDGE = 1` blocks our trades unless visible allies + 1 - visible enemies >= 1.
+
+### Pre-registration: H10 CB — trade while locally even or outnumbered
+- Claim: our traders only take a head-on when they see at least as many ally heads as enemy heads; opponents also trade when locally even or outnumbered (ladder above). Lowering the local edge lets small dragons take even trades in contested spots. Applies on all map sizes (the `worth` rule is unchanged, so on maps > 1200 cells it binds only together with the target rule or at the cap).
+- Toggle: existing `TRADE_LOCAL_EDGE` (value change only). LE0 = B61 + TRADE_LOCAL_EDGE=0; LEM1 = B61 + TRADE_LOCAL_EDGE=-1.
+- Runs: held x2 SEED0=3000 -> `H10_held.json`, paired vs `B_held.json`. Chain `loop/h10.sh` waits for `H9_done` and no `HOLD_H10`. Main only if held passes.
+- PASS = held net >= 9 and main net >= -14 (per variant). CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays: our head_ram r < 300 per game >= 20% above MB61, self deaths per 100 unit-rounds not up by > 15%) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
+
+### H8 results (`H8_held.json`, held x2 SEED0=3000, finished 08:04)
+- SL62 87/160 vs B61 80/160: +23 -16, net +7 (large +4, medium +3, small 0; sqheld +6, fresh +1). Flips by cell count: > 1200 +18 -14, 801-1200 +2 -2, <= 800 +3 -0. Mean final length 44.5 vs v61 41.4.
+- **H8 SL62: INCONCLUSIVE** (net +7: above 0, below the bar of 9). Main not run.
+
+### Pre-registration: H8b EC — SL62 confirm with new seeds
+- Same toggle: SL62 = B61 + SPLIT_SOFT_LIMIT=62. Run: held x2 SEED0=5000 -> `H8b_held5.json`, paired vs B61 in `H7b_held5.json` (same maps, same SEED0, B61 tag).
+- PASS = new-seed held net >= 9 -> then main x8 (net >= -14), mechanism (as pre-registered for H8) and CPU for CANDIDATE. REJECTED = new-seed net <= 0. Otherwise INCONCLUSIVE; combined SEED0 3000+5000 net reported as a fact (a combined net >= 12 over 320 games would justify a third seed).
+- Chain `loop/h8b.sh` waits for `H9_done`, runs, touches `H8b_done` and removes `HOLD_H10`; h10.sh (H10) waits for that. Order: H9 -> H8b -> H10.
+
+### H9 results (`H9_held.json`, held x2 SEED0=3000, finished 08:17)
+- TE 76/160 vs B61 80/160: +17 -21, net -4 (large -4, medium +1 -1 = 0 on the 1302-cell map, small 0; sqheld -3, fresh -1). Flips by cell count: > 1200 +17 -21, <= 1200 +0 -0 (implementation check passes). Mean final length 41.2 vs v61 47.0.
+- **H9 TE: REJECTED** (held net <= 0). Main not run.
+
+### H8 mechanism baseline (`loop/tools/mech8.py`, MB61 KEEP replays, maps > 1200 cells)
+- MB61 (16 games): mean units r100-200 60.9 per side; self deaths per 100 unit-rounds r100-200 3.63.
+
+## Wave 7 close — 08:19 KST
+- Ran: H8 held (finished 08:04), H9 held (finished 08:17); ladder size-class profile; ladder head-on initiative by local edge (`edge10.py`); mech8 baseline.
+- Verdicts: H8 SL62 INCONCLUSIVE (net +7); H9 TE REJECTED (net -4).
+- Code: none in mybot2 (H8, H9, H10 are value changes of existing constants). Tools: `loop/tools/edge10.py`, `loop/tools/mech8.py`, `loop/h8b.sh`, `loop/h10.sh`.
+- Open runs: h8b.sh pid 84921 running H8b SL62 held x2 SEED0=5000 (started 08:17, est. ~08:37) -> `H8b_held5.json`, `H8b_done`, removes `HOLD_H10`; h10.sh pid 54889 then runs H10 LE0 + LEM1 held x2 SEED0=3000 (est. ~09:20) -> `H10_held.json`, `H10_done`.

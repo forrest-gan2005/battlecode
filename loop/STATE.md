@@ -1,12 +1,12 @@
 # Loop state
 
-- Phase: C (wave 6 closed 07:52). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 7 closed 08:19). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h8.sh` (pid 94571): H7b done (rejected). Now H8 SL62 held x2 SEED0=3000 (started ~07:50, est. ~08:10) -> `H8_held.json`, then `H8_done`.
-  2. `loop/h9.sh` (pid 78255): waits for `H8_done` and no `HOLD_H9`: H9 TE held x2 SEED0=3000 -> `H9_held.json` (est. ~08:30), then `H9_done`.
-- Next wave: H8: `judge.py B_held.json H8_held.json`. H9: `judge.py B_held.json H9_held.json` (any flip on a map <= 1200 cells = implementation error; check dims, the "medium" label includes a 1302-cell map). Main x8 only for a held PASS.
+  1. `loop/h8b.sh` (pid 84921): H8b SL62 held x2 SEED0=5000 (started 08:17, est. ~08:37) -> `H8b_held5.json`, then `H8b_done` and removes `HOLD_H10`.
+  2. `loop/h10.sh` (pid 54889): waits for `H9_done` and no `HOLD_H10`: H10 LE0 + LEM1 held x2 SEED0=3000 (est. ~09:20) -> `H10_held.json`, then `H10_done`.
+- Next wave: H8b: `judge.py loop/results/H7b_held5.json loop/results/H8b_held5.json` (B61 at SEED0=5000 lives in H7b_held5.json). If PASS: main x8 + mechanism (`mech8.py`, baseline MB61 60.9 units, 3.63 self/100 unit-rounds) + CPU. H10: `judge.py B_held.json H10_held.json`.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -51,12 +51,18 @@
 - ES300 SEED0=5000 held 76/160, +14 -18, net -4 (B61 80/160). Combined with H7: +29 -29, net 0. H7 family closed.
 - Rule in LEDGER wave 5. PASS = new-seed held net >= 9.
 
-### H8 EC — SPLIT_SOFT_LIMIT 60 -> 62 (priority 1, running since ~07:50)
+### H8 EC — SPLIT_SOFT_LIMIT 60 -> 62: INCONCLUSIVE (wave 7); H8b confirm running
+- SL62 held 87/160, +23 -16, net +7 (large +4, medium +3; > 1200 cells +18 -14, <= 800 +3 -0). H8b = SEED0=5000 held, rule in LEDGER wave 7.
 - Diagnosis: on 800+ cell maps in r50-150, 82-95% of refused L4+ split turns are refused by the soft limit (we sit at 60; engine cap 64; opponents 62-63 on the ladder). Rule in LEDGER wave 5. Risk: escape splits lose their 2-unit reserve at the cap.
 
-### H9 CB — even trades on maps over 1200 cells (priority 2, chained in h9.sh)
+### H9 CB — even trades on maps over 1200 cells: REJECTED (wave 7)
+- TE held 76/160, +17 -21, net -4; zero flips on maps <= 1200 cells.
 - Ladder, maps > 1200 cells, r < 300: head_ram us 12.4 vs them 53.3 (losses), 12.5 vs 44.4 (wins); head-on length lost even (190:221). Our big-map rule needs target parts >= max(5, L+2) below the cap. Toggle: existing `TRADE_EVEN=true` (TE). Rule in LEDGER wave 6.
 - Local caveat: mirror games vs v61 already show 63 head_rams per side per game on big maps (at-cap rule), so the local signal may be small.
+
+### H10 CB — trade while locally even or outnumbered (priority 1 after H8b, chained in h10.sh)
+- Ladder (edge10.py, r < 300, initiator head-on deaths per game by own heads within 6 + 1 - enemy heads within 6): maps > 1200 cells us edge <= 0 4.0, >= 1 8.2; them 14.4, 34.3. 801-1200: us 2.9, 7.7; them 5.8, 9.7. <= 800: us 2.3, 4.9; them 3.4, 4.5.
+- Toggle: existing `TRADE_LOCAL_EDGE` 1 -> 0 (LE0) and -1 (LEM1). Rule in LEDGER wave 7. Falsifier: held net <= 0; head_ram not up 20% in KEEP replays.
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.
