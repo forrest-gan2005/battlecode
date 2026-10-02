@@ -1,0 +1,1 @@
+loop/h5.sh: line 9: 86117 Terminated: 15          SEED0=3000 python3 ab3.py "$(cat official.txt),$(cat newset.txt)" v61 8 $R/H5_main.json "TM4@mybot2:$T,TRADE_MIN_UNITS=4" "TM1@mybot2:$T,TRADE_MIN_UNITS=1" > $R/H5_main.log 2>&1

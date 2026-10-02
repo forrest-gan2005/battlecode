@@ -54,3 +54,9 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 - Before r300, per game: small head_ram deaths (the dying dragon moved into a head) ours 9.8, theirs 22.8.
 - From r300: our small self 60.3 (adjacent 2.38), theirs 88.5 (adjacent 1.73); small head_ram ours 2.9, theirs 8.3.
 - Reading: H4 can act on at most about 7 events per game before r300 (the gap to the opponents is about 3.3). Opponents convert small dragons into head-ons about 2.3x as often as we do; this matches the older finding in `work/plan.md` (top teams initiate 14-25 head-ons per game). The TRADE_MIN_UNITS=1 test (te1) listed there has no recorded result.
+
+## Wave 5 addendum: split timing and the unit cap (`loop/tools/splitlen.py`, `splitlen_rep.py`; diagnosis `loop/dev/diag8*`)
+- Non-queen length mix r50-300 is nearly identical for both sides on all sizes (L2 ~0.6, L3 ~0.3, L4+ ~0.07); exception: maps > 1200 cells r150-300 losses, L4+ share 0.15 vs 0.31.
+- Share of splits made from parents of length >= 6, r50-150: maps 801-1200 cells us 0.19-0.29 vs them 0.07-0.12; maps > 1200 cells us 0.31-0.40 vs them 0.12-0.20; maps <= 800 equal.
+- Median units us:them on maps > 1600 cells (losses N=46): r100 46.5:42, r150 56:61, r200 47:62, r300 42:62. Wins (N=24): r150 60:53, r300 51:63. Engine cap is 64; opponents stay at 62-63 from r150.
+- Local diagnosis (24 games vs v61, 800+ cell maps): in r50-150, 82-95% of refused splits by L4+ non-leader dragons are refused by SPLIT_SOFT_LIMIT = 60; exit/room, portal and harvest checks refuse <= 5%. After r150 on maps > 1200 cells the stop-round rule refuses 92-95%.

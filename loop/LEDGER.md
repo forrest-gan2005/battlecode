@@ -131,3 +131,44 @@ One section per wave, facts only.
 - Verdicts: H4 TT5D INCONCLUSIVE (closed: fires, no drop in small self deaths); H5 REJECTED (no-op).
 - Code: `EC_SPLIT_ROUND_BIG` toggle (off, object-identical). Tools: `unitflow.py`, `l2age.py`, `splitgap2.py`, `mech7.py`.
 - Open runs: h7.sh pid 38919 (H7 held started 06:29, est. held ~06:55, main ~07:30), h1b.sh pid 11892 (after H7, est. ~08:30).
+
+## Wave 5 — 2026-10-03 06:30 KST
+- Start: h7.sh running H7 held (ab3 started 06:29); h1b.sh waiting on `HOLD_H1B`.
+
+### H7 held results (`H7_held.json`, finished 06:55)
+- Paired vs B61 (`judge.py`): ES225 80/160, +18 -18, net 0 (large 0, medium 0, small 0; sqheld -6, fresh +6). ES300 84/160, +15 -11, net +4 (large +4, medium 0, small 0; sqheld +3, fresh +1). Wiped 28 vs 28 for both. 92/160 games have the same result and lengths as B61.
+- Only maps over 1200 cells flipped (the two "medium" flips are on a 42x31 = 1302-cell map); small maps 0 flips, as expected.
+- **H7 ES225: REJECTED** (held net 0 <= 0). **H7 ES300: INCONCLUSIVE** (held +4: above 0, below the PASS bar 9; main cannot make it PASS).
+- H7 main batch stopped at 06:56 (killed h7.sh, ab3, spawn workers and unswbc runs; `H7_done` touched by hand; no H7_main.json). Mechanism (mech7) not run.
+
+### Ladder split analysis (all 228 games; `loop/tools/splitlen.py` -> `splitlen.pkl`, `splitlen_rep.py`)
+- Non-queen dragon length mix r50-300 is almost the same for both sides on every size (L2 ~0.6, L3 ~0.3, L4+ ~0.07). Exception: maps > 1200 cells r150-300 in losses, L4+ share 0.15 vs 0.31.
+- Parent length at split (share of splits from L >= 6), r50-150: maps 801-1200 cells us 0.19-0.29 vs them 0.07-0.12; maps > 1200 cells us 0.31-0.40 vs them 0.12-0.20. On maps <= 800 cells equal (0.10-0.13). Opponents split mostly at L4 (0.77-0.88).
+- Median unit count us:them, maps > 1600 cells: losses r100 46.5:42, r150 56:61, r200 47:62, r300 42:62; wins r150 60:53, r300 51:63. Max observed per side 60-63. Opponents sit at the engine cap (64 units) from r150; ours falls after r150.
+- Maps <= 800 cells: r50 total us 31 in wins vs 12 in losses (theirs 12.5 vs 14); the spread follows map structure (few maps), not used for a hypothesis.
+
+### Split-block diagnosis (`loop/dev/diag8/`, `diag8_run.py`, `diag8_rep.py`; 12 devset_sq maps of 800+ cells x2, SEED0=7000, vs v61; diagnostic copy only, mybot2 untouched)
+- Instrumented `split_child_size` with a reason code per refusal, non-queen dragons, r < 300. Results are shares of turns per group (dragons length >= 4, not leader):
+  - Maps > 1200 cells, r50-150: L4 (8489 turns) soft limit 0.87, split 0.10; L5-7 (13507) soft limit 0.95, split 0.04; L8+ (17710) soft limit 0.93.
+  - Maps 801-1200 cells, r50-150: L4 soft limit 0.82, split 0.16; L5-7 soft limit 0.91.
+  - Maps > 1200 cells, r150-300: L5-7 stop_round 0.95; L8+ stop_round 0.92 (stop_round is checked before the soft limit, so it masks it).
+  - r0-50: maps > 1200 cells L4 split 0.70, soft limit 0.24.
+  - no_exit/tail_room, portal checks and harvesting are each <= 0.05 everywhere.
+- Reading: in local games vs v61, from r50 our count sits at SPLIT_SOFT_LIMIT = 60 (engine cap 64) on 800+ cell maps; the soft limit is the binding split rule before r150. This also limits what H7 can change locally (mirror games keep both sides near the cap).
+
+### Pre-registration: H7b EC — ES300 confirm with new seeds
+- Same toggle as H7: ES300 = B61 + EC_SPLIT_ROUND_BIG=300. Runs: held x2 SEED0=5000 with B61 and ES300 in the same batch -> `H7b_held5.json` (paired B61 vs ES300 from that file).
+- PASS = held net (SEED0=5000) >= 9. Then CANDIDATE needs a mechanism check (mech7 on KEEP replays: r150-300 splits >= 20% above MB61) and CPU. REJECTED = net <= 0. Otherwise INCONCLUSIVE (combined SEED0 3000+5000 net reported as a fact).
+
+### Pre-registration: H8 EC — SPLIT_SOFT_LIMIT 60 -> 62
+- Claim: on maps of 800+ cells our split rule stops at 60 units while the engine allows 64 and opponents hold 62-63 from r150 (ladder). Raising the soft limit to 62 keeps 2 extra units in the mid game; ESCAPE_RESERVE (2) still leaves unit_limit - 2 = 62 for escape checks, so escape splits lose their reserve at the cap. Binding check: soft limit is 0.82-0.95 of refused L4+ split turns in r50-150 (diagnosis above).
+- Toggle: existing constant `SPLIT_SOFT_LIMIT` (value change only, no new code). SL62 = B61 + SPLIT_SOFT_LIMIT=62. Also used by `mark_trade_targets` (at_cap), which moves with it.
+- Runs: held x2 SEED0=3000 -> `H8_held.json`, paired vs `B_held.json`. Main only if held passes.
+- PASS = held net >= 9 and main net >= -14. CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays: mean unit count r100-200 on 1200+ cell maps higher than MB61; no rise in self deaths per 100 unit-rounds above 15%) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
+- Chain: `loop/h8.sh` (pid 94571) waits for `H1b_done` and no `HOLD_H8`, runs H7b then H8 held, touches `H8_done`.
+
+## Wave 5 close — 07:05 KST
+- Ran: H7 held; ladder split analysis; split-block diagnosis (24 games).
+- Verdicts: H7 ES225 REJECTED (net 0); H7 ES300 INCONCLUSIVE (net +4), followed up as H7b.
+- Code: none in mybot2. Tools: `splitlen.py`, `splitlen_rep.py`, `loop/dev/diag8*` (diagnostic copy).
+- Open runs: H1b held started 06:59 (h1b.sh pid 11892, ab3 pid 87652; held est. ~07:25, main ~08:00); h8.sh pid 94571 (after H1b_done: H7b held SEED0=5000 with B61, then H8 held; est. ~09:00).
