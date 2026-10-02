@@ -24,6 +24,7 @@ tune_runs/*
 
 /snap*/
 /v[0-9]*/
+!/v60/
 !/v61/
 /dbg*/
 /codex1/
