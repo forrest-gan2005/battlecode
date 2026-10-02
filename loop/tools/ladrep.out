@@ -1,0 +1,75 @@
+N 228 W 120/228
+size S<=800 61/101 maps 7
+size M<=2000 38/68 maps 6
+size L>2000 21/59 maps 4
+elo 0 1700 24/30 opps 6
+elo 1700 1850 68/114 opps 11
+elo 1850 1950 20/42 opps 4
+elo 1950 9999 8/42 opps 6
+ending {('elim', 'L'): 30, ('elim', 'W'): 57, ('longest', 'L'): 37, ('longest', 'W'): 43, ('queen', 'L'): 41, ('queen', 'W'): 20}
+queen (us,them,res) {('alive', 'alive', 'L'): 7, ('alive', 'alive', 'W'): 11, ('alive', 'dead', 'W'): 30, ('dead', 'alive', 'L'): 49, ('dead', 'dead', 'L'): 52, ('dead', 'dead', 'W'): 79}
+queen death round median us 123.5 them 109 | our q death reasons Counter({'head_rammed': 95, 'wall': 40, 'self': 17, 'body': 14, 'head_ram': 12, 'none': 2}) | their Counter({'head_rammed': 50, 'wall': 39, 'head_ram': 30, 'self': 19, 'body': 14, 'none': 9})
+queen death round buckets us Counter({0: 76, 1: 53, 2: 23, 3: 17, 4: 11}) them Counter({0: 77, 1: 49, 2: 25, 3: 5, 4: 5})
+
+== WIN games 120: deaths per game by phase/reason (us | them), and length lost
+p0<100 body 4.3/1.8 (len 10/4)  head_ram 3.1/3.3 (len 8/9)  head_rammed 3.1/3.3 (len 8/9)  none 0.0/3.5 (len 0/8)  self 6.3/4.5 (len 14/11)  wall 15.6/7.8 (len 35/19)
+p1<300 body 16.6/9.6 (len 43/25)  head_ram 7.2/12.9 (len 18/36)  head_rammed 11.4/8.6 (len 35/26)  none 4.7/12.2 (len 11/32)  self 22.0/19.5 (len 52/53)  wall 46.5/27.1 (len 108/68)
+p2>=300 body 10.5/8.2 (len 28/22)  head_ram 3.0/6.6 (len 10/20)  head_rammed 5.6/4.0 (len 22/23)  none 21.1/14.3 (len 55/45)  self 11.9/26.9 (len 30/79)  wall 22.4/18.4 (len 54/48)
+
+== LOSS games 108: deaths per game by phase/reason (us | them), and length lost
+p0<100 body 5.8/3.1 (len 13/7)  head_ram 1.8/6.6 (len 4/17)  head_rammed 6.0/2.3 (len 16/6)  none 0.0/3.9 (len 0/9)  self 6.1/6.4 (len 13/14)  wall 15.4/13.7 (len 33/32)
+p1<300 body 15.8/17.0 (len 40/44)  head_ram 7.8/24.7 (len 21/72)  head_rammed 22.6/9.9 (len 71/35)  none 4.0/18.5 (len 10/52)  self 16.7/34.4 (len 38/92)  wall 38.0/43.0 (len 87/117)
+p2>=300 body 8.3/15.1 (len 21/41)  head_ram 3.8/11.1 (len 14/35)  head_rammed 10.0/4.9 (len 43/35)  none 18.0/28.0 (len 46/90)  self 10.8/48.2 (len 26/147)  wall 19.6/32.1 (len 46/83)
+
+== self-inflicted (wall/self/body/none) deaths per game by length bucket, all games
+{('them', 'L16+'): 0.7, ('them', 'L2'): 128.5, ('them', 'L3-5'): 68.0, ('them', 'L6-15'): 8.5, ('us', 'L16+'): 0.05, ('us', 'L2'): 119.13, ('us', 'L3-5'): 49.93, ('us', 'L6-15'): 1.78}
+self-inflicted deaths near enemy head (<=3) share us 0.29 them 0.17
+
+== economy (median total length, units, top) us vs them
+ALL 228
+  r25 18:14 u7:5 top3:3
+  r50 29:21 u11:8 top4:4
+  r100 50:40 u19:16 top4:4
+  r150 59:67 u24:26 top4:4
+  r200 70:86 u26:33 top5:5
+  r300 76:119 u28:46 top5:8
+  r400 78:133 u21:38 top13:16
+  rend 56:75 u10:12 top15:18
+WIN 120
+  r25 17:13 u7:5 top3:3
+  r50 30:18 u12:7 top4:3
+  r100 52:25 u21:10 top4:3
+  r150 65:40 u26:16 top4:4
+  r200 76:63 u29:24 top5:4
+  r300 101:84 u36:33 top5:5
+  r400 90:88 u25:25 top17:10
+  rend 94:3 u25:1 top15:2
+LOSS 108
+  r25 19:18 u7:7 top3:3
+  r50 28:30 u11:12 top4:4
+  r100 41:59 u16:24 top4:4
+  r150 53:86 u20:34 top4:4
+  r200 67:114 u24:46 top5:7
+  r300 60:165 u19:58 top6:12
+  r400 65:162 u16:46 top12:21
+  rend 32:140 u3:25 top14:27
+
+== total-length lead at r100/r200/r300 vs result
+100 {('ahead', 'L'): 33, ('ahead', 'W'): 79, ('behind', 'L'): 73, ('behind', 'W'): 35}
+200 {('ahead', 'L'): 19, ('ahead', 'W'): 57, ('behind', 'L'): 78, ('behind', 'W'): 28}
+300 {('ahead', 'L'): 16, ('ahead', 'W'): 36, ('behind', 'L'): 75, ('behind', 'W'): 34}
+
+== eats (length gained) per game by phase us:them; splits per game
+WIN ph0 eat 122:85 split 53.4:35.8 ph1 eat 312:268 split 121.0:94.4 ph2 eat 202:235 split 65.2:66.7
+LOSS ph0 eat 124:145 split 54.2:59.9 ph1 eat 279:511 split 103.1:164.2 ph2 eat 182:449 split 58.3:122.0
+
+== by size: ending + self deaths/game + r100 total
+S<=800 61/101 {('longest', True): 17, ('elim', True): 43, ('queen', False): 13, ('longest', False): 11, ('elim', False): 16, ('queen', True): 1} selfdeaths<r300 111.0:84.1 r100 total 41:21
+M<=2000 38/68 {('longest', True): 15, ('elim', True): 14, ('longest', False): 6, ('queen', True): 9, ('elim', False): 9, ('queen', False): 15} selfdeaths<r300 136.7:127.8 r100 total 47:39
+L>2000 21/59 {('longest', True): 11, ('queen', True): 10, ('elim', False): 5, ('longest', False): 20, ('queen', False): 13} selfdeaths<r300 74.6:139.8 r100 total 111:96
+
+== head-on deaths per game (ram=we moved into, rammed=they moved into us) by length bucket, us:them
+{('them', 'head_ram', 'L10+'): 0.18, ('them', 'head_ram', 'L4-9'): 4.1, ('them', 'head_ram', 'L<=3'): 27.76, ('them', 'head_rammed', 'L10+'): 1.04, ('them', 'head_rammed', 'L4-9'): 3.35, ('them', 'head_rammed', 'L<=3'): 12.09, ('us', 'head_ram', 'L10+'): 0.22, ('us', 'head_ram', 'L4-9'): 1.11, ('us', 'head_ram', 'L<=3'): 11.96, ('us', 'head_rammed', 'L10+'): 0.95, ('us', 'head_rammed', 'L4-9'): 5.32, ('us', 'head_rammed', 'L<=3'): 22.59}
+
+== big dragon (len>=10) deaths per game us:them by reason
+{('them', 'body'): 0.26, ('them', 'head_ram'): 0.18, ('them', 'head_rammed'): 1.04, ('them', 'none'): 0.94, ('them', 'self'): 0.92, ('them', 'wall'): 0.47, ('us', 'body'): 0.04, ('us', 'head_ram'): 0.22, ('us', 'head_rammed'): 0.95, ('us', 'none'): 0.2, ('us', 'self'): 0.05, ('us', 'wall'): 0.04}

@@ -27,13 +27,14 @@ def play(job):
     return job, digest(out)
 if __name__ == '__main__':
     cand = sys.argv[1]
+    tag = os.path.basename(cand.rstrip('/'))
     for f in os.listdir(OUT):
-        if f.startswith(cand + 'A_') or f.startswith(cand + 'B_'): os.remove(os.path.join(OUT, f))
+        if f.startswith(tag + 'A_') or f.startswith(tag + 'B_'): os.remove(os.path.join(OUT, f))
     jobs = []
     for m, s in MAPS:
         jobs.append(('ref' + REF, REF, REF, m, s))
-        jobs.append((cand + 'A', cand, REF, m, s))
-        jobs.append((cand + 'B', REF, cand, m, s))
+        jobs.append((tag + 'A', cand, REF, m, s))
+        jobs.append((tag + 'B', REF, cand, m, s))
     with ThreadPoolExecutor(6) as ex:
         res = list(ex.map(play, jobs))
     ref = {(j[3], j[4]): d for j, d in res if j[0] == 'ref' + REF}

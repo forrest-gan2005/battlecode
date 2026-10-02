@@ -57,3 +57,4 @@ work/*.txt
 !work/*toggles.txt
 !work/nr_*.txt
 /cpu_*/
+loop/tools/*.pkl

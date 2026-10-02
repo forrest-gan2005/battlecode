@@ -1,0 +1,36 @@
+== deaths per 100 unit-rounds (approx units from snapshots), us:them
+WIN 0 100 selfinf 1.37:1.39 head 0.32:0.52
+WIN 100 300 selfinf 1.32:1.82 head 0.27:0.57
+WIN 300 500 selfinf 0.95:2.16 head 0.12:0.34
+LOSS 0 100 selfinf 1.43:1.23 head 0.41:0.40
+LOSS 100 300 selfinf 1.41:1.44 head 0.58:0.44
+LOSS 300 500 selfinf 1.63:1.50 head 0.40:0.19
+ALL 0 100 selfinf 1.39:1.29 head 0.36:0.45
+ALL 100 300 selfinf 1.36:1.57 head 0.40:0.49
+ALL 300 500 selfinf 1.16:1.70 head 0.21:0.24
+== self-inflicted deaths near enemy head (dist<=3) per game by phase, us:them
+0 100 6.3:3.4
+100 300 29.8:20.4
+300 500 14.0:12.1
+== head-on pairs: same-round head deaths of both sides
+{'both': 18352, 'one_them': 1802, 'one_us': 518}
+== r100 ahead by map size -> W/L
+('L', False, False) 23
+('L', False, True) 10
+('L', True, False) 15
+('L', True, True) 11
+('M', False, False) 20
+('M', False, True) 11
+('M', True, False) 10
+('M', True, True) 27
+('S', False, False) 30
+('S', False, True) 14
+('S', True, False) 8
+('S', True, True) 41
+== losses by elo band: r100 / r200 total us:them median
+0 1850 47 r100 41:59 r200 67:103 units r200 23:38
+1850 9999 50 r100 56:65 r200 65:131 units r200 26:54
+== our queen max length / survival by size
+S 101 our q alive at end 13 their 20 median qmax us 4 them 4
+M 68 our q alive at end 19 their 27 median qmax us 4 them 6
+L 59 our q alive at end 16 their 20 median qmax us 4 them 4

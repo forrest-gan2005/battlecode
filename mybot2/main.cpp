@@ -199,6 +199,8 @@ constexpr bool HOT_FAST = false;
 constexpr bool BARREN_BY_RATE = false;
 constexpr bool BARREN_KNOWN = false;
 constexpr bool NO_REVERSE = false;
+constexpr int TR_PRESS_ROOM = 0;
+constexpr int TR_PRESS_MAX_LEN = 8;
 constexpr int RALLY_FRESH = 0;
 constexpr int LC_LEAD_ROUND = 0;
 constexpr int LC_FEED_ROUND = 0;
@@ -2354,6 +2356,9 @@ class Bot {
                 if (strict_bodies && free_at != 0) {
                     continue;
                 }
+                if (survey_press && !next_beyond && rival_steps(next_index) <= steps + 1) {
+                    continue;
+                }
                 visit_stamp[next_index] = visit_mark;
                 beyond_portal[next_index] = next_beyond ? 1 : 0;
                 step_count[next_index] = steps + 1;
@@ -3503,7 +3508,9 @@ class Bot {
         if (survey_ally_block) {
             mark_ally_block();
         }
+        survey_press = TR_PRESS_ROOM > 0 && length <= TR_PRESS_MAX_LEN && enemy_near(destination, TR_PRESS_ROOM);
         Survey const survey = survey_from(destination);
+        survey_press = false;
         survey_pessimist = false;
         survey_no_portal = false;
         survey_ally_block = false;
@@ -4004,6 +4011,7 @@ class Bot {
     int enemy_queen_round = -1;
     bool hunt_queen = false;
     bool survey_pessimist = false;
+    bool survey_press = false;
     bool survey_no_portal = false;
     bool survey_ally_block = false;
     std::vector<int> qk_margin;

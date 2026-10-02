@@ -1,25 +1,105 @@
 {
-  "phase": "A",
-  "updated": "2026-10-03T03:50:00+09:00",
-  "current": "Phase A ladder analysis; Phase B baseline+placebo batch running",
-  "running": [
-    {
-      "what": "Phase B: B61,P1(TIE_SEED=1),P2(TIE_SEED=2) vs v61; held x2 then main x8, SEED0=3000",
-      "result_file": "loop/results/B_held.json, loop/results/B_main.json",
-      "pid": 30425,
-      "started": "2026-10-03T03:50:00+09:00"
-    }
-  ],
-  "baseline": {
-    "main": "",
-    "held": "",
-    "ident": "B61 main.cpp/helper.hpp/bot.toml byte-identical to v61"
-  },
-  "noise": {},
-  "hypotheses": [],
-  "findings": [],
-  "runner": {
-    "state": "웨이브 1 진행 중 (03:42부터)",
-    "waves": []
+ "phase": "B",
+ "updated": "2026-10-03T03:58:00+09:00",
+ "current": "Phase A done (ANALYSIS.md); Phase B baseline+placebo batch running",
+ "running": [
+  {
+   "what": "Phase B: B61,P1(TIE_SEED=1),P2(TIE_SEED=2) vs v61; held x2 then main x8, SEED0=3000",
+   "result_file": "loop/results/B_held.json, loop/results/B_main.json",
+   "pid": 30425,
+   "started": "2026-10-03T03:50:00+09:00"
   }
+ ],
+ "baseline": {
+  "main": "",
+  "held": "",
+  "ident": "B61 main.cpp/helper.hpp/bot.toml byte-identical to v61"
+ },
+ "noise": {},
+ "hypotheses": [
+  {
+   "id": "H1",
+   "area": "TR",
+   "title": "Pressure room: enemy-reachable cells not counted as room near enemy heads",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H2",
+   "area": "CB",
+   "title": "SMALL_UNIT_THREAT_REACH=2: small enemy heads threaten our mid dragons",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H3",
+   "area": "EC",
+   "title": "Midgame unit growth: relax the dominant split guard before r150",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H4",
+   "area": "CB",
+   "title": "Trapped small dragon takes a head-on trade instead of a wall death",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H5",
+   "area": "CB",
+   "title": "TRADE_MIN_UNITS=4 on large maps",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  },
+  {
+   "id": "H6",
+   "area": "OP",
+   "title": "Opening: no deficit found, low priority",
+   "status": "queued",
+   "prereg": "",
+   "held": "",
+   "main": "",
+   "confirm": "",
+   "mechanism": "",
+   "verdict": ""
+  }
+ ],
+ "findings": [
+  "Ladder 120/228; S 61/101, M 38/68, L 21/59; vs >=1950 8/42",
+  "Total-length lead at r100: ahead 79-33, behind 35-73; S maps ahead 41-8",
+  "Losses diverge r50-r150: opp units 12->24 r50-r100, ours 11->16",
+  "Pressure self-deaths (enemy head <=3): us 29.8 vs them 20.4 per game r100-300, ~2x per unit",
+  "Head-ons ~always mutual and symmetric overall",
+  "Our queen dies 159/228, median r123; S-map queen-decided games 1-13 (QWQ area)"
+ ],
+ "runner": {
+  "state": "\uc6e8\uc774\ube0c 1 \uc9c4\ud589 \uc911 (03:42\ubd80\ud130)",
+  "waves": []
+ }
 }
