@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B="$(cat v59toggles.txt)"
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 V1="FG2@snap49:$B,FAR_GAIN=2"

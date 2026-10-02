@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B="$(cat v60toggles.txt)"
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 V="PK48@snap52:$B,POCKET_CAP=48"

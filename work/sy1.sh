@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 until [ $(grep -c "^L460 " lf1.txt 2>/dev/null) -ge 2 ]; do sleep 20; done
 sleep 5
 B=$(cat v55toggles.txt)

@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B="$(cat v55toggles.txt),QUEEN_SPLIT_ROUND=200,QUEEN_LEAD_BONUS=1000,QUEEN_LEAD_LATE=true,QUEEN_QUIET_ROUND=100"
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 V1="RT05@snap43:$B,RATE_EXP=0.5"

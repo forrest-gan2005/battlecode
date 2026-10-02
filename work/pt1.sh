@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B="$(cat v55toggles.txt),QUEEN_SPLIT_ROUND=200,QUEEN_LEAD_BONUS=1000,QUEEN_LEAD_LATE=true,QUEEN_QUIET_ROUND=100"
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 WORKERS=4
 SEED0=5000 python3 ab3.py portals v57 16 pt1.json "V57@v57:" "PA@snap46:$B,QUEEN_PORTAL_ALL=true" "QM5@snap46:$B,QUEEN_MIN_CELLS=500" "HC@snap46:$B,QUEEN_PORTAL_ALL=true,QUEEN_HOME_CLOSED=true,QUEEN_GAME_FEED_ROUND=300" > pt1.txt 2>&1

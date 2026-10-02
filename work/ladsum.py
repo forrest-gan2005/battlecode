@@ -1,5 +1,5 @@
 import sys, glob, os
-sys.path.insert(0, '/Users/UNSW/battlecode'); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/quasarpark/meow-loop'); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import replay, bc, ladder
 from collections import Counter
 def summary(path):

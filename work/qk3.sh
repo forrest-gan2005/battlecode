@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B=$(cat v55toggles.txt)
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 SEED0=3000 python3 ab3.py "$(cat heldset_sq.txt)" v53 2 qk3h.json "V55@v55:" "QSR100@snap41:$B,QUEEN_SPLIT_ROUND=100" "QSR200@snap41:$B,QUEEN_SPLIT_ROUND=200" > qk3.txt 2>&1

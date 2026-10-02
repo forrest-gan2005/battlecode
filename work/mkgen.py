@@ -1,7 +1,7 @@
 import os, random, sys
 from collections import deque
 
-OUT = '/Users/UNSW/battlecode/tune_runs/genmaps'
+OUT = '/Users/quasarpark/meow-loop/tune_runs/genmaps'
 PALETTE = [((0, 0), 30), ((1, 1000), 8), ((1, 600), 8), ((1, 300), 10), ((1, 200), 10), ((1, 150), 8),
            ((1, 100), 10), ((1, 60), 6), ((1, 30), 5), ((5, 30), 5)]
 STYLES = ['open', 'blobs', 'maze', 'rooms', 'islands', 'stripes']

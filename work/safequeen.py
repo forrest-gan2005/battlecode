@@ -1,6 +1,6 @@
 import os, sys
-SRC = '/Users/UNSW/battlecode/tune_runs/variants'
-OUT = '/Users/UNSW/battlecode/tune_runs/variants_sq'
+SRC = '/Users/quasarpark/meow-loop/tune_runs/variants'
+OUT = '/Users/quasarpark/meow-loop/tune_runs/variants_sq'
 os.makedirs(OUT, exist_ok=True)
 for fn in sorted(os.listdir(SRC)):
     L = open(os.path.join(SRC, fn)).read().splitlines()

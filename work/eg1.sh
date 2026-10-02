@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 until grep -q "SY1DONE" sy1.txt 2>/dev/null; do sleep 20; done
 B=$(cat v55toggles.txt)
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4

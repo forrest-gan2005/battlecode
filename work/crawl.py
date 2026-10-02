@@ -2,7 +2,7 @@ import sys, os, subprocess, gzip
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE); sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, HERE); sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import ladsum
 DIR = os.path.join(HERE, 'crawl'); os.makedirs(DIR, exist_ok=True)
 DB = os.path.join(HERE, 'crawl_games.tsv')

@@ -1,5 +1,5 @@
 import sys, os, glob
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import replay, ourside
 from collections import deque, Counter
 from concurrent.futures import ProcessPoolExecutor

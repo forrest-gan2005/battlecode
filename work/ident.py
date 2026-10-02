@@ -1,8 +1,8 @@
 import sys, os, subprocess, hashlib
 from concurrent.futures import ThreadPoolExecutor
-sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import replay
-ROOT = '/Users/UNSW/battlecode'
+ROOT = '/Users/quasarpark/meow-loop'
 REF = os.environ.get('REF', 'v53')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ident')
 os.makedirs(OUT, exist_ok=True)

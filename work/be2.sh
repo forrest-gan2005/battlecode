@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B=$(cat v55toggles.txt)
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 SEED0=1000 python3 ab3.py "$(cat official.txt)" hunt55 8 be2x.json "V55@v55:" "BEL12@snap40:$B,BIG_ESCAPE_STEPS=12,BIG_ESCAPE_LATE=true" "BE12@snap40:$B,BIG_ESCAPE_STEPS=12" > be2.txt 2>&1

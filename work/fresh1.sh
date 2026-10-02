@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 export PATH=$PWD/bc123/bin:$PATH
 big=$(for f in ../tune_runs/genfresh/*.map; do echo "$(head -1 $f | awk '{print $2*$3}') $f"; done | sort -rn | head -8 | awk '{print $2}')
 echo "$big" | xargs -P 4 -I{} sh -c 'n=$(basename {} .map); unswbc run {} ../v55 ../v55 --sandbox --seed 3 --no-replay 2>&1 | grep "points per turn" | sed "s/^/$n /"' > fresh_cpu.txt

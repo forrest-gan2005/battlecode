@@ -1,8 +1,8 @@
 import sys, os, glob
-sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import replay
 from collections import Counter
-OUT = '/Users/UNSW/battlecode/tune_runs/sprintmaps'
+OUT = '/Users/quasarpark/meow-loop/tune_runs/sprintmaps'
 os.makedirs(OUT, exist_ok=True)
 for f in sys.argv[1:]:
     info, _, _ = replay.parse(f)

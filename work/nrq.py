@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import replay, queen
 from collections import Counter, defaultdict
 import ourside

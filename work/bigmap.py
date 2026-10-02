@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0, '/Users/UNSW/battlecode')
+sys.path.insert(0, '/Users/quasarpark/meow-loop')
 import replay
 from collections import deque, Counter
 CK = [25, 50, 100, 150, 200, 300]

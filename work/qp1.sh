@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 B=$(cat v55toggles.txt)
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
 SEED0=1000 python3 ab3.py "$(cat official.txt)" v55 8 qp1o.json "QP30@snap38:$B,QUEEN_PORTAL_ROUND=30" "QP15@snap38:$B,QUEEN_PORTAL_ROUND=15" > qp1.txt 2>&1

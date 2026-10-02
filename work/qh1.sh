@@ -1,4 +1,4 @@
-cd /Users/UNSW/battlecode/work
+cd /Users/quasarpark/meow-loop/work
 until grep -q QG2DONE qg2.txt 2>/dev/null; do sleep 20; done
 B="$(cat v60toggles.txt),POCKET_CAP=48"
 export PATH=$PWD/bc123/bin:$PATH NOSANDBOX=1 FAST=1 DIST=1 WORKERS=4
