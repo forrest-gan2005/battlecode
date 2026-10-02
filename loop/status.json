@@ -1,0 +1,14 @@
+{
+  "phase": "A",
+  "updated": "",
+  "current": "waiting for wave 1",
+  "running": [],
+  "baseline": {},
+  "noise": {},
+  "hypotheses": [],
+  "findings": [],
+  "runner": {
+    "state": "not started",
+    "waves": []
+  }
+}
