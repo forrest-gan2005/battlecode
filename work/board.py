@@ -8,6 +8,7 @@ usage:
                                                   post F as a [test]/[check] comment, release #N, set its status
   board.py heartbeat --loop NAME --wf W [--state running|idle|stopped] [--issue N] [--step TEXT] [--machine M]
   board.py ready N                                put #N in the loop queue
+  board.py remove --loop NAME                     drop a loop from the Loop status board
 Requires the GitHub CLI (gh) with write access to the repo.
 """
 import argparse, datetime, json, os, re, socket, subprocess, sys, tempfile
@@ -76,6 +77,18 @@ def heartbeat(loop, wf, state="running", issue=None, step=None, machine=None):
     os.unlink(f.name)
 
 
+def remove_loop(loop):
+    st = status_issue()
+    loops = read_loops(st["body"])
+    if loops.pop(loop, None) is None:
+        return False
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
+        f.write(render(loops))
+    gh("issue", "edit", str(st["number"]), "--repo", REPO, "--body-file", f.name, parse=False)
+    os.unlink(f.name)
+    return True
+
+
 def cmd_next(a):
     q = gh("issue", "list", "--repo", REPO, "--state", "open", "--label", "loop:ready", "--limit", "100", "--json", "number,title,labels,body,createdAt")
     q = [i for i in q if not any(l["name"] == "loop:running" for l in i["labels"])]
@@ -125,6 +138,7 @@ def main():
     p.add_argument("--state", default="running", choices=["running", "idle", "stopped"]); p.add_argument("--issue", type=int)
     p.add_argument("--step"); p.add_argument("--machine")
     p = sub.add_parser("ready"); p.add_argument("n", type=int)
+    p = sub.add_parser("remove"); p.add_argument("--loop", required=True)
     a = ap.parse_args()
     if a.cmd == "next":
         cmd_next(a)
@@ -135,6 +149,8 @@ def main():
     elif a.cmd == "heartbeat":
         heartbeat(a.loop, a.wf, a.state, a.issue, a.step, a.machine)
         print("heartbeat sent")
+    elif a.cmd == "remove":
+        print("removed" if remove_loop(a.loop) else "no such loop")
     elif a.cmd == "ready":
         gh("issue", "edit", str(a.n), "--repo", REPO, "--add-label", "loop:ready", parse=False)
         print(f"#{a.n} queued")
