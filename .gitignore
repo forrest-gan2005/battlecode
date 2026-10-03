@@ -23,6 +23,7 @@ tune_runs/*
 !tune_runs/huge/
 !tune_runs/genfresh/
 !tune_runs/tx_old10/
+!tune_runs/tx_held/
 
 /snap*/
 /v[0-9]*/

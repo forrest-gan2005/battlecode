@@ -3,10 +3,11 @@
 The board is a torus: the north edge of row 0 is also the south edge of row H-1,
 and the west edge of column 0 is the east edge of column W-1. Edge index layout:
 row = 2*(W+1); north edge of (x,y) = y*row + x; west edge = y*row + (W+1) + x.
-Portals keep their ids; both edges of a pair move together.
+Portals keep their ids; both edges of a pair move together. Generated maps that repeat
+the east/south border (x = W, y = H) are read if the copies match; output is canonical.
 
 usage:
-  python3 maptx.py MAP T1[,T2...] [OUT_DIR]   write OUT_DIR/<stem>_<T>.map for each T
+  python3 maptx.py MAP T1[,T2...] [OUT_DIR] [--suffix S]   write OUT_DIR/<stem>_<T or S>.map
   python3 maptx.py --show MAP [T]             ASCII render (optionally after T)
   python3 maptx.py --selftest [MAP...]        round trips + independent cell/edge check
 """
@@ -39,6 +40,7 @@ def inv(m):
 
 def parse(text):
     m = dict(sym=None, name='', tiles={}, north={}, west={}, dragons=[], end=False)
+    copies = []
     for line in text.splitlines():
         p = line.split()
         if not p:
@@ -58,9 +60,14 @@ def parse(text):
             W, H = m['W'], m['H']
             y, r = divmod(i, 2 * (W + 1))
             side, x = ('north', r) if r <= W else ('west', r - W - 1)
-            if x >= W or y >= H:
+            if x < W and y < H:
+                m[side][(x, y)] = (t, pid)
+            elif side == 'north' and x == W and y <= H and t == 0:
+                pass  # no tile at x = W: an open placeholder
+            elif (side == 'west' and x == W and y < H) or (side == 'north' and x < W and y == H):
+                copies.append((side, x % W, y % H, (t, pid), line))  # east / south border repeated
+            else:
                 raise ValueError('edge outside the torus layout: ' + line)
-            m[side][(x, y)] = (t, pid)
         elif k == 'DRAGON':
             n = int(p[2])
             m['dragons'].append((int(p[1]), [(int(p[3 + 2 * j]), int(p[4 + 2 * j])) for j in range(n)]))
@@ -68,6 +75,9 @@ def parse(text):
             m['end'] = True
         elif k not in ('TILE_COUNT', 'EDGE_COUNT', 'DRAGON_COUNT'):
             raise ValueError('unknown map line: ' + line)
+    for side, x, y, v, line in copies:
+        if m[side].get((x, y), (0, -1)) != v:
+            raise ValueError('border edge differs from the edge it wraps to: ' + line)
     return m
 
 
@@ -227,6 +237,11 @@ def selftest(paths):
     for p in paths:
         text = open(p).read()
         m = parse(text)
+        dropped = text.count('\nEDGE ') - len(m['north']) - len(m['west'])
+        if dropped:
+            text = dump(m)
+            assert parse(text) == m, p + ': canonical form does not read back'
+            print(f'canonicalised {os.path.basename(p)}: {dropped} border edge lines dropped')
         assert dump(m) == text, p + ': not canonical'
         assert m['sym'] in symmetries(m), (p, m['sym'], symmetries(m))
         for t in T:
@@ -250,13 +265,16 @@ if __name__ == '__main__':
         m = parse(open(a[1]).read())
         print(render(apply(m, a[2]) if len(a) > 2 else m))
     elif len(a) >= 2:
+        suffix = a.pop(a.index('--suffix') + 1) if '--suffix' in a else None
+        a = [x for x in a if x != '--suffix']
         src = a[0]
         out = a[2] if len(a) > 2 else os.path.dirname(os.path.abspath(src))
         os.makedirs(out, exist_ok=True)
         m = parse(open(src).read())
         stem = os.path.splitext(os.path.basename(src))[0]
+        assert not suffix or ',' not in a[1], '--suffix takes one transform'
         for t in a[1].split(','):
-            dst = os.path.join(out, f'{stem}_{t}.map')
+            dst = os.path.join(out, f'{stem}_{suffix or t}.map')
             open(dst, 'w').write(dump(apply(m, t)))
             print(dst)
     else:
