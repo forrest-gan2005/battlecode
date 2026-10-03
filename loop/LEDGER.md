@@ -328,3 +328,14 @@ One section per wave, facts only.
 - Toggle: existing `SPLIT_SOFT_LIMIT` (value only). SL63 = B61 + SPLIT_SOFT_LIMIT=63; SL64 = B61 + SPLIT_SOFT_LIMIT=64.
 - Runs: `loop/h14.sh`: held (heldset_sq + freshset) x2 SEED0=3000 -> `H14_held.json`, paired vs `B_held.json` (same seeds as H8's SL62 run, so SL62/SL63/SL64 are directly comparable).
 - Pass rule: a variant PASSES held if net >= 9 (small-map flips expected ~0; > 4 small flips flags an implementation surprise). Then main x8 net >= -14, then SEED0=5000 held (combined net >= 18), mechanism (KEEP replays, maps > 1200 cells: median units r100-r200 up >= 1, self deaths per 100 unit-rounds not up > 15%), CPU. REJECTED if held net <= 0 for both (also weighs against SL62: the H8 family would close). Otherwise INCONCLUSIVE.
+
+### H14 results (`H14_held.json`, held x2 SEED0=3000, finished 11:03)
+- SL63 76/160 vs B61 80/160: +17 -21, net -4 (large -6, medium +2, small 0; fresh -3, sqheld -1).
+- SL64 85/160: +21 -16, net +5 (large +2, medium +3, small 0; fresh +2, sqheld +3).
+- Same seeds, SL62 (`H8_held.json`): 87/160, +23 -16, net +7. Dose curve 62/63/64 = +7 / -4 / +5: not monotonic. Pairwise flips SL62-SL63 39, SL63-SL64 33, SL62-SL64 38. Small-map flips 0 for all (implementation check passes).
+- **H14: INCONCLUSIVE** (pre-registered: neither reaches net >= 9; SL64 > 0, so not REJECTED). Fact: no dose-response; the SL family results so far (SL62 three seeds +15/480, SL63 -4/160, SL64 +5/160) sit within the null spread (SD ~8-9 per 160). No further SL seeds queued.
+
+## Wave 11 — 2026-10-03 11:05 KST
+- H13 TT4 net 0, TT8 net +3 (small-map flips 4 and 7 of 42): INCONCLUSIVE, not re-queued.
+- H14 SL63 net -4, SL64 net +5 (SL62 +7 on the same seeds; no dose-response): INCONCLUSIVE, SL family parked.
+- Nothing running. Non-queen, non-feeding queue is empty after 14 hypotheses (0 candidates).

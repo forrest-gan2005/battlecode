@@ -1,11 +1,10 @@
 # Loop state
 
-- Phase: C (wave 11, 10:31-). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 11 closed 11:05). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
-- Running (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h14.sh` (pid 45572): H14 SL63 + SL64 held x2 SEED0=3000 (started 10:38, est. ~11:03) -> `H14_held.json`, then `H14_done`.
-- Next wave: if H14 is still open, judge it: `python3 loop/tools/judge.py loop/results/B_held.json loop/results/H14_held.json`; rule in LEDGER wave 11. Compare with SL62 in `H8_held.json` (same seeds).
+- Running: nothing (check `ps` before starting anything; never more than 8 workers).
+- Next wave: queue is empty. Build a new hypothesis (see the note after H14 below), pre-register it in LEDGER, then run held x2 SEED0=3000.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -76,10 +75,10 @@
 - TT4 held 80/160 net 0 (small -4); TT8 83/160 net +3 (small +1). Only 4-7 of 42 small-map games flip: the penalty barely changes the target zone.
 - Small maps r50-300: our L2-3 self deaths in static tight cells (3-step ball <= 12) with an enemy head within 3: 53.3 vs 29.8 per game (losses), 60.8 vs 29.6 (wins). No gap on maps > 800.
 
-### H14 EC — split soft limit dose-response, SL63/SL64 (running, h14.sh)
-- Tests whether the H8 SL62 signal (+15 over 3 seeds) is a real lever: raise SPLIT_SOFT_LIMIT to 63 and 64 (also moves the at-cap trade threshold). Same seeds as H8 (SEED0=3000). Rule in LEDGER wave 11.
+### H14 EC — split soft limit dose-response, SL63/SL64: INCONCLUSIVE (wave 11), SL family parked
+- SL63 held 76/160 net -4 (large -6); SL64 85/160 net +5. Same seeds SL62 +7. No dose-response; small-map flips 0. No further SL seeds.
 
-- After H14 the non-queen, non-feeding queue is empty (13 tested: 0 candidates; only the SL family stayed positive). The wave rules allow queen/feeding tests when nothing else is queued; a next wave should build a queen or feeding hypothesis from ANALYSIS (record it as overlapping QWQ #2 / Zhe #3), unless H14 opens an SL follow-up. A tight-terrain follow-up is low value after H13 (small-map lever barely binds).
+- After H14 the non-queen, non-feeding queue is empty (13 tested: 0 candidates; only the SL family stayed positive). The wave rules allow queen/feeding tests when nothing else is queued; a next wave should build a queen or feeding hypothesis from ANALYSIS (record it as overlapping QWQ #2 / Zhe #3), H14 did not open an SL follow-up. A tight-terrain follow-up is low value after H13 (small-map lever barely binds).
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.
