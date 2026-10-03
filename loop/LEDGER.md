@@ -291,3 +291,13 @@ One section per wave, facts only.
 - B61 79/160, SL62 82/160: +20 -17, net +3 (large +1, medium +2, small 0 flips; sqheld +1, fresh +2). Wiped 28 vs 29. Mean final length 40.5 vs 43.0.
 - Three seeds: +7, +5, +3; combined 480 games +66 -51, net +15 (null SD ~14.7, so ~1 SD). Small maps: 0 flips in all three seeds.
 - **H8c SL62: INCONCLUSIVE** under the pre-registered rule (combined 15 < 20 for the candidate path; seed net +3 > -5 and combined >= 10, so not rejected). Family parked; no fourth seed. SL62 is consistently non-negative but too small to separate from noise locally.
+
+### H11 results (`H11_held.json`, held x2 SEED0=3000, paired vs B61 in `B_held.json`, finished 09:46)
+- CS0 (CONTEST_SLACK=0) 68/160: +22 -34, net -12 (large -9, medium 0, small -3; sqheld -6, fresh -6). Wiped 30 vs 28. Mean final length 39.9:51.0.
+- CS2 (CONTEST_SLACK=2) 76/160: +23 -27, net -4 (large +1, medium -6, small +1; sqheld +2, fresh -6). Wiped 27.
+- **H11: REJECTED** (held net <= 0 for both variants). Main not run. Note: dropping the contest (CS0) costs more than widening it; the ladder pattern "we eat alone next to enemy heads" does not translate into a local loss from contesting.
+
+## Wave 9 close — 09:48 KST
+- Verdicts: H10 REJECTED (LE0 0, LEM1 -17), H8c INCONCLUSIVE (SL62 +3; three seeds +15; family parked), H11 REJECTED (CS0 -12, CS2 -4).
+- Running: `loop/h12s.sh` (pid 30704), H12 ST2 + ST2O held x2 SEED0=3000, started 09:46, est. ~10:12 -> `H12s_held.json`, `H12s_done`.
+- Queue after H12: only H6 (opening, low). The next wave should build new hypotheses (terrain/self deaths, opening) from the ladder data before the slot goes idle.

@@ -1,13 +1,11 @@
 # Loop state
 
-- Phase: C (wave 9, 09:11). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 9 closed 09:48). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. (done) H8c finished 09:20: INCONCLUSIVE, see queue.
-  2. `loop/h11.sh` (pid 11021): waits for `H8c_done`: H11 CS0 + CS2 held x2 SEED0=3000 (est. ~09:48) -> `H11_held.json`, then `H11_done`.
-  3. `loop/h12s.sh` (pid 30704): waits for `H11_done`: H12 ST2 + ST2O held x2 SEED0=3000 (est. ~10:15) -> `H12s_held.json`, then `H12s_done`.
-- Next wave: H11: `judge.py B_held.json H11_held.json`. H12: `judge.py B_held.json H12s_held.json`.
+  1. `loop/h12s.sh` (pid 30704): H12 ST2 + ST2O held x2 SEED0=3000 (started 09:46, est. ~10:12) -> `H12s_held.json`, then `H12s_done`.
+- Next wave: H12: `judge.py B_held.json H12s_held.json`.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -67,11 +65,14 @@
 - Ladder (edge10.py, r < 300, initiator head-on deaths per game by own heads within 6 + 1 - enemy heads within 6): maps > 1200 cells us edge <= 0 4.0, >= 1 8.2; them 14.4, 34.3. 801-1200: us 2.9, 7.7; them 5.8, 9.7. <= 800: us 2.3, 4.9; them 3.4, 4.5.
 - Toggle: existing `TRADE_LOCAL_EDGE` 1 -> 0 (LE0) and -1 (LEM1). Rule in LEDGER wave 7. Falsifier: held net <= 0; head_ram not up 20% in KEEP replays.
 
-### H11 EC — small-dragon pearl contest slack (queued, chained in h11.sh)
+### H11 EC — small-dragon pearl contest slack: REJECTED (wave 9)
+- CS0 held 68/160 net -12; CS2 76/160 net -4.
 - CONTEST_SLACK 1 -> 0 (CS0) and 2 (CS2). Rule in LEDGER wave 8. Mechanism tool `mech11.py` (MB61 near-enemy eaten 84.2/game, pressure 0.246 per 100 unit-rounds).
 
-### H12 CB — small dragons weigh enemy-head threat 2x (queued, chained in h12s.sh)
+### H12 CB — small dragons weigh enemy-head threat 2x (running, h12s.sh)
 - SMALL_THREAT_MULT=2.0 (ST2), + SMALL_THREAT_OUTNUMBERED=true (ST2O). Rule in LEDGER wave 9. Evidence: pressure deaths ~2x the opponents' per unit; threat penalty for L<=2 (~225) < pearl + EAT_BONUS.
+
+- Queue is nearly empty after H12: next wave should derive new terrain/opening hypotheses from the ladder data.
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.
