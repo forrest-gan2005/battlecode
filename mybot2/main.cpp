@@ -3291,6 +3291,32 @@ class Bot {
             core < unswbc::Constants::MIN_SIZE + QG_SAFEZONE_ROOM || core <= zone_core) {
             return;
         }
+        int const entry_check = portal_exit(position_of(zp_mouth),
+                                    Direction::get_direction_list()[static_cast<std::size_t>(zp_dir)]);
+        if (entry_check < 0) {
+            return;
+        }
+        bool too_tight = false;
+        for (Direction const d : Direction::get_direction_list()) {
+            Position cell = position_of(entry_check);
+            for (int step = 0; step < 2; step++) {
+                std::uint8_t const e = edge_at(cell, d);
+                if (e == EDGE_KELP) {
+                    too_tight = true;
+                    break;
+                }
+                if (e != EDGE_OPEN) {
+                    break;
+                }
+                cell = cell.add_dir(d);
+            }
+            if (too_tight) {
+                break;
+            }
+        }
+        if (too_tight) {
+            return;
+        }
         zone_mouth = zp_mouth;
         zone_dir = zp_dir;
         zone_size = size;
@@ -3298,6 +3324,15 @@ class Bot {
         zone_two = zone_doors() > 1;
         if (QG_SAFEZONE_LOG) {
             ct.output_log("ZFOUND", zone_mouth % width, zone_mouth / width, zone_dir, zone_size, zone_core);
+        }
+        if (real_queen() && zone_mode == 0) {
+            zone_mode = 2;
+            zone_enter_round = round;
+            zone_entry = index_of(head);
+            zone_claimed = true;
+            if (QG_SAFEZONE_LOG) {
+                ct.output_log("ZSTAY", head.x, head.y, zone_core, length);
+            }
         }
     }
 
@@ -3340,7 +3375,14 @@ class Bot {
         if (static_cast<int>(k) == zone_check_dir) {
             return true;
         }
-        return (zone_core > 0 || enemy_queen_dead) && static_cast<int>(k) == (round + ct.get_id()) % 4;
+        if (zone_core <= 0 && !enemy_queen_dead) {
+            return false;
+        }
+        if (feeding_phase()) {
+            return false;
+        }
+        int const back_dir = (zone_dir + 2) % 4;
+        return static_cast<int>(k) != back_dir;
     }
 
     void zone_watch() {
