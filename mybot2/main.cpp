@@ -45,6 +45,9 @@ constexpr int LEADER_GROW_ROUND = 300;
 constexpr int LEADER_GROW_ROUND_BIG = 150;
 constexpr int FEEDER_KEEP_UNITS = 3;
 constexpr int FEEDER_APPROACH = 15;
+constexpr bool FD_APPROACH_SCALE = false;
+constexpr int FD_APPROACH_BASE_SPAN = 100;
+constexpr int FD_APPROACH_DIV = 4;
 constexpr int FEEDER_DROP_MIN = 4;
 constexpr int FEEDER_DROP_MAX = 8;
 constexpr int FEEDER_KEEP_OFF = 2;
@@ -323,6 +326,7 @@ constexpr int CENTER_MAX_CELLS = 1000;
 constexpr int CENTER_SMALL_CELLS = 700;
 constexpr int CENTER_SMALL_ROUNDS = 30;
 constexpr int CENTER_OUTNUMBER_MARGIN = 0;
+constexpr bool TR_CENTER_ORIENT = false;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
@@ -407,9 +411,11 @@ class Bot {
             grow_round = LC_LEAD_ROUND;
         }
         feed_round = LC_FEED_ROUND > 0 ? LC_FEED_ROUND : ENDGAME_ROUND;
-        center_map = cells <= CENTER_MAX_CELLS && (width >= 2 * height || cells <= CENTER_SMALL_CELLS);
-        center_rounds = width >= 2 * height ? CENTER_ROUNDS : CENTER_SMALL_ROUNDS;
-        center_margin = width >= 2 * height ? cells : CENTER_OUTNUMBER_MARGIN;
+        bool const long_map = TR_CENTER_ORIENT ? std::max(width, height) >= 2 * std::min(width, height) : width >= 2 * height;
+        center_map = cells <= CENTER_MAX_CELLS && (long_map || cells <= CENTER_SMALL_CELLS);
+        center_rounds = long_map ? CENTER_ROUNDS : CENTER_SMALL_ROUNDS;
+        center_margin = long_map ? cells : CENTER_OUTNUMBER_MARGIN;
+        feeder_approach = FEEDER_APPROACH + (FD_APPROACH_SCALE ? std::max(0, width + height - FD_APPROACH_BASE_SPAN) / FD_APPROACH_DIV : 0);
     }
 
     void split_off(int child) {
@@ -1699,7 +1705,7 @@ class Bot {
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return;
         }
-        if (manhattan(head, live_leader_head()) > FEEDER_APPROACH) {
+        if (manhattan(head, live_leader_head()) > feeder_approach) {
             return;
         }
         feed_id = known_leader_id;
@@ -3448,7 +3454,7 @@ class Bot {
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
-        return manhattan(head, known_leader_pos) > FEEDER_APPROACH;
+        return manhattan(head, known_leader_pos) > feeder_approach;
     }
 
     bool feed_len_ok() const {
@@ -3927,6 +3933,7 @@ class Bot {
     int center_rounds = CENTER_ROUNDS;
     int center_margin = CENTER_OUTNUMBER_MARGIN;
     bool center_map = false;
+    int feeder_approach = FEEDER_APPROACH;
     Position known_leader_pos{};
     Direction known_leader_dir = dir_of(Direction::NORTH);
     bool zone_active = false;
