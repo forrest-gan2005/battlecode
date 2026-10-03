@@ -1,0 +1,12 @@
+[
+  {"number":1,"title":"[Idea] Zhe feeding","body":"### Claim\nFeed nearby dragons.","labels":[{"name":"by:zhe"},{"name":"status:ready"}],"createdAt":"2026-10-01T00:00:00Z","author":{"login":"zhe"}},
+  {"number":2,"title":"[Idea] Human reply","body":"","labels":[{"name":"status:needs-info"}],"createdAt":"2026-10-01T00:00:00Z","author":{"login":"person"},"comments":[{"id":1,"body":"Questions before we build\nWhat happens near a wall?","user":{"login":"bot","type":"Bot"}},{"id":2,"body":"벽 근처에서는 끄세요.","user":{"login":"person","type":"User"}}]},
+  {"number":3,"title":"[Idea] Building","body":"","labels":[{"name":"status:building"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":4,"title":"[Idea] Zhe look","body":"","labels":[{"name":"by:zhe"},{"name":"status:needs-look"}],"createdAt":"2026-10-01T00:00:00Z","author":{"login":"zhe"}},
+  {"number":5,"title":"[Idea] Other look","body":"","labels":[{"name":"status:needs-look"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":6,"title":"[Idea] Testing","body":"","labels":[{"name":"status:testing"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":7,"title":"[Idea] Tested","body":"","labels":[{"name":"status:tested"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":8,"title":"[Idea] Candidate","body":"","labels":[{"name":"status:candidate"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":9,"title":"[Idea] Smoke","body":"","labels":[{"name":"status:smoke"}],"createdAt":"2026-10-01T00:00:00Z"},
+  {"number":10,"title":"[Idea] AI","body":"","labels":[{"name":"by:ai"},{"name":"status:ready"}],"createdAt":"2026-09-01T00:00:00Z"}
+]

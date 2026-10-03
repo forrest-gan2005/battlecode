@@ -147,3 +147,26 @@ The loop never requests ranked battles. Discord pings happen only when a human m
 This is the loop spec, not a claim that every tool already follows it. `work/board.py` still queues via `loop:ready`, claims via `loop:running`, prepends tags before summaries, and records the local HEAD as the base. It needs the state transitions, priority, summary order, and actual release base described here. The Issue template's `status:untested` remains valid.
 
 meowbot already documents author-aware OKs and real merges, but `UPLOAD_ENABLED = False` means uploads are currently mocked. Its state displays and human-action-only pings must follow this spec when wired. `tools/smoke_pick.py` currently expects downloaded online replay inputs; the local mechanism run needs compatible inputs or an adapter. Do not auto-pass Zhe's look step because that wiring is missing.
+
+## Running the loop
+
+Use Python 3.10+, authenticated `gh` and `claude`, a C++20 compiler, and the 1.2.7 `unswbc` engine on PATH.
+Start from this checkout: `python3 work/loop/runner.py`; it polls every 180 seconds.
+`--once` runs one poll; detached jobs continue after it exits. `--dry-run` only reads GitHub and prints plans.
+Offline check: `python3 -m unittest discover -s work/loop/tests -v` (fake GitHub, no AI or games).
+Cards use `~/meow-cards/card-N` on `card/N`, initially from `origin/main`; release source is `mybot2/` at the recorded base.
+Outputs, per-attempt job records, logs and replays live in `~/meow-loop-out/card-N/`; `look.json` lists the selected replays.
+`~/meow-loop-out/status.json` is local status; the Loop status issue receives the `card-loop` heartbeat.
+Machine locks live in `~/.meow-card-loop-locks/`: one runner, one AI step, one game batch (including identity checks).
+Stopping the poller leaves detached jobs running; restarting reuses their leases and completion records.
+A killed supervisor's child retains its lease; once all children exit, an unfinished job can resume on the next poll.
+Step errors stay visible in status/logs; fix the cause and remove only that job's `done.json` to retry. Build failures return to ready.
+Board comments record the base, implementation commit, job paths and replay evidence; human-waiting cards never time out.
+For Zhe cards created by a bot, set `LOOP_ZHE_LOGIN` to Zhe's GitHub login; copied Discord replies use `Answer from Zhe: ...`.
+Optional engine setup: `--game-env PATH=/path/to/bc127/bin:$PATH`; `--game-env NOSANDBOX=1` explicitly selects native games.
+Held and fresh maps use two games per variant; their `_T` copies are generated locally, and the old 10 use eight.
+Incomplete batches are retained as incomplete files and never produce a verdict; result tables distinguish unmeasured lengths.
+Only `card/N` is git-pushed. Candidate branches/manifests use the GitHub Git data API, then `gh pr create` opens review.
+Candidate preparation stops at 2026-10-08 20:00 KST and requires current-base evidence. Approval, merging and uploads remain human actions.
+Track 3 checks for new completed ladder battles every four hours; the runner posts at most two AI ideas per review.
+The hook checks shell commands and file tools; it is a policy guard, not an operating-system sandbox.
