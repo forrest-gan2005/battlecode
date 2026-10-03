@@ -1,12 +1,13 @@
 # Loop state
 
-- Phase: C (wave 7 closed 08:19). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 9, 09:11). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h8b.sh` (pid 84921): H8b SL62 held x2 SEED0=5000 (started 08:17, est. ~08:37) -> `H8b_held5.json`, then `H8b_done` and removes `HOLD_H10`.
-  2. `loop/h10.sh` (pid 54889): waits for `H9_done` and no `HOLD_H10`: H10 LE0 + LEM1 held x2 SEED0=3000 (est. ~09:20) -> `H10_held.json`, then `H10_done`.
-- Next wave: H8b: `judge.py loop/results/H7b_held5.json loop/results/H8b_held5.json` (B61 at SEED0=5000 lives in H7b_held5.json). If PASS: main x8 + mechanism (`mech8.py`, baseline MB61 60.9 units, 3.63 self/100 unit-rounds) + CPU. H10: `judge.py B_held.json H10_held.json`.
+  1. `loop/h8c.sh` (pid 40325): H8c B61 + SL62 held x2 SEED0=7000 (started 08:56, est. ~09:22) -> `H8c_held7.json`, then `H8c_done`.
+  2. `loop/h11.sh` (pid 11021): waits for `H8c_done`: H11 CS0 + CS2 held x2 SEED0=3000 (est. ~09:48) -> `H11_held.json`, then `H11_done`.
+  3. `loop/h12s.sh` (pid 30704): waits for `H11_done`: H12 ST2 + ST2O held x2 SEED0=3000 (est. ~10:15) -> `H12s_held.json`, then `H12s_done`.
+- Next wave: H8c: `judge.py loop/results/H8c_held7.json loop/results/H8c_held7.json` (judge takes the B61 tag from the base file) and add to H8 (+23 -16) and H8b (+23 -18). H11: `judge.py B_held.json H11_held.json`. H12: `judge.py B_held.json H12s_held.json`.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -60,9 +61,16 @@
 - Ladder, maps > 1200 cells, r < 300: head_ram us 12.4 vs them 53.3 (losses), 12.5 vs 44.4 (wins); head-on length lost even (190:221). Our big-map rule needs target parts >= max(5, L+2) below the cap. Toggle: existing `TRADE_EVEN=true` (TE). Rule in LEDGER wave 6.
 - Local caveat: mirror games vs v61 already show 63 head_rams per side per game on big maps (at-cap rule), so the local signal may be small.
 
-### H10 CB — trade while locally even or outnumbered (priority 1 after H8b, chained in h10.sh)
+### H10 CB — trade while locally even or outnumbered: REJECTED (wave 9)
+- LE0 held 80/160 net 0 (68 flips); LEM1 63/160 net -17. TRADE_LOCAL_EDGE family closed.
 - Ladder (edge10.py, r < 300, initiator head-on deaths per game by own heads within 6 + 1 - enemy heads within 6): maps > 1200 cells us edge <= 0 4.0, >= 1 8.2; them 14.4, 34.3. 801-1200: us 2.9, 7.7; them 5.8, 9.7. <= 800: us 2.3, 4.9; them 3.4, 4.5.
 - Toggle: existing `TRADE_LOCAL_EDGE` 1 -> 0 (LE0) and -1 (LEM1). Rule in LEDGER wave 7. Falsifier: held net <= 0; head_ram not up 20% in KEEP replays.
+
+### H11 EC — small-dragon pearl contest slack (queued, chained in h11.sh)
+- CONTEST_SLACK 1 -> 0 (CS0) and 2 (CS2). Rule in LEDGER wave 8. Mechanism tool `mech11.py` (MB61 near-enemy eaten 84.2/game, pressure 0.246 per 100 unit-rounds).
+
+### H12 CB — small dragons weigh enemy-head threat 2x (queued, chained in h12s.sh)
+- SMALL_THREAT_MULT=2.0 (ST2), + SMALL_THREAT_OUTNUMBERED=true (ST2O). Rule in LEDGER wave 9. Evidence: pressure deaths ~2x the opponents' per unit; threat penalty for L<=2 (~225) < pearl + EAT_BONUS.
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.

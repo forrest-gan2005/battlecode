@@ -268,3 +268,21 @@ One section per wave, facts only.
 - Toggle: existing `CONTEST_SLACK` (value change only). CS0 = B61 + CONTEST_SLACK=0; CS2 = B61 + CONTEST_SLACK=2.
 - Runs: held x2 SEED0=3000 -> `H11_held.json`, paired vs `B_held.json`. Chain `loop/h11.sh` waits for `H8c_done`. Main only if held passes.
 - PASS = held net >= 9 and main net >= -14 (per variant). CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays: for the passing variant, our length eaten with an enemy head within 3 moves in the intended direction by >= 15%, and pressure deaths per 100 unit-rounds do not rise by > 15% for CS2 / fall for CS0) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
+
+### H11 mechanism baseline (`loop/tools/mech11.py`, MB61 KEEP replays, 40 devset games, all sizes)
+- MB61: r25-150 length eaten per game 532.8 per side, with an enemy head within 3 84.2; pressure deaths per 100 unit-rounds r25-150 0.246. (MB61 vs v61 is the same game with seats swapped, so both sides read equal.) MTT5D for scale: 522.2:544.5, near-enemy 91.0, pressure 0.254.
+
+## Wave 9 — 2026-10-03 09:11 KST
+- Start: wave 8 ended without a close section. H10 finished 08:56 (`H10_held.json`); h8c.sh (pid 40325) started H8c at 08:56 (B61 + SL62 held x2 SEED0=7000, est. ~09:22); h11.sh (pid 11021) waits for `H8c_done`.
+
+### H10 results (`H10_held.json`, held x2 SEED0=3000, paired vs B61 in `B_held.json`)
+- LE0 (TRADE_LOCAL_EDGE=0) 80/160: +34 -34, net 0 (large -3, medium +5, small -2; sqheld 0, fresh 0). 68 flips (placebo level 58-63).
+- LEM1 (TRADE_LOCAL_EDGE=-1) 63/160: +27 -44, net -17 (large -4, medium -9, small -4; sqheld -13, fresh -4).
+- **H10: REJECTED** (pre-registered falsifier held net <= 0 for both variants). Main not run. TRADE_LOCAL_EDGE family closed with H9 (TE).
+
+### Pre-registration: H12 CB — small dragons weigh enemy-head threat more
+- Claim: small dragons (length <= 4) step into cells an enemy head can reach because the threat penalty (~225 at length <= 2) is below pearl value + EAT_BONUS (300). Ladder: pressure deaths (self-inflicted with an enemy head within 3) are about 2x the opponents' per unit (ANALYSIS, Deaths); on maps <= 1200 cells we eat more alone next to enemy heads in both wins and losses (wave 8 addendum). A larger penalty for small dragons should cut those deaths; the cost is lost contested food.
+- Toggle: existing `SMALL_THREAT_MULT` (default 1.0) and `SMALL_THREAT_OUTNUMBERED`. ST2 = B61 + SMALL_THREAT_MULT=2.0; ST2O = ST2 + SMALL_THREAT_OUTNUMBERED=true (only when visible enemy heads outnumber ours). Old note: TM3/TM3O were neutral on 12 contact maps vs v41 in a much older base (plan.md 06:45); not tested on the current base or held sets.
+- Runs: held x2 SEED0=3000 -> `H12s_held.json` (chain `loop/h12s.sh`, waits for `H11_done`), paired vs `B_held.json`. Main x8 only if held passes.
+- PASS = held net >= 9 and main net >= -14 (per variant). CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays, `mech11.py`: pressure deaths per 100 unit-rounds r25-150 down >= 15% vs MB61 0.246) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
+- Falsifier also: if ST2 passes but pressure deaths per unit do not fall, the gain is not from the claimed mechanism (INCONCLUSIVE at best).
