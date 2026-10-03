@@ -115,7 +115,11 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs['target'], 'needs-info')
         self.assertTrue(post.call_args.kwargs['ask'])
         c['labels'][0]['name'] = 'status:needs-info'
-        c['comments'] = [comment('Questions before we build', '2026-10-04T00:00:00Z'), comment('Reject invalid signatures')]
+        c['comments'] = [comment('Questions before we build', '2026-10-04T00:00:00Z'), comment('Reject invalid signatures', who='someone-else')]
+        with patch.object(self.loop, 'transition') as transition:
+            self.loop.process(c)
+        transition.assert_not_called()  # Zhe's card: only Zhe's answer counts
+        c['comments'].append(comment('Reject invalid signatures', who='zhex0121'))
         with patch.object(self.loop, 'transition') as transition:
             self.loop.process(c)
         transition.assert_called_once_with(c, 'building')

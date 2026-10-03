@@ -353,7 +353,7 @@ class Loop:
                     text = (Path(self.context(card, meta)['out']) / 'questions.md').read_text()
                     self.post(card, f"questions-{meta['attempt']}", text, target='needs-info', ask=True,
                               metadata={'attempt': meta['attempt'], 'phase': 'questions'})
-            elif human_replies(card, questions[-1].get('created_at', questions[-1].get('createdAt', ''))):
+            elif human_replies(card, questions[-1].get('created_at', questions[-1].get('createdAt', '')), zhe='by:zhe' in labels(card)):
                 self.transition(card, 'building')
             else:
                 self.notice(card, 'waiting for a human answer')
@@ -608,7 +608,7 @@ class Loop:
             action = 'wait for human answer after questions'
             if not q:
                 action = 'clarify and ask missing questions'
-            elif human_replies(card, q[-1].get('created_at', q[-1].get('createdAt', ''))):
+            elif human_replies(card, q[-1].get('created_at', q[-1].get('createdAt', '')), zhe='by:zhe' in labels(card)):
                 action = 'human answer found → building'
         elif s == 'building':
             action = 'resume build + identity → push card/N → mechanism batch (KEEP=1) → look → needs-look'
