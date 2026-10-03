@@ -34,6 +34,10 @@ def labels(card):
     return {x['name'] if isinstance(x, dict) else x for x in card.get('labels', [])}
 
 
+def is_task(card):
+    return 'type:task' in labels(card)
+
+
 def state(card):
     states = [x[7:] for x in labels(card) if x.startswith('status:')]
     return states[0] if len(states) == 1 else 'conflicting-labels'
@@ -41,7 +45,7 @@ def state(card):
 
 def priority(card):
     names = labels(card)
-    return (0 if 'by:zhe' in names else 2 if 'by:ai' in names else 1,
+    return (0 if 'type:task' in names else 1 if 'by:zhe' in names else 3 if 'by:ai' in names else 2,
             card.get('createdAt', ''), card['number'])
 
 
@@ -120,7 +124,7 @@ class Loop:
                        '--json', 'number,title,body,labels,createdAt,author')
         cards = []
         for card in rows:
-            if not card['title'].lower().startswith('[idea]'):
+            if not (card['title'].lower().startswith('[idea]') or is_task(card)):
                 continue
             if state(card) not in ACTIVE:
                 continue
@@ -250,7 +254,7 @@ class Loop:
             self.notice(card, f'{step} running')
             return False
         resources = ['batch'] if step in ('mechanism', 'outcome') else ['ai']
-        if step == 'build':
+        if step in ('build', 'task'):
             resources.append('batch')
         if any(busy(self.locks / f'{r}.lock') for r in resources):
             self.notice(card, f'{step} waiting for {" + ".join(resources)} lock')
@@ -290,7 +294,7 @@ class Loop:
     def available_job(self, card, meta, step, **kwargs):
         path = Path(self.context(card, meta)['out']) / 'jobs' / step
         required = {'batch'} if step in ('mechanism', 'outcome') else {'ai'}
-        if step == 'build':
+        if step in ('build', 'task'):
             required.add('batch')
         if self.launched & required and not (path / 'done.json').exists():
             self.notice(card, f'{step} queued behind this tick’s job')
@@ -321,12 +325,15 @@ class Loop:
             if not meta.get('base'):
                 meta = self.new_attempt(card, meta, 'First build for this card.')
             self.ensure_tree(card, meta)
+            if is_task(card):
+                self.transition(card, 'building')
+                return
             if self.available_job(card, meta, 'clarify'):
                 ctx = self.context(card, meta)
                 decision = read(Path(ctx['out']) / 'clarify.json')
                 if not isinstance(decision, dict) or not isinstance(decision.get('needs_info'), bool):
                     raise ValueError('clarify.json must contain needs_info: bool')
-                if 'by:zhe' in labels(card) or decision['needs_info']:
+                if ('by:zhe' in labels(card) and not is_task(card)) or decision['needs_info']:
                     text = (Path(ctx['out']) / 'questions.md').read_text().strip()
                     if not text:
                         raise ValueError('missing clarification questions')
@@ -354,13 +361,17 @@ class Loop:
             if not meta.get('base'):
                 meta = self.new_attempt(card, meta, 'Resuming from the building label.')
             # A human may manually request a revision using the label alone.
-            if meta.get('phase') in ('look', 'tested'):
+            if meta.get('failed') or meta.get('phase') in ('look', 'tested'):
                 meta = self.new_attempt(card, meta, 'The card was returned to building for revision.')
-            if not (Path(self.context(card, meta)['out']) / 'jobs/build/job.json').exists():
+            build_step = 'task' if is_task(card) else 'build'
+            if not (Path(self.context(card, meta)['out']) / f'jobs/{build_step}/job.json').exists():
                 if self.latest_base() != meta['base']:
                     meta = self.new_attempt(card, meta, 'Main changed while this card was waiting; use the current release.')
             ctx = self.prepare(card, meta)
             out = Path(ctx['out'])
+            if is_task(card):
+                self.build_task(card, meta, ctx)
+                return
             try:
                 if not self.available_job(card, meta, 'build'):
                     return
@@ -401,6 +412,9 @@ class Loop:
             self.post(card, f"look-{meta['attempt']}", text, target='needs-look', kind='check', metadata=meta)
             self.save(card, meta)
         elif s == 'needs-look':
+            if is_task(card):
+                self.transition(card, 'building')
+                return
             looks = [c for c in card['comments'] if any(r.get('phase') == 'look' for r in records({'comments': [c]}))]
             if not looks or not (out / 'look.json').exists():
                 self.notice(card, 'missing replay evidence; return to building to regenerate it')
@@ -439,6 +453,9 @@ class Loop:
                 else:
                     self.notice(card, 'reply does not clearly approve or request a revision; waiting')
         elif s == 'testing':
+            if is_task(card):
+                self.transition(card, 'building')
+                return
             if not meta.get('commit') or not (out / 'build.json').exists():
                 self.notice(card, 'test inputs missing; rebuild from the recorded card branch')
                 self.transition(card, 'building')
@@ -468,6 +485,56 @@ class Loop:
         elif s == 'candidate':
             self.candidate(card, meta)
 
+    def build_task(self, card, meta, ctx):
+        out = Path(ctx['out'])
+        try:
+            if not self.available_job(card, meta, 'task'):
+                return
+        except RuntimeError as exc:
+            meta['failed'] = True
+            self.save(card, meta)
+            note = ('this changes play; make it an idea card or fix it'
+                    if 'identity failed' in str(exc) else str(exc))
+            self.post(card, f"task-failed-{meta['attempt']}",
+                      f"What we tried: {card['title']}.\nDid it work: No; {note}.\n"
+                      'Who decides now: The author can update the card; the loop retries from ready.',
+                      target='ready', kind='check', metadata=meta)
+            return
+        task = read(out / 'task.json')
+        if task.get('needs_info'):
+            text = (out / 'questions.md').read_text().strip()
+            if not text.startswith('Questions before we build'):
+                raise ValueError('missing task clarification questions')
+            # Answers must get a fresh implementation job, not reuse this completed one.
+            meta['failed'] = True
+            self.save(card, meta)
+            self.post(card, f"questions-{meta['attempt']}", text, target='needs-info', ask=True,
+                      metadata=meta)
+            return
+        built = read(out / 'built.json')
+        if not built or built.get('task_check', {}).get('passed') is not True:
+            raise ValueError('missing verified task build and task-specific check')
+        meta.update(commit=built['commit'], phase='tested', task=True,
+                    old_base=self.latest_base() != meta['base'])
+        self.save(card, meta)
+        if not meta.get('pushed'):
+            self.cmd(['git', 'push', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])
+            meta['pushed'] = True
+            self.save(card, meta)
+        check = built['task_check']
+        comparison = ('the recorded old base' if meta.get('old_base')
+                      else 'the current base (latest main release)')
+        text = (f"What we tried: {card['title']}.\n"
+                f"Did it work: Yes; play stayed replay-identical to {comparison} and {check['note']}.\n"
+                'Who decides now: The author chooses candidate, rejected, or inconclusive.\n\n'
+                + ('Old base: main changed during these checks; refresh before shipping.\n'
+                   if meta.get('old_base') else '')
+                + f"Base: `{meta['base']}`; implementation: `{meta['commit']}`.\n"
+                f"Identity: old 10 maps × 2 seeds, both sides; 40 OK comparisons. Log: `{out / 'ident.log'}`.\n"
+                f"Task-specific check: `{json.dumps(task['check'])}`; log: `{out / 'task-check.log'}`.\n"
+                f"Check evidence: `{json.dumps(check, ensure_ascii=False)}`.")
+        self.post(card, f"task-tested-{meta['attempt']}", text, target='tested', kind='check', metadata=meta)
+
     def candidate(self, card, meta):
         if dt.datetime.now(KST) >= FREEZE:
             self.notice(card, 'freeze: no candidate branch or PR creation')
@@ -485,13 +552,17 @@ class Loop:
             self.notice(card, f"candidate PR already exists: {existing[0]['url']}")
             return
         out = Path(self.context(card, meta)['out'])
-        source = self.cmd(['git', 'show', f"{meta['commit']}:mybot2/main.cpp"])
-        source, count = re.subn(rf"(constexpr bool {meta['toggle']} = )false;", r'\g<1>true;', source)
+        source = ''
+        count = 1
+        if not is_task(card):
+            source = self.cmd(['git', 'show', f"{meta['commit']}:mybot2/main.cpp"])
+            source, count = re.subn(rf"(constexpr bool {meta['toggle']} = )false;", r'\g<1>true;', source)
         if count != 1:
             raise ValueError('candidate switch not found exactly once')
         manifest = {'version': version, 'workflow': 3 if 'by:ai' in labels(card) else 1 if 'by:zhe' in labels(card) else 2,
-                    'changes': [card['title']], 'results': {'held': 'See linked issue for paired results.',
-                    'main': 'Old 10 maps ×8; see linked issue.', 'mechanism': read(out / 'look.json')['note'],
+                    'changes': [card['title']], 'results': {'held': 'Not run for task cards.' if is_task(card) else 'See linked issue for paired results.',
+                    'main': 'Old 10 maps ×2 seeds; replay-identical.' if is_task(card) else 'Old 10 maps ×8; see linked issue.',
+                    'mechanism': read(out / 'built.json')['task_check']['note'] if is_task(card) else read(out / 'look.json')['note'],
                     'cpu': 'Not separately measured; no release approval implied.'},
                     'bot_dir': 'mybot2', 'issues': [card['number']], 'pr': None,
                     'base_commit': meta['base'], 'candidate_commit': meta['commit']}
@@ -500,6 +571,8 @@ class Loop:
                    'tree': [{'path': 'mybot2/main.cpp', 'mode': '100644', 'type': 'blob', 'content': source + '\n'},
                             {'path': f'candidates/{version}.json', 'mode': '100644', 'type': 'blob',
                              'content': json.dumps(manifest, indent=2) + '\n'}]}
+        if is_task(card):
+            payload['tree'] = payload['tree'][1:]
         remote = self.gh('api', f'repos/{GH_REPO}/git/matching-refs/heads/{branch}')
         remote = [r for r in remote if r['ref'] == f'refs/heads/{branch}']
         if not remote:
@@ -513,7 +586,8 @@ class Loop:
         body = out / 'candidate-pr.md'
         body.write_text(f'What we tried: {card["title"]}.\nDid it work: See the measured results in #{card["number"]}.\n'
                         f'Who decides now: The author and required teammate approvers review this revision.\n\n'
-                        f'Enables `{meta["toggle"]}`. Base `{meta["base"]}`; implementation `{meta["commit"]}`.\n'
+                        + ('Task preserves play against the current base (latest main release). ' if is_task(card) else f'Enables `{meta["toggle"]}`. ')
+                        + f'Base `{meta["base"]}`; implementation `{meta["commit"]}`.\n'
                         f'Results and optional smoke request: #{card["number"]}. No upload is performed by this runner.\n')
         if dt.datetime.now(KST) < FREEZE:
             url = self.cmd(['gh', 'pr', 'create', '--repo', GH_REPO, '--base', 'main', '--head', branch,
@@ -523,7 +597,11 @@ class Loop:
     def dry(self, card):
         s = state(card)
         meta = self.metadata(card)
-        if s == 'ready':
+        if is_task(card) and s == 'ready':
+            action = 'building (task; questions only if unclear)'
+        elif is_task(card) and s in ('building', 'needs-look', 'testing'):
+            action = 'task implementation + old10 ×2 identity + task-specific check → tested (no A/B)'
+        elif s == 'ready':
             action = 'clarify → ask (always for Zhe; otherwise if unclear) or building'
         elif s == 'needs-info':
             q = [c for c in card['comments'] if c['body'].startswith('Questions before we build')]

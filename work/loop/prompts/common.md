@@ -8,7 +8,7 @@ $comments
 Recorded base commit: $base
 Local metadata: $metadata
 
-Stay within this card's worktree and output directory. Never edit work/loop/, read docs/api.txt or docs/discord.txt, push, open/merge PRs, upload, activate submissions, request games, or use --confirm. Do not launch background processes or other agents. The runner publishes your outputs; do not post comments or change labels yourself. Only build may run ident games while holding the runner's batch lease. Other steps must not run games.
+Stay within this card's worktree and output directory. Never edit work/loop/, read docs/api.txt or docs/discord.txt, push, open/merge PRs, upload, activate submissions, request games, or use --confirm. Do not launch background processes or other agents. The runner publishes your outputs; do not post comments or change labels yourself. Only build and task may run ident games while holding the runner's batch lease. Other steps must not run games.
 Every GitHub-facing result starts with exactly these three nonempty lines, then any tables/tags:
 What we tried: ...
 Did it work: ...

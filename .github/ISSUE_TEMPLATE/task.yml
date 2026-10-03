@@ -1,0 +1,31 @@
+name: Task
+description: A change that must keep play identical; behaviour-changing fixes are ideas
+title: "[Task] "
+labels: ["type:task", "status:untested"]
+body:
+  - type: textarea
+    id: change
+    attributes:
+      label: What to change
+      description: Security, refactors, CPU savings or tooling; play must stay identical to the latest main release.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: How we check it is done
+      description: A task-specific check, e.g. fake messages are rejected or decode(encode(m)) == m.
+    validations:
+      required: true
+  - type: input
+    id: proposed_by
+    attributes:
+      label: Proposed by
+    validations:
+      required: true

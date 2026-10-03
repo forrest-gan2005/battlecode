@@ -1,5 +1,5 @@
-循环从看板取出想法，实现、测试，再把决策交回给我们。
-Zhe 的想法优先，其他人的卡片其次，AI 想法最后。
+循环从看板取出想法卡和任务卡，实现、检查，再把决策交回给我们。
+任务卡优先，其次是 Zhe 的想法、其他人的想法，AI 想法最后。
 每张卡片用一个 GitHub 状态标签说明下一步，重启后也能继续。
 人来回答问题、确认行为是否符合预期，并批准发布。
 循环不会自行上传，也不会请求排位赛。
@@ -22,11 +22,24 @@ Zhe 的想法优先，其他人的卡片其次，AI 想法最后。
 
 | 选取顺序 | 卡片 |
 |---|---|
-| 1 | `by:zhe`：Zhe 确信能带来实际提升的想法；必须先澄清，再一起看回放 |
-| 2 | 看板上的其他卡片 |
-| 3 | `by:ai`：来自我们最新天梯对局的假设 |
+| 1 | `type:task`：必须保持行为一致的任务 |
+| 2 | `by:zhe`：Zhe 确信能带来实际提升的想法；必须先澄清，再一起看回放 |
+| 3 | 其他人的想法卡片 |
+| 4 | `by:ai`：来自我们最新天梯对局的假设 |
 
 同组先取最早就绪的卡片。等待某个人回复时，可以继续处理其他卡片。
+
+## 任务卡（Task cards）
+
+`[Task]` 卡使用 `type:task` 和 `status:untested`，填写改什么、为什么、如何检查完成，以及提议人。
+安全、重构、CPU 节省和工具改动只有不改变行为才是任务；任何行为变化（包括修复 bug）都必须用想法卡。
+任务属于同一个循环和单分支流程：`card/N → candidate → main`，作者决策和批准规则相同。
+任务走 `ready → building`；只有不明确时才提问，Zhe 的任务也一样；跳过 needs-look 和结果 A/B。
+AI 按实际发布配置实现任务，并运行卡片指定的检查（单元测试、脚本或断言）。
+runner 独立检查旧 10 张地图 × 2 个种子、双方起始侧的回放，与当前基准（最新 main 发布版／上一版本）完全一致，并要求任务专属检查通过。
+通过后先写三行白话摘要，再发 `[check]`，设为 `tested`；作者选择 candidate、rejected 或 inconclusive。
+一致性失败退回 `ready`，注明 “this changes play; make it an idea card or fix it”；其他检查失败也带证据退回 ready。
+优先级为任务、`by:zhe`、其他人、`by:ai`，各组内最早的卡片优先。
 
 ## 每张卡片只有一个状态
 
@@ -36,10 +49,10 @@ runner 仅凭标签恢复下一步，不依赖私有队列或记忆中的计时�
 
 | 状态 | 谁来行动 | 完成条件 / 下一状态 |
 |---|---|---|
-| `status:untested` | 人 | 新想法等待同意运行；同意后转 `status:ready`。 |
-| `status:ready` | Runner | 按优先级选取；Zhe 的卡片转 `status:needs-info`，其他卡片不清楚时也转那里，否则转 `status:building`。 |
+| `status:untested` | 人 | 新卡片等待同意运行；同意后转 `status:ready`。 |
+| `status:ready` | Runner | 按优先级选取；任务直接进入 building；Zhe 的想法卡片转 `status:needs-info`，其他卡片不清楚时也转那里，否则转 `status:building`。 |
 | `status:needs-info` | AI，然后作者 | AI 提出“如果……会怎样”的边界情况问题，通过 meowbot @作者。作者在卡片或 Discord 回答；Discord 回答须记回卡片，然后开始实现。无超时。 |
-| `status:building` | AI | 实现默认关闭的开关；构建通过，关闭开关时在旧 10 张地图上与当前基准的回放完全一致。通过后转 `status:needs-look`；失败则转回 `status:ready`，说明待修问题。 |
+| `status:building` | AI | 任务按上述检查直接进入 tested；想法实现默认关闭的开关。构建通过，关闭开关时在旧 10 张地图上与当前基准的回放完全一致。通过后转 `status:needs-look`；失败则转回 `status:ready`，说明待修问题。 |
 | `status:needs-look` | AI，然后作者 | 小规模运行确认预期行为出现，用 `tools/smoke_pick.py` 挑几份回放。Zhe 看 2–3 份并确认“这就是我的意思”；否则回 `status:building` 修改。其他作者自动通过此步。随后转 `status:testing`。 |
 | `status:testing` | Runner 和 AI | 本地 A/B 检查对局结果，每次跑一批；发布结果后转 `status:tested`。 |
 | `status:tested` | 作者 | 结果已就绪，不代表接受。作者选择候选（可请求 smoke）、拒绝或证据不足。AI 可将自己的想法推进为候选。 |
@@ -86,7 +99,7 @@ Did it work: <yes / no / unclear，以及主要原因>.
 Who decides now: <谁需要做什么>.
 ```
 
-胜负数据旁必须有“为什么”表，尽量同时给出基准与候选值。未测量的项目明确注明。地图家族指布局相似的一组地图，各家族分开列。
+想法卡的胜负数据旁必须有“为什么”表，尽量同时给出基准与候选值。未测量的项目明确注明。地图家族指布局相似的一组地图，各家族分开列。
 
 | 为什么 | 基准 | 候选 | 能说明什么 |
 |---|---|---|---|
@@ -113,19 +126,19 @@ Who decides now: <谁需要做什么>.
 
 “Inside noise” 指本地 A/B 差异太小，无法可靠区分于随机波动。作者可请求 smoke，即简短的线上行为检查。候选批准时须保留此请求，或由人明确发起上传。
 
-上传候选后，对 DEV 队 `dev_test_1`（ID **545**）打约 60 场非排位赛。DEV 对局有独立的 **60 games/hour** 配额。与**只记录一次的 v61 基准**比较。看选定回放中的行为，不以胜场数判断。领域负责人加另一位队员的 OK 决定保留或回滚。
+上传候选后，对 DEV 队 `dev_test_1`（ID **545**）打约 60 场非排位赛。DEV 对局有独立的 **60 games/hour** 配额。与**当前基准（最新 main 发布版），每次发布后更新**比较。看选定回放中的行为，不以胜场数判断。领域负责人加另一位队员的 OK 决定保留或回滚。
 
-下列工具位于旁边的 `unsw-swarm` 仓库，命令从那里运行。`BOT_DIR` 是所选 bot 的 `bot.toml` 所在目录；`CANDIDATE` 是保存的 smoke 名称。带 `--confirm` 的命令会执行真实操作，必须走上述人/批准路径。
+下列工具位于旁边的 `unsw-swarm` 仓库，命令从那里运行。`BOT_DIR` 是所选 bot 的 `bot.toml` 所在目录；`CANDIDATE` 是保存的 smoke 名称；`BASE` 是当前 main 发布版的基准名称。带 `--confirm` 的命令会执行真实操作，必须走上述人/批准路径。
 
 | 操作 | 命令 |
 |---|---|
-| v61 启用时记录一次基准 | `python3 tools/smoke.py baseline --name v61 --opp 545 --games 60 --confirm` |
-| 预览候选上传和对局 | `python3 tools/smoke.py plan BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline v61` |
-| 上传并运行已授权的 smoke | `python3 tools/smoke.py start BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline v61 --confirm` |
+| 当前基准启用时记录基准 | `python3 tools/smoke.py baseline --name BASE --opp 545 --games 60 --confirm` |
+| 预览候选上传和对局 | `python3 tools/smoke.py plan BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline BASE` |
+| 上传并运行已授权的 smoke | `python3 tools/smoke.py start BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline BASE --confirm` |
 | 收集结果和精选回放 | `python3 tools/smoke.py report CANDIDATE` |
 | 一条命令回滚 | `python3 tools/smoke.py rollback CANDIDATE --confirm` |
 
-回滚会重新启用保存的上一份 submission。记录基准也消耗 DEV 配额，不能假定基准和候选都能在一小时内跑完。当前 smoke 工具在保存的基准与候选不兼容时不提供比较，包括回滚目标不是 v61 的情况。报告此限制，不能把缺失的比较当作证据。固定的 v61 smoke 参照不能替代以当前 main 为基准的本地 A/B。
+回滚会重新启用保存的上一份 submission。记录基准也消耗 DEV 配额，不能假定基准和候选都能在一小时内跑完。当前 smoke 工具在保存的基准与候选不兼容时不提供比较，包括回滚目标不是所保存的当前基准的情况。报告此限制，不能把缺失的比较当作证据。main 更新后须更新基准；smoke 不能替代以当前 main 为基准的本地检查。
 
 ## 冻结与硬规则
 

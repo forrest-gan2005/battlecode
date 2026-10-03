@@ -1,7 +1,7 @@
 中文版: [LOOP.zh.md](LOOP.zh.md)
 
-The loop takes ideas from the board, builds them, tests them, and brings decisions back to us.
-Zhe's ideas go first, other people's cards next, and AI ideas last.
+The loop takes idea and task cards from the board, builds them, tests them, and brings decisions back to us.
+Task cards go first, then Zhe's ideas, other humans' ideas, and AI ideas last.
 One GitHub state label tells everyone what happens next, even after a restart.
 People answer questions, check the intended behaviour, and approve releases.
 The loop never uploads by itself or requests ranked games.
@@ -24,11 +24,24 @@ The ladder is the online competition and its game history. After each new batch 
 
 | Pick order | Cards |
 |---|---|
-| 1 | `by:zhe`: ideas Zhe is confident are real improvements; always clarify and look together |
-| 2 | Other board cards |
-| 3 | `by:ai`: hypotheses from our latest ladder games |
+| 1 | `type:task`: changes that must preserve play |
+| 2 | `by:zhe`: ideas Zhe is confident are real improvements; always clarify and look together |
+| 3 | Other human idea cards |
+| 4 | `by:ai`: hypotheses from our latest ladder games |
 
 Within a group, pick the oldest ready card first. Waiting for a person does not block work on other cards.
+
+## Task cards
+
+A `[Task]` card uses `type:task` and `status:untested`, with what to change, why, a task-specific completion check, and proposed by.
+Security, refactors, CPU savings and tooling qualify only if play stays identical; any play change, including a behaviour-changing bug fix, is an idea card.
+Tasks use the same single branch flow: `card/N → candidate → main`, with the usual author decision and approvals.
+They go `ready → building`; ask questions only if unclear, including for Zhe. Skip needs-look and outcome A/B.
+The AI implements the task as it will ship and runs the card's check (unit test, script or assertion).
+The runner independently requires replay identity against the current base (latest main release / previous version) on the old 10 maps × 2 seeds, both sides, plus a passing task-specific check.
+Success posts `[check]` after the three plain summary lines and sets `tested`; the author chooses candidate, rejected or inconclusive.
+Identity failure returns to `ready`: “this changes play; make it an idea card or fix it”. Other check failures also return to ready with evidence.
+Tasks have priority over `by:zhe`, other humans and `by:ai`; oldest first within each group.
 
 ## One state per card
 
@@ -38,10 +51,10 @@ The runner resumes the next step from the label alone, without a private queue o
 
 | State | Who acts | Exit condition / next state |
 |---|---|---|
-| `status:untested` | People | New idea awaiting agreement to run; then `status:ready`. |
-| `status:ready` | Runner | Pick by priority; Zhe's cards go to `status:needs-info`, others there if unclear, otherwise `status:building`. |
+| `status:untested` | People | New card awaiting agreement to run; then `status:ready`. |
+| `status:ready` | Runner | Pick by priority; tasks go directly to building; Zhe's idea cards go to `status:needs-info`, others there if unclear, otherwise `status:building`. |
 | `status:needs-info` | AI, then author | AI posts “what if…” edge-case questions and @mentions the author through meowbot. Author answers on the card or in Discord; record Discord answers on the card, then build. No timeout. |
-| `status:building` | AI | Implement a default-off toggle; build passes and toggle-off play is replay-identical to the current base on the old 10 maps. Then `status:needs-look`; failure returns to `status:ready` with a note explaining what needs fixing. |
+| `status:building` | AI | Tasks follow the checks above and go directly to tested; ideas implement a default-off toggle. Build passes and toggle-off play is replay-identical to the current base on the old 10 maps. Then `status:needs-look`; failure returns to `status:ready` with a note explaining what needs fixing. |
 | `status:needs-look` | AI, then author | Small run checks whether the intended behaviour happens; keep a few replays picked by `tools/smoke_pick.py`. Zhe watches 2–3 and says “that's what I meant”; otherwise revise in `status:building`. This check auto-passes for other authors. Then `status:testing`. |
 | `status:testing` | Runner and AI | Run local outcome A/B, one batch at a time; post results and move to `status:tested`. |
 | `status:tested` | Author | Results are ready, not accepted. Author chooses a candidate (optionally requesting smoke), rejection, or inconclusive. AI may promote its own idea. |
@@ -88,7 +101,7 @@ Did it work: <yes / no / unclear, and the main reason>.
 Who decides now: <person and the action needed>.
 ```
 
-Always include a “why” table alongside wins, using base and candidate values where available. If something was not measured, say so. A map family is a group of maps with similar layouts; show each family separately.
+For idea results, always include a “why” table alongside wins, using base and candidate values where available. If something was not measured, say so. A map family is a group of maps with similar layouts; show each family separately.
 
 | Why | Base | Candidate | What it tells us |
 |---|---|---|---|
@@ -115,19 +128,19 @@ The loop prepares candidates but never uploads on its own. Only the approve butt
 
 “Inside noise” means the local A/B difference is too small to distinguish reliably from chance. The author can request smoke: a short online check of behaviour. Carry that request through the candidate approval step, or have a human explicitly initiate the upload.
 
-Upload the candidate, then play about 60 unranked games against DEV team `dev_test_1` (ID **545**). DEV games have their own **60 games/hour** allowance. Compare with a **v61 baseline recorded once**. Judge behaviour in selected replays, not the win count. The area owner plus one other member's OK decides keep or rollback.
+Upload the candidate, then play about 60 unranked games against DEV team `dev_test_1` (ID **545**). DEV games have their own **60 games/hour** allowance. Compare with a **baseline of the current base (latest main release), refreshed after each release**. Judge behaviour in selected replays, not the win count. The area owner plus one other member's OK decides keep or rollback.
 
-The tools below live in the sibling `unsw-swarm` repo; run these commands from there. `BOT_DIR` means the directory containing the chosen bot's `bot.toml`; `CANDIDATE` is its saved smoke name. Commands with `--confirm` perform real actions and require the human/approve route above.
+The tools below live in the sibling `unsw-swarm` repo; run these commands from there. `BOT_DIR` means the directory containing the chosen bot's `bot.toml`; `CANDIDATE` is its saved smoke name; `BASE` names the baseline for the current main release. Commands with `--confirm` perform real actions and require the human/approve route above.
 
 | Action | Command |
 |---|---|
-| Record baseline once, while v61 is active | `python3 tools/smoke.py baseline --name v61 --opp 545 --games 60 --confirm` |
-| Preview candidate upload and games | `python3 tools/smoke.py plan BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline v61` |
-| Upload and run the authorised smoke | `python3 tools/smoke.py start BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline v61 --confirm` |
+| Record baseline while the current base is active | `python3 tools/smoke.py baseline --name BASE --opp 545 --games 60 --confirm` |
+| Preview candidate upload and games | `python3 tools/smoke.py plan BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline BASE` |
+| Upload and run the authorised smoke | `python3 tools/smoke.py start BOT_DIR --name CANDIDATE --opp 545 --games 60 --baseline BASE --confirm` |
 | Collect results and replay picks | `python3 tools/smoke.py report CANDIDATE` |
 | Roll back in one command | `python3 tools/smoke.py rollback CANDIDATE --confirm` |
 
-Rollback reactivates the saved previous submission. Baseline recording also spends DEV allowance, so do not assume baseline and candidate both fit in one hour. The current smoke tool withholds comparison if the saved baseline and candidate are incompatible, including when the rollback submission differs from v61. Report that limitation; do not present a missing comparison as evidence. The fixed v61 smoke reference does not replace current-main local A/B.
+Rollback reactivates the saved previous submission. Baseline recording also spends DEV allowance, so do not assume baseline and candidate both fit in one hour. The current smoke tool withholds comparison if the saved baseline and candidate are incompatible, including when the rollback submission differs from the saved current-base baseline. Report that limitation; do not present a missing comparison as evidence. Refresh the baseline when main changes; smoke does not replace current-main local checks.
 
 ## Freeze and hard rules
 

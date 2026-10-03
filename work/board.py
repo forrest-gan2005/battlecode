@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Connect a loop to the idea board (GitHub issues) and the "Loop status" issue.
+"""Connect a loop to the card board (GitHub issues) and the "Loop status" issue.
 
 usage:
-  board.py next [--state S] [--wf W]             pick the next ready idea, or list a state
+  board.py next [--state S] [--wf W]             pick the next ready card, or list a state
   board.py state N S [--note FILE]              replace the state and update Loop status
   board.py claim N                              alias for state N building
   board.py report N --kind test|check --file F --state S
@@ -100,7 +100,7 @@ def remove_loop(loop):
 
 def priority(i):
     labels = {l["name"] for l in i["labels"]}
-    return (0 if "by:zhe" in labels else 2 if "by:ai" in labels else 1, i["createdAt"], i["number"])
+    return (0 if "type:task" in labels else 1 if "by:zhe" in labels else 3 if "by:ai" in labels else 2, i["createdAt"], i["number"])
 
 
 def cmd_next(a):

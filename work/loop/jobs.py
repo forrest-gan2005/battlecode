@@ -280,8 +280,8 @@ def ai(spec, fds):
     env = os.environ.copy()
     env.update(spec.get('game_env', {}))
     env.update(LOOP_GUARD=str(HERE / 'guard.py'), CARD_LOOP_GUARD=str(HERE / 'guard.py'),
-               CARD_LOOP_GAMES='1' if step == 'build' else '0', LOOP_STEP=step,
-               LOOP_TREE=spec['tree'], LOOP_OUT=str(out), LOOP_BATCH_LEASE='1' if step == 'build' else '0')
+               CARD_LOOP_GAMES='1' if step in ('build', 'task') else '0', LOOP_STEP=step,
+               LOOP_TREE=spec['tree'], LOOP_OUT=str(out), LOOP_BATCH_LEASE='1' if step in ('build', 'task') else '0')
     prompt = Path(spec['prompt']).read_text()
     if spec.get('light'):
         argv = ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'medium',
@@ -311,10 +311,20 @@ def ai(spec, fds):
             run(argv, spec['tree'], env, fds=fds, stdin=prompt, log=spec['log'])
         if not completed():
             raise ValueError('Claude did not finish successfully')
-    if step == 'build':
-        p = plan(out / 'build.json')
+    if step in ('build', 'task'):
+        if step == 'task':
+            p = read(out / 'task.json')
+            if not isinstance(p, dict) or not isinstance(p.get('needs_info'), bool):
+                raise ValueError('task.json must contain needs_info: bool')
+            if p['needs_info']:
+                return
+            check = p.get('check')
+            if not isinstance(check, list) or not check or not all(isinstance(x, str) and x for x in check):
+                raise ValueError('task check must be a nonempty argv list')
+        else:
+            p = plan(out / 'build.json')
         source = (Path(spec['tree']) / 'mybot2/main.cpp').read_text()
-        if len(re.findall(rf"constexpr bool {p['toggle']} = false;", source)) != 1:
+        if step == 'build' and len(re.findall(rf"constexpr bool {p['toggle']} = false;", source)) != 1:
             raise ValueError('new toggle must be default-off')
         run(['c++', '-std=c++20', '-O2', Path(spec['tree']) / 'mybot2/main.cpp', '-o', out / 'bot-off'],
             spec['tree'], env, fds=fds, log=out / 'compile.log')
@@ -325,7 +335,17 @@ def ai(spec, fds):
                    spec['sandbox'], env, fds=fds)
         ident.write_text(text)
         if text.strip().splitlines()[-1:] != ['identical'] or len(re.findall(r'^OK\s', text, re.M)) != 40:
-            raise ValueError('toggle-off identity failed; see ident.log')
+            raise ValueError('identity failed; this changes play; make it an idea card or fix it'
+                             if step == 'task' else 'toggle-off identity failed; see ident.log')
+        task_check = None
+        if step == 'task':
+            result_path = out / 'task-check.json'
+            result_path.unlink(missing_ok=True)
+            run(p['check'], spec['tree'], env, fds=fds, log=out / 'task-check.log')
+            task_check = read(result_path)
+            if (not isinstance(task_check, dict) or task_check.get('passed') is not True
+                    or not isinstance(task_check.get('note'), str) or not task_check['note'].strip()):
+                raise ValueError('task-specific check failed or missing evidence; see task-check.log')
         run(['git', 'merge-base', '--is-ancestor', spec['base'], 'HEAD'], spec['tree'], fds=fds)
         head = run(['git', 'rev-parse', 'HEAD'], spec['tree'], fds=fds).strip()
         if run(['git', 'status', '--porcelain', '--untracked-files=no'], spec['tree'], fds=fds).strip():
@@ -334,7 +354,8 @@ def ai(spec, fds):
             raise ValueError('build did not commit its implementation')
         if run(['git', 'branch', '--show-current'], spec['tree'], fds=fds).strip() != f"card/{spec['number']}":
             raise ValueError('build changed branch')
-        write(out / 'built.json', {'commit': head, 'toggle': p['toggle']})
+        write(out / 'built.json', {'commit': head, 'task_check': task_check} if step == 'task'
+              else {'commit': head, 'toggle': p['toggle']})
 
 
 def worker(path):
