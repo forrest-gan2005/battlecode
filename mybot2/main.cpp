@@ -247,6 +247,10 @@ constexpr int INC_ALLY_MEMORY = 10;
 constexpr int INC_MAX_LENGTH = 6;
 constexpr double HOT_FAR_DECAY = 0.0;
 constexpr bool SMALL_THREAT_OUTNUMBERED = false;
+constexpr int TR_TIGHT_BALL = 0;
+constexpr int TR_TIGHT_MAX_LEN = 3;
+constexpr int TR_TIGHT_NEAR = 3;
+constexpr double TR_TIGHT_PENALTY = 400.0;
 constexpr double PORTAL_FAR_DECAY = 0.0;
 constexpr int PORTAL_FAR_ROUNDS = 0;
 constexpr int HUNT_MIN_PARTS = 10;
@@ -2954,6 +2958,38 @@ class Bot {
         return SPRINT_FREE_DIV <= 0 ? 1 : (length + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV;
     }
 
+    int ball_size(int start, int radius, int cap) const {
+        int cells[64];
+        int count = 1;
+        cells[0] = start;
+        int begin = 0;
+        for (int step = 0; step < radius; step++) {
+            int const end = count;
+            for (int k = begin; k < end; k++) {
+                Position const position = position_of(cells[k]);
+                for (Direction const direction : Direction::get_direction_list()) {
+                    std::uint8_t const edge = edge_at(position, direction);
+                    if (edge == EDGE_KELP || edge == EDGE_PORTAL) {
+                        continue;
+                    }
+                    int const next = index_of(position.add_dir(direction));
+                    bool seen = false;
+                    for (int j = 0; j < count && !seen; j++) {
+                        seen = cells[j] == next;
+                    }
+                    if (!seen) {
+                        cells[count++] = next;
+                        if (count >= cap || count >= 60) {
+                            return count;
+                        }
+                    }
+                }
+            }
+            begin = end;
+        }
+        return count;
+    }
+
     bool enemy_near(Position cell, int radius) const {
         for (Position const& enemy : enemy_heads) {
             if (manhattan(enemy, cell) <= radius) {
@@ -3629,6 +3665,11 @@ class Bot {
                 }
                 score -= penalty;
             }
+        }
+
+        if (TR_TIGHT_BALL > 0 && !is_queen() && length <= TR_TIGHT_MAX_LEN && enemy_near(destination, TR_TIGHT_NEAR) &&
+            ball_size(index_of(destination), 3, TR_TIGHT_BALL + 1) <= TR_TIGHT_BALL) {
+            score -= TR_TIGHT_PENALTY;
         }
 
         int const guard_radius = queen_guard() ? QG_GUARD_RADIUS : QUEEN_GUARD_RADIUS;

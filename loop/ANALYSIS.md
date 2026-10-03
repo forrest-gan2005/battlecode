@@ -67,3 +67,10 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 - <= 800 wins mirror this (e9+ ally near r50-100 18.9:1.1, r100-150 25.4:0.7), but our e<=3 alone eating stays higher than theirs in wins too (19.4:12.4).
 - 801-1200 losses r50-100: e9+ ally near 6.8:17.3; wins 8.3:6.7.
 - Reading: on small maps the side that wins eats in a safe back zone in clusters, far from enemy heads; this flips with the result, so it is mostly a symptom of territory. Our extra eating next to enemy heads while alone shows in both wins and losses (a style difference: the small-dragon contest rule targets pearls where the enemy is up to 1 step closer).
+
+## Wave 10 addendum: static tight terrain next to enemy heads (`loop/tools/terr13.py`, `terr13_rep.py`, `terr13.pkl`)
+- r50-300, non-queen dragons. Each head cell is classed by its static 3-step ball (cells reachable in <= 3 steps through non-kelp edges, bodies ignored): tight <= 12, mid 13-18, open 19+. "E" = an enemy head within Manhattan 3. Rates are self-inflicted deaths (wall/self/body/none) per 1000 head-rounds.
+- Maps <= 800 cells, losses (N=40): share of head-rounds in tight+E us 0.130 vs them 0.051; death rate there 192 vs 127. Wins (N=61): 0.089 vs 0.126; 204 vs 130.
+- Maps <= 800, tight+E deaths per game by length: losses L2 28.5:16.6, L3 24.8:13.2; wins L2 31.2:15.3, L3 29.6:14.3. L4+ < 3 per game for both.
+- Maps > 800: tight+E deaths per game L2-3 losses 9.9:7.8, wins 5.8:7.5 (no gap). Tight cells without an enemy near, maps > 1200 losses: rate 121 vs 92.
+- Reading: on small maps our L2-3 dragons die about 2x as often as the opponents' in corridor and dead-end cells while an enemy head is close, in both wins and losses (a style difference, not a result symptom). Open-terrain rates are equal or lower for us.

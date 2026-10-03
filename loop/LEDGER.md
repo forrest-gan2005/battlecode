@@ -301,3 +301,10 @@ One section per wave, facts only.
 - Verdicts: H10 REJECTED (LE0 0, LEM1 -17), H8c INCONCLUSIVE (SL62 +3; three seeds +15; family parked), H11 REJECTED (CS0 -12, CS2 -4).
 - Running: `loop/h12s.sh` (pid 30704), H12 ST2 + ST2O held x2 SEED0=3000, started 09:46, est. ~10:12 -> `H12s_held.json`, `H12s_done`.
 - Queue after H12: only H6 (opening, low). The next wave should build new hypotheses (terrain/self deaths, opening) from the ladder data before the slot goes idle.
+
+## Wave 10 — pre-registration H13 (written 09:58 KST, before any H13 game)
+- H13 TR, tight terrain next to an enemy head. Claim: on small maps our L2-3 dragons die about 2x as often as the opponents' in static tight cells (3-step ball <= 12 cells) while an enemy head is within 3 (ANALYSIS wave 10: <= 800 losses 53.3 vs 29.8 per game, wins 60.8 vs 29.6). Change: non-queen dragons of length <= 3 pay a penalty for a destination whose static 3-step ball (non-kelp, non-portal edges, unknown edges open) has <= 12 cells while an enemy head or live ghost is within 3 of it.
+- Toggle: `TR_TIGHT_BALL` (0 = off; 12), `TR_TIGHT_MAX_LEN` 3, `TR_TIGHT_NEAR` 3, `TR_TIGHT_PENALTY`. Variants TT4 (penalty 400) and TT8 (800). Toggle-off object md5 aee4013d... before and after (byte-identical), so ident vs v61 carries over from B61c.
+- Runs: `loop/h13.sh` (chained after H12s_done): held (heldset_sq + freshset) x2 SEED0=3000 vs v61 -> `H13_held.json`; judge paired vs B61 (`judge.py B_held.json H13_held.json`).
+- Pass rule (noise table: held null net SD ~8-9): a variant PASSES held if net >= 9 and its small-map held net >= 0. Then main (official + newset) x8: net >= -14. Then SEED0=5000 held confirm: combined two-seed net >= 18. Mechanism (KEEP replays, small held maps): L2-3 tight+E self deaths per game down >= 25% vs MB61. REJECT if held net <= 0 for both variants. Otherwise INCONCLUSIVE.
+- Falsifier: held net <= 0, or in KEEP replays the tight+E death count does not fall (the penalty fires but deaths move elsewhere).
