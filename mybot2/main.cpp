@@ -39,6 +39,11 @@ constexpr int BIG_TRUE_MARGIN = 1;
 constexpr int SPLIT_LAST_ROUND = 495;
 constexpr int SPLIT_MIN_LENGTH = 4;
 constexpr int SPLIT_SOFT_LIMIT = 60;
+constexpr bool EC_STATE_SPLIT = false;
+constexpr int EC_SPLIT_FROM = 0;
+constexpr int EC_SPLIT_HEADROOM = 4;
+constexpr int EC_SPLIT_CALM = 0;
+constexpr int EC_SPLIT_CROWD = -1;
 
 constexpr int ENDGAME_ROUND = 400;
 constexpr int LEADER_GROW_ROUND = 300;
@@ -743,7 +748,8 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
-        if (round > grow_round && length > SPLIT_MIN_LENGTH) {
+        bool const long_stop = EC_STATE_SPLIT && !is_queen() ? round > EC_SPLIT_FROM && !state_split_ok() : round > grow_round;
+        if (long_stop && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
         if (ct.get_unit_count() >= SPLIT_SOFT_LIMIT) {
@@ -777,6 +783,12 @@ class Bot {
             }
         }
         return child;
+    }
+
+    bool state_split_ok() const {
+        return ct.get_unit_count() < gm.get_unit_limit() - EC_SPLIT_HEADROOM && !feeding_phase() &&
+               (EC_SPLIT_CALM <= 0 || round - ec_contact > EC_SPLIT_CALM) &&
+               (EC_SPLIT_CROWD < 0 || static_cast<int>(ally_heads.size()) <= EC_SPLIT_CROWD);
     }
 
     bool tail_threatened() const {
@@ -1210,6 +1222,9 @@ class Bot {
         tail_index = static_cast<int>(trail.size()) == length ? index_of(trail.back()) : -1;
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
             hear_sighting(ally_head_ids[k], visible_parts(ally_head_ids[k]), ally_heads[k], ally_head_dirs[k]);
+        }
+        if (EC_STATE_SPLIT && !enemy_heads.empty()) {
+            ec_contact = round;
         }
         update_lifecycle();
         compute_drop_cells();
@@ -3928,6 +3943,7 @@ class Bot {
     int enemy_big_seen = 0;
     int first_contact = -1;
     int last_contact = -1;
+    int ec_contact = -1000;
     bool home_closed = false;
     bool queen_game = false;
     int big_enemy_round = -1;
