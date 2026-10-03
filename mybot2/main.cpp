@@ -158,6 +158,21 @@ constexpr int QG_SPLIT_CLEAR = 6;
 constexpr int QG_KEEP = 0;
 constexpr int QG_HOME_RADIUS = 0;
 constexpr double QG_HOME_PENALTY = 60.0;
+constexpr bool QG_SAFEZONE = false;
+constexpr int QG_SAFEZONE_CHECKS = 2;
+constexpr int QG_SAFEZONE_GAP = 4;
+constexpr int QG_SAFEZONE_ROOM = 3;
+constexpr double QG_SAFEZONE_FRAC = 0.1;
+constexpr double QG_SAFEZONE_PENALTY = 3000.0;
+constexpr int QG_SAFEZONE_PROBE = 12;
+constexpr bool QG_SAFEZONE_LOG = false;
+constexpr bool QG_CORNER = false;
+constexpr int QG_CORNER_RADIUS = 2;
+constexpr int QG_CORNER_REACH = 40;
+constexpr int QG_CORNER_DANGER = 4;
+constexpr int QG_CORNER_EVERY = 10;
+constexpr double QG_CORNER_PENALTY = 1000.0;
+constexpr bool QG_CORNER_LOG = false;
 constexpr int QUEEN_GIVE_WAY = 0;
 constexpr double QUEEN_GIVE_WAY_PENALTY = 3000.0;
 constexpr bool QUEEN_BRAIN = false;
@@ -428,6 +443,12 @@ class Bot {
     void take_turn() {
         act_dirs.clear();
         act();
+        if (QG_SAFEZONE) {
+            zone_after_move();
+        }
+        if (QG_CORNER) {
+            corner_after_move();
+        }
         broadcast_leader();
     }
 
@@ -459,6 +480,16 @@ class Bot {
             if (QUEEN_GAME_FEED_ROUND > 0 && queen_game) {
                 feed_round = std::min(feed_round, QUEEN_GAME_FEED_ROUND);
             }
+        }
+        if (QG_SAFEZONE) {
+            zone_watch();
+            zone_probe();
+            if (real_queen() && zone_queen()) {
+                return;
+            }
+        }
+        if (QG_CORNER && real_queen()) {
+            corner_update();
         }
         if (QUEEN_BRAIN && is_queen() && queen_act()) {
             return;
@@ -505,6 +536,12 @@ class Bot {
         }
         if (rally_fresh > 0 && route_target < 0 && rally_ready()) {
             route_target = index_of(known_leader_pos);
+        }
+        if (QG_SAFEZONE && route_target < 0 && zone_target >= 0) {
+            route_target = zone_target;
+        }
+        if (QG_CORNER && route_target < 0 && corner_target >= 0) {
+            route_target = corner_target;
         }
         Direction const best = pick_direction();
         if (IDLE_LOG > 0 && round - last_growth_round >= IDLE_LOG) {
@@ -607,7 +644,7 @@ class Bot {
             return;
         }
         if (STRIDE && SPRINT_FREE_DIV > 0 && sprint_free() >= 2 && chosen_scored && chosen_index >= 0 &&
-            edge_at(head, best) != EDGE_PORTAL) {
+            edge_at(head, best) != EDGE_PORTAL && !(QG_SAFEZONE && zone_mode == 1)) {
             std::vector<Direction> stride_path(1, best);
             extend_stride(stride_path);
             if (stride_path.size() > 1) {
@@ -736,6 +773,9 @@ class Bot {
 
   private:
     int split_child_size() {
+        if (QG_SAFEZONE && zone_mode == 2) {
+            return 0;
+        }
         if (is_queen() && (round > QUEEN_SPLIT_ROUND || enemy_near(head, queen_guard() ? QG_SPLIT_CLEAR : QUEEN_SPLIT_CLEAR) ||
                            length - unswbc::Constants::MIN_SIZE < (queen_guard() ? QG_KEEP : QUEEN_KEEP))) {
             return 0;
@@ -1512,6 +1552,8 @@ class Bot {
                 continue;
             } else if (SHARE_SIGHT && (message >> 63) != 0 && learn_sight(message)) {
                 continue;
+            } else if (QG_SAFEZONE && (message >> 63) != 0 && learn_zone(message)) {
+                continue;
             }
         }
     }
@@ -1544,8 +1586,13 @@ class Bot {
         std::uint64_t sight = 0;
         bool const has_sight = SHARE_SIGHT && pack_sight(sight);
         for (std::size_t k = 0; k < directions.size(); k++) {
+            if (QG_SAFEZONE && zone_check_dir >= 0 && static_cast<int>(k) != zone_check_dir) {
+                continue;
+            }
             if (static_cast<int>(k) == mouth_dir) {
                 ct.send_sonar(directions[k], pack_mouth(index_of(post)));
+            } else if (QG_SAFEZONE && zone_relay(k)) {
+                ct.send_sonar(directions[k], pack_zone());
             } else if (has_sight && (known_leader_id < 0 || (round + static_cast<int>(k)) % 2 == 0)) {
                 ct.send_sonar(directions[k], sight);
             } else if (known_leader_id >= 0) {
@@ -2340,7 +2387,8 @@ class Bot {
                     continue;
                 }
                 if (next_index < 0) {
-                    if (scouting && result.dist_portal < 0 && leads_to_unknown(position, direction)) {
+                    if (scouting && result.dist_portal < 0 && leads_to_unknown(position, direction) &&
+                        !(QG_SAFEZONE && zone_blocked(position, direction))) {
                         result.dist_portal = steps + 1;
                     }
                     continue;
@@ -3097,6 +3145,532 @@ class Bot {
         return edge_at(position, direction) == EDGE_PORTAL && portal_exit(position, direction) < 0;
     }
 
+    int portal_id_at(Position position, Direction direction) const {
+        auto const [index, horizontal] = canonical_edge(position, direction);
+        return (horizontal ? north_portal : west_portal)[index];
+    }
+
+    int zone_scan(int start, int id, int& core, bool strict) {
+        if (zs_stamp.size() != static_cast<std::size_t>(cells)) {
+            zs_stamp.assign(cells, 0);
+            zs_cut.assign(cells, 0);
+            zs_degree.assign(cells, 0);
+            zs_queue.assign(cells, 0);
+        }
+        zs_mark++;
+        zs_unknown = false;
+        int const cap = std::max(1, static_cast<int>(QG_SAFEZONE_FRAC * cells));
+        int tail = 0;
+        zs_stamp[start] = zs_mark;
+        zs_queue[tail++] = start;
+        for (int at = 0; at < tail; at++) {
+            Position const position = position_of(zs_queue[at]);
+            int degree = 0;
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_UNKNOWN) {
+                    if (strict) {
+                        return -1;
+                    }
+                    zs_unknown = true;
+                    degree++;
+                    continue;
+                }
+                if (edge == EDGE_PORTAL) {
+                    if (portal_id_at(position, direction) != id) {
+                        return -2;
+                    }
+                    continue;
+                }
+                if (edge != EDGE_OPEN) {
+                    continue;
+                }
+                degree++;
+                int const next = index_of(position.add_dir(direction));
+                if (zs_stamp[next] == zs_mark) {
+                    continue;
+                }
+                if (tail >= cap) {
+                    return -2;
+                }
+                zs_stamp[next] = zs_mark;
+                zs_queue[tail++] = next;
+            }
+            zs_degree[zs_queue[at]] = degree;
+        }
+        std::vector<int> leaves;
+        for (int k = 0; k < tail; k++) {
+            if (zs_degree[zs_queue[k]] <= 1) {
+                leaves.push_back(zs_queue[k]);
+            }
+        }
+        int removed = 0;
+        while (!leaves.empty()) {
+            int const cell = leaves.back();
+            leaves.pop_back();
+            if (zs_cut[cell] == zs_mark) {
+                continue;
+            }
+            zs_cut[cell] = zs_mark;
+            removed++;
+            Position const position = position_of(cell);
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(position, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (zs_stamp[next] != zs_mark || zs_cut[next] == zs_mark) {
+                    continue;
+                }
+                if (--zs_degree[next] == 1) {
+                    leaves.push_back(next);
+                }
+            }
+        }
+        core = tail - removed;
+        return tail;
+    }
+
+    int zone_doors() const {
+        int doors = 0;
+        for (int k = 0; k < cells; k++) {
+            if (zs_stamp[k] != zs_mark) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                doors += edge_at(position_of(k), direction) == EDGE_PORTAL ? 1 : 0;
+            }
+        }
+        return doors;
+    }
+
+    bool zone_blocked(Position position, Direction direction) const {
+        if (zone_core <= 0 || real_queen()) {
+            return false;
+        }
+        int const at = index_of(position);
+        int const code = face_code(direction);
+        Position const mouth = position_of(zone_mouth);
+        Direction const through = Direction::get_direction_list()[static_cast<std::size_t>(zone_dir)];
+        return (at == zone_mouth && code == zone_dir) ||
+               (zone_two && at == index_of(mouth.add_dir(through)) && code == face_code(through.get_opposite()));
+    }
+
+    void zone_note_crossing() {
+        Position cell = head;
+        for (Direction const direction : act_dirs) {
+            if (edge_at(cell, direction) == EDGE_PORTAL) {
+                zp_mouth = index_of(cell);
+                zp_dir = face_code(direction);
+                zp_id = portal_id_at(cell, direction);
+                zp_until = round + QG_SAFEZONE_PROBE;
+            }
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                return;
+            }
+            cell = position_of(next);
+        }
+    }
+
+    void zone_probe() {
+        if (zp_until < round || zone_mode != 0 || zone_claimed) {
+            return;
+        }
+        int const entry = portal_exit(position_of(zp_mouth), Direction::get_direction_list()[zp_dir]);
+        if (entry < 0) {
+            return;
+        }
+        int core = 0;
+        int const size = zone_scan(entry, zp_id, core, true);
+        if (size == -1) {
+            return;
+        }
+        zp_until = -1;
+        if (size < 0 || zs_stamp[zp_mouth] == zs_mark || zs_stamp[index_of(head)] != zs_mark ||
+            core < unswbc::Constants::MIN_SIZE + QG_SAFEZONE_ROOM || core <= zone_core) {
+            return;
+        }
+        zone_mouth = zp_mouth;
+        zone_dir = zp_dir;
+        zone_size = size;
+        zone_core = core;
+        zone_two = zone_doors() > 1;
+        if (QG_SAFEZONE_LOG) {
+            ct.output_log("ZFOUND", zone_mouth % width, zone_mouth / width, zone_dir, zone_size, zone_core);
+        }
+    }
+
+    std::uint64_t pack_zone() const {
+        std::uint64_t const body = (static_cast<std::uint64_t>(zone_mouth >= 0 ? zone_mouth : 0) & 0x3FFF) |
+                                   ((static_cast<std::uint64_t>(zone_dir) & 0x3) << 14) |
+                                   ((static_cast<std::uint64_t>(std::min(zone_size, 255)) & 0xFF) << 16) |
+                                   ((static_cast<std::uint64_t>(std::min(zone_core, 255)) & 0xFF) << 24) |
+                                   (static_cast<std::uint64_t>(enemy_queen_dead ? 1 : 0) << 32) |
+                                   (static_cast<std::uint64_t>(zone_two ? 1 : 0) << 33) |
+                                   (static_cast<std::uint64_t>(zone_claimed ? 1 : 0) << 34) |
+                                   (static_cast<std::uint64_t>(0x3C) << 38) | ((sonar_tag & 0x3) << 53);
+        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+    }
+
+    bool learn_zone(std::uint64_t message) {
+        std::uint64_t const body = message & ((1ULL << 55) - 1);
+        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
+            ((body >> 38) & 0x7FFF) != 0x3C) {
+            return false;
+        }
+        if (((body >> 32) & 1ULL) != 0) {
+            enemy_queen_dead = true;
+        }
+        int const mouth = static_cast<int>(body & 0x3FFF);
+        int const core = static_cast<int>((body >> 24) & 0xFF);
+        bool const claimed = ((body >> 34) & 1ULL) != 0;
+        if (zone_mode == 0 && mouth < cells && core > 0 && !zone_claimed && (claimed || core > zone_core)) {
+            zone_mouth = mouth;
+            zone_dir = static_cast<int>((body >> 14) & 0x3);
+            zone_size = static_cast<int>((body >> 16) & 0xFF);
+            zone_core = core;
+            zone_two = ((body >> 33) & 1ULL) != 0;
+            zone_claimed = claimed;
+        }
+        return true;
+    }
+
+    bool zone_relay(std::size_t k) const {
+        if (static_cast<int>(k) == zone_check_dir) {
+            return true;
+        }
+        return (zone_core > 0 || enemy_queen_dead) && static_cast<int>(k) == (round + ct.get_id()) % 4;
+    }
+
+    void zone_watch() {
+        if (QUEEN_MODE && enemy_queen_id >= 0 && eq_round == round - 1 && enemy_queen_round != round) {
+            int const at = index_of(eq_pos);
+            if (seen_round[at] == round && pearl_here[at] && visible_parts(enemy_queen_id) == 0) {
+                enemy_queen_dead = true;
+                if (QG_SAFEZONE_LOG) {
+                    ct.output_log("ZQDEAD", eq_pos.x, eq_pos.y);
+                }
+            }
+        }
+        eq_round = enemy_queen_round == round ? round : -1;
+        eq_pos = enemy_queen_pos;
+    }
+
+    bool zone_queen() {
+        zone_target = -1;
+        if (zone_checked) {
+            unswbc::SonarEchoes const echo = ct.get_sonar_echoes();
+            bool const clear = echo.kelp == 1 && echo.ally == 0 && echo.ally_head == 0 && echo.enemy == 0 && echo.enemy_head == 0;
+            zone_clear = clear ? zone_clear + 1 : 0;
+            zone_checked = false;
+            zone_last_check = round - 1;
+            if (QG_SAFEZONE_LOG) {
+                ct.output_log("ZCHECK", echo.kelp, echo.ally, echo.ally_head, echo.enemy, echo.enemy_head, zone_clear);
+            }
+        } else if (round - zone_last_check > QG_SAFEZONE_GAP) {
+            zone_clear = 0;
+        }
+        bool const late = feeding_phase() && !enemy_queen_dead;
+        auto const directions = Direction::get_direction_list();
+        if (zone_mode <= 1) {
+            int const was = zone_mode;
+            zone_mode = zone_core > 0 && zone_core >= length + QG_SAFEZONE_ROOM && !late ? 1 : 0;
+            zone_claimed = zone_claimed || zone_mode == 1;
+            if (QG_SAFEZONE_LOG && zone_mode != was) {
+                ct.output_log("ZMODE", zone_mode, zone_mouth % width, zone_mouth / width, zone_dir, zone_core, length);
+            }
+        }
+        if (zone_mode == 1) {
+            Position const mouth = position_of(zone_mouth);
+            Direction const through = directions[static_cast<std::size_t>(zone_dir)];
+            if (head == mouth && zone_clear >= QG_SAFEZONE_CHECKS && edge_at(head, through) == EDGE_PORTAL) {
+                zone_id = portal_id_at(head, through);
+                ct.make_move(through);
+                act_dirs.assign(1, through);
+                zone_mode = 2;
+                zone_enter_round = round;
+                if (QG_SAFEZONE_LOG) {
+                    ct.output_log("ZENTER", head.x, head.y, zone_clear, length);
+                }
+                return true;
+            }
+            Direction const back = through.get_opposite();
+            int const before = edge_at(mouth, back) == EDGE_OPEN ? index_of(mouth.add_dir(back)) : -1;
+            zone_target = before >= 0 && index_of(head) != before ? before : zone_mouth;
+            return false;
+        }
+        if (zone_mode == 2) {
+            if (zone_entry < 0) {
+                zone_entry = index_of(head);
+            }
+            int core = 0;
+            int const size = zone_scan(index_of(head), zone_id, core, false);
+            if (size == -2) {
+                zone_mode = 4;
+                return false;
+            }
+            bool invaded = false;
+            for (Position const& enemy : enemy_heads) {
+                invaded = invaded || zs_stamp[index_of(enemy)] == zs_mark;
+            }
+            if (invaded) {
+                zone_mode = 3;
+                if (QG_SAFEZONE_LOG) {
+                    ct.output_log("ZBAD", size, length);
+                }
+            }
+            if (zone_mode == 2 && (late || (zs_unknown ? zone_core : core) < length + 1)) {
+                zone_mode = 3;
+                if (QG_SAFEZONE_LOG) {
+                    ct.output_log("ZLEAVE", late ? 1 : 0, core, length);
+                }
+            }
+        }
+        if (zone_mode == 3) {
+            Direction const out = directions[static_cast<std::size_t>(zone_dir)].get_opposite();
+            if (index_of(head) == zone_entry && round - zone_enter_round > length && edge_at(head, out) == EDGE_PORTAL) {
+                ct.make_move(out);
+                act_dirs.assign(1, out);
+                zone_mode = 4;
+                if (QG_SAFEZONE_LOG) {
+                    ct.output_log("ZEXIT", head.x, head.y, length);
+                }
+                return true;
+            }
+            zone_target = zone_entry;
+        }
+        return false;
+    }
+
+    void zone_after_move() {
+        zone_note_crossing();
+        zone_check_dir = -1;
+        if (zone_mode != 1 || !sonar_enabled) {
+            return;
+        }
+        Position post = head;
+        for (Direction const direction : act_dirs) {
+            int const next = step_index(post, direction);
+            if (next < 0) {
+                return;
+            }
+            post = position_of(next);
+        }
+        Position const mouth = position_of(zone_mouth);
+        Direction const through = Direction::get_direction_list()[static_cast<std::size_t>(zone_dir)];
+        bool const at_mouth = post == mouth;
+        bool const behind = edge_at(post, through) == EDGE_OPEN && index_of(post.add_dir(through)) == zone_mouth &&
+                            !(head == mouth) && enter_time[zone_mouth] == 0;
+        if (at_mouth || behind) {
+            zone_check_dir = zone_dir;
+            zone_checked = true;
+        }
+    }
+
+    double zone_cost(int cell) const {
+        if (zs_stamp[cell] != zs_mark) {
+            return 0.0;
+        }
+        if (zs_cut[cell] == zs_mark && !zs_unknown) {
+            return QG_SAFEZONE_PENALTY;
+        }
+        Position const position = position_of(cell);
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(position, direction) == EDGE_PORTAL) {
+                return QG_SAFEZONE_PENALTY;
+            }
+        }
+        return 0.0;
+    }
+
+    bool kelp_within(Position from, Direction direction) const {
+        Position cell = from;
+        for (int k = 0; k < QG_CORNER_RADIUS; k++) {
+            std::uint8_t const edge = edge_at(cell, direction);
+            if (edge == EDGE_KELP) {
+                return true;
+            }
+            if (edge != EDGE_OPEN) {
+                return false;
+            }
+            cell = cell.add_dir(direction);
+        }
+        return false;
+    }
+
+    std::vector<int> corner_area(int center) const {
+        std::vector<int> area(1, center);
+        std::vector<int> depth(1, 0);
+        for (std::size_t at = 0; at < area.size(); at++) {
+            if (depth[at] >= QG_CORNER_RADIUS) {
+                continue;
+            }
+            Position const position = position_of(area[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(position, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (std::find(area.begin(), area.end(), next) == area.end()) {
+                    area.push_back(next);
+                    depth.push_back(depth[at] + 1);
+                }
+            }
+        }
+        return area;
+    }
+
+    int corner_room(int center) const {
+        std::vector<int> area = corner_area(center);
+        bool cut = true;
+        while (cut && !area.empty()) {
+            cut = false;
+            for (std::size_t k = 0; k < area.size(); k++) {
+                Position const position = position_of(area[k]);
+                int degree = 0;
+                for (Direction const direction : Direction::get_direction_list()) {
+                    if (edge_at(position, direction) == EDGE_OPEN &&
+                        std::find(area.begin(), area.end(), index_of(position.add_dir(direction))) != area.end()) {
+                        degree++;
+                    }
+                }
+                if (degree <= 1) {
+                    area.erase(area.begin() + static_cast<std::ptrdiff_t>(k));
+                    cut = true;
+                    break;
+                }
+            }
+        }
+        return static_cast<int>(area.size());
+    }
+
+    void corner_search() {
+        corner_center = -1;
+        corner_dir = -1;
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        step_count[start] = 0;
+        bfs_queue[queue_tail++] = head;
+        double best = SCORE_REJECT;
+        auto const directions = Direction::get_direction_list();
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const index = index_of(position);
+            int const steps = step_count[index];
+            int sides = 0;
+            for (Direction const direction : directions) {
+                sides += kelp_within(position, direction) ? 1 : 0;
+            }
+            if (sides >= 3 && seen_round[index] >= 0 &&
+                std::find(corner_bad.begin(), corner_bad.end(), index) == corner_bad.end()) {
+                int mouth = -1;
+                int mouth_dir = -1;
+                bool known = false;
+                for (int const cell : corner_area(index)) {
+                    for (std::size_t k = 0; k < directions.size(); k++) {
+                        if (edge_at(position_of(cell), directions[k]) != EDGE_PORTAL) {
+                            continue;
+                        }
+                        bool const exit_known = portal_exit(position_of(cell), directions[k]) >= 0;
+                        if (mouth < 0 || (exit_known && !known)) {
+                            mouth = cell;
+                            mouth_dir = static_cast<int>(k);
+                            known = exit_known;
+                        }
+                    }
+                }
+                int const center = mouth >= 0 ? mouth : index;
+                if (std::find(corner_bad.begin(), corner_bad.end(), center) == corner_bad.end() &&
+                    corner_room(center) >= length + 1) {
+                    double const score = (mouth >= 0 ? 1000.0 : 0.0) + (known ? 500.0 : 0.0) - steps;
+                    if (score > best) {
+                        best = score;
+                        corner_center = center;
+                        corner_dir = mouth_dir;
+                    }
+                }
+            }
+            if (steps >= QG_CORNER_REACH) {
+                continue;
+            }
+            for (Direction const direction : directions) {
+                if (edge_at(position, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+    }
+
+    void corner_update() {
+        corner_target = -1;
+        corner_escape = false;
+        corner_hold = false;
+        if (feeding_phase() || (QG_SAFEZONE && zone_mode != 0 && zone_mode != 4)) {
+            corner_center = -1;
+            return;
+        }
+        if (corner_center >= 0 && corner_room(corner_center) < length + 1) {
+            corner_center = -1;
+        }
+        if (corner_center < 0 && round - corner_round >= QG_CORNER_EVERY) {
+            corner_round = round;
+            corner_search();
+            if (QG_CORNER_LOG && corner_center >= 0) {
+                ct.output_log("CANCHOR", corner_center % width, corner_center / width, corner_dir,
+                              corner_dir >= 0 && portal_exit(position_of(corner_center), Direction::get_direction_list()[static_cast<std::size_t>(corner_dir)]) >= 0 ? 1 : 0,
+                              length);
+            }
+        }
+        if (corner_center < 0) {
+            return;
+        }
+        corner_escape = enemy_near(head, QG_CORNER_DANGER);
+        int const gap = manhattan(head, position_of(corner_center));
+        corner_hold = !corner_escape && gap <= QG_CORNER_RADIUS;
+        if (gap > QG_CORNER_RADIUS || (corner_escape && corner_dir >= 0 && gap > 0)) {
+            corner_target = corner_center;
+        }
+        if (QG_CORNER_LOG && gap <= QG_CORNER_RADIUS) {
+            ct.output_log("CNEAR", gap, corner_escape ? 1 : 0, length);
+        }
+    }
+
+    bool corner_gate(Direction direction) const {
+        return corner_escape && corner_dir >= 0 && index_of(head) == corner_center && face_code(direction) == corner_dir;
+    }
+
+    double corner_portal_score(Direction direction, bool& usable) {
+        int const exit = portal_exit(head, direction);
+        usable = exit >= 0 && enter_time[exit] <= 1;
+        if (exit >= 0 && !usable) {
+            return SCORE_REJECT;
+        }
+        return (usable ? score_step(position_of(exit)) : 0.0) - PORTAL_LEAP_PENALTY;
+    }
+
+    void corner_after_move() {
+        if (corner_center < 0 || act_dirs.size() != 1 || !corner_gate(act_dirs.front())) {
+            return;
+        }
+        if (QG_CORNER_LOG) {
+            ct.output_log("CESCAPE", head.x, head.y, length);
+        }
+        corner_bad.push_back(corner_center);
+        corner_center = -1;
+        corner_round = round;
+    }
+
     
     
     
@@ -3224,7 +3798,7 @@ class Bot {
             for (std::size_t k = 0; k < directions.size(); k++) {
                 std::uint8_t const edge = edge_at(position, directions[k]);
                 if (edge == EDGE_PORTAL) {
-                    if (portal_into_pocket(position, directions[k])) {
+                    if (portal_into_pocket(position, directions[k]) || (QG_SAFEZONE && zone_blocked(position, directions[k]))) {
                         continue;
                     }
                     if (portal_cell < 0 || escape_steps[index] < escape_steps[portal_cell]) {
@@ -3292,7 +3866,7 @@ class Bot {
             for (std::size_t k = 0; k < directions.size(); k++) {
                 std::uint8_t const edge = edge_at(position, directions[k]);
                 if (edge == EDGE_PORTAL) {
-                    if (portal_into_pocket(position, directions[k])) {
+                    if (portal_into_pocket(position, directions[k]) || (QG_SAFEZONE && zone_blocked(position, directions[k]))) {
                         continue;
                     }
                     if (portal_cell < 0 || escape_steps[index] < escape_steps[portal_cell]) {
@@ -3377,7 +3951,7 @@ class Bot {
                     continue;
                 }
                 if (edge == EDGE_PORTAL) {
-                    if (portal_into_pocket(position, directions[k])) {
+                    if (portal_into_pocket(position, directions[k]) || (QG_SAFEZONE && zone_blocked(position, directions[k]))) {
                         continue;
                     }
                     bool const unknown = portal_exit(position, directions[k]) < 0;
@@ -3651,6 +4225,12 @@ class Bot {
         if (QG_HOME_RADIUS > 0 && queen_guard() && queen_home.x >= 0) {
             score -= QG_HOME_PENALTY * std::max(0, manhattan(destination, queen_home) - QG_HOME_RADIUS);
         }
+        if (QG_SAFEZONE && zone_mode == 2) {
+            score -= zone_cost(index_of(destination));
+        }
+        if (QG_CORNER && corner_hold) {
+            score -= QG_CORNER_PENALTY * std::max(0, manhattan(destination, position_of(corner_center)) - QG_CORNER_RADIUS);
+        }
         if (LEADER_GUARD_ROUNDS > 0 && is_leader() && round >= unswbc::Constants::MAX_ROUNDS - LEADER_GUARD_ROUNDS) {
             for (Position const& enemy : enemy_heads) {
                 int const gap = manhattan(destination, enemy);
@@ -3680,7 +4260,13 @@ class Bot {
     
     double score_portal_step(Direction direction, bool& usable) {
         usable = false;
-        if (queen_portal_ban()) {
+        if (QG_CORNER && corner_gate(direction)) {
+            return corner_portal_score(direction, usable);
+        }
+        if (QG_SAFEZONE && zone_blocked(head, direction)) {
+            return SCORE_REJECT;
+        }
+        if (queen_portal_ban() || (QG_SAFEZONE && (zone_mode == 2 || zone_mode == 3))) {
             return SCORE_PORTAL;
         }
         int const exit = portal_exit(head, direction);
@@ -3753,7 +4339,8 @@ class Bot {
                 dests[k] = usable ? portal_exit(head, direction) : -1;
                 scored[k] = usable;
                 any_enterable = any_enterable || usable;
-                blind[k] = scouting && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1);
+                blind[k] = scouting && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1) &&
+                           !(QG_SAFEZONE && zone_blocked(head, direction));
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
                 dests[k] = index_of(destination);
@@ -4030,6 +4617,41 @@ class Bot {
     double qb_best_score = 0.0;
     int qb_evals = 0;
     std::vector<int> ally_block_stamp;
+    int zp_mouth = -1;
+    int zp_dir = 0;
+    int zp_id = -1;
+    int zp_until = -1;
+    int zone_mouth = -1;
+    int zone_dir = 0;
+    int zone_size = 0;
+    int zone_core = 0;
+    int zone_id = -1;
+    bool zone_two = false;
+    bool zone_claimed = false;
+    int zone_mode = 0;
+    int zone_enter_round = -1;
+    int zone_entry = -1;
+    bool zs_unknown = false;
+    int zone_clear = 0;
+    int zone_last_check = -1000;
+    int zone_check_dir = -1;
+    bool zone_checked = false;
+    int zone_target = -1;
+    bool enemy_queen_dead = false;
+    int eq_round = -1;
+    Position eq_pos{};
+    std::vector<int> zs_stamp;
+    std::vector<int> zs_cut;
+    std::vector<int> zs_degree;
+    std::vector<int> zs_queue;
+    int zs_mark = 0;
+    int corner_center = -1;
+    int corner_dir = -1;
+    int corner_round = -1000;
+    int corner_target = -1;
+    bool corner_escape = false;
+    bool corner_hold = false;
+    std::vector<int> corner_bad;
     int turn_cells = 0;
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
