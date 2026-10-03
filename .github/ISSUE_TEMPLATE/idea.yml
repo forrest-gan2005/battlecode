@@ -1,0 +1,35 @@
+name: Idea
+description: A hypothesis for the loops to test
+labels: ["status:untested"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [queen, terrain, late-game, economy, infra, other]
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: Claim
+      description: One or two sentences. What should change in the bot, and why it should help.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Replays, numbers, or "just a hunch". Facts from other bots are welcome; we re-test them here.
+  - type: textarea
+    id: signal
+    attributes:
+      label: Expected signal
+      description: If this works, what should we see in replays? (e.g. queen alive at r300 on big maps goes up)
+    validations:
+      required: true
+  - type: textarea
+    id: falsifier
+    attributes:
+      label: What would show it's wrong
+      description: The number or replay pattern that would make us drop it.

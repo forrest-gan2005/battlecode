@@ -1,8 +1,10 @@
 import sys, os, subprocess, hashlib
 from concurrent.futures import ThreadPoolExecutor
-sys.path.insert(0, '/Users/UNSW/battlecode')
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import replay
-ROOT = '/Users/UNSW/battlecode'
+import ab2
 REF = os.environ.get('REF', 'v53')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ident')
 os.makedirs(OUT, exist_ok=True)
@@ -10,6 +12,9 @@ MAPS = [('maps/default.map', 100), ('maps/trauma.map', 101), ('maps/queen_of_spa
         ('tune_runs/variants/portals_v0.map', 104), ('tune_runs/variants/slithery_fight_v0.map', 105),
         ('tune_runs/variants/autarky_v0.map', 106), ('tune_runs/variants/devil_v0.map', 107),
         ('tune_runs/variants/prisoners_dilemma_v0.map', 108), ('maps/trophy.map', 109)]
+if os.environ.get('IDENT_MAPS'):
+    seeds = int(os.environ.get('IDENT_SEEDS', '1'))
+    MAPS = [(os.path.relpath(ab2.mp(m), ROOT), 100 + 7 * i + k) for i, m in enumerate(os.environ['IDENT_MAPS'].split(',')) for k in range(seeds)]
 def digest(p):
     h = hashlib.sha1()
     for ev in replay.load(p).root().pointer(3):
@@ -23,17 +28,19 @@ def play(job):
     tag, a, b, m, s = job
     out = os.path.join(OUT, f"{tag}_{os.path.basename(m)[:-4]}_{s}.replay")
     if not os.path.exists(out):
-        subprocess.run(['unswbc', 'run', os.path.join(ROOT, m), os.path.join(ROOT, a), os.path.join(ROOT, b), '--sandbox', '--seed', str(s), '-o', out], capture_output=True)
+        sandbox = [] if os.environ.get('NOSANDBOX') else ['--sandbox']
+        subprocess.run(['unswbc', 'run', os.path.join(ROOT, m), os.path.join(ROOT, a), os.path.join(ROOT, b), *sandbox, '--seed', str(s), '-o', out], capture_output=True)
     return job, digest(out)
 if __name__ == '__main__':
     cand = sys.argv[1]
+    tag = os.path.basename(cand.rstrip('/'))
     for f in os.listdir(OUT):
-        if f.startswith(cand + 'A_') or f.startswith(cand + 'B_'): os.remove(os.path.join(OUT, f))
+        if f.startswith(tag + 'A_') or f.startswith(tag + 'B_') or f.startswith('ref' + REF + '_'): os.remove(os.path.join(OUT, f))
     jobs = []
     for m, s in MAPS:
         jobs.append(('ref' + REF, REF, REF, m, s))
-        jobs.append((cand + 'A', cand, REF, m, s))
-        jobs.append((cand + 'B', REF, cand, m, s))
+        jobs.append((tag + 'A', cand, REF, m, s))
+        jobs.append((tag + 'B', REF, cand, m, s))
     with ThreadPoolExecutor(6) as ex:
         res = list(ex.map(play, jobs))
     ref = {(j[3], j[4]): d for j, d in res if j[0] == 'ref' + REF}

@@ -1,0 +1,2 @@
+Classify only Zhe's latest replies in metadata.replies after the replay request. Understand Korean, English and Chinese. Return exactly one JSON object on stdout, no fences: {"decision":"ok"|"revise"|"unclear","reason":"short explanation"}.
+Use ok only for explicit confirmation that the shown behaviour is what he intended; revise for a requested implementation/behaviour change. Questions, acknowledgements and ambiguous replies are unclear, never implicit approval. No tool calls.

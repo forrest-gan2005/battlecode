@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Read-only fake gh for runner dry-run integration tests; fails on any write."""
+import json
+import os
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+cards = json.loads(Path(os.environ['FAKE_GH_DATA']).read_text())
+if args[:2] == ['issue', 'list']:
+    print(json.dumps(cards))
+elif args[0] == 'api' and args[1].endswith('/comments'):
+    number = int(args[1].split('/')[-2])
+    print(json.dumps([next(c for c in cards if c['number'] == number).get('comments', [])]))
+else:
+    sys.exit('Fake gh rejected non-read command: ' + repr(args))
