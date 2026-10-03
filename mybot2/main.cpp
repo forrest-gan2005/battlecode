@@ -1,4 +1,5 @@
 #include "helper.hpp"
+#include "sonar_codec.hpp"
 
 #include <algorithm>
 #include <array>
@@ -421,6 +422,7 @@ class Bot {
         bfs_beyond.resize(static_cast<std::size_t>(cells) * 2);
         beyond_portal.assign(cells, 0);
         sonar_tag = controller.get_team().value == unswbc::Team::A ? 0x2 : 0x1;
+        sonar_key = sonar_codec::make_key(width, height, sonar_tag);
         sonar_enabled = width <= SONAR_COORD_MAX + 1 && height <= SONAR_COORD_MAX + 1;
         aggressive = cells <= AGGRESSIVE_MAX_CELLS;
         grow_round = aggressive ? LEADER_GROW_ROUND : LEADER_GROW_ROUND_BIG;
@@ -1384,14 +1386,13 @@ class Bot {
             body |= 1ULL << 37;
         }
         body |= (static_cast<std::uint64_t>(0x5A) << 38) | ((sonar_tag & 0x3) << 53);
-        message = body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+        message = sonar_codec::seal(sonar_key, body | (1ULL << 63));
         return true;
     }
 
     bool learn_sight(std::uint64_t message) {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
-            ((body >> 38) & 0x7FFF) != 0x5A) {
+        if (((body >> 53) & 0x3) != sonar_tag || ((body >> 38) & 0x7FFF) != 0x5A) {
             return false;
         }
         int const when = static_cast<int>((body >> 14) & 0x1FF);
@@ -1415,15 +1416,6 @@ class Bot {
         return true;
     }
 
-    static std::uint8_t sonar_checksum(std::uint64_t body) {
-        std::uint8_t sum = 0;
-        for (int shift = 0; shift < 56; shift += 8) {
-            sum ^= static_cast<std::uint8_t>(body >> shift);
-        }
-        return sum;
-    }
-
-    
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
         int const tagged = QUEEN_QUIET_ROUND > 0 && queen_game && id == queen_id ? (id | 0x8000) : id;
         std::uint64_t const body = (static_cast<std::uint64_t>(tagged) & 0xFFFF) |
@@ -1433,16 +1425,13 @@ class Bot {
                                    ((static_cast<std::uint64_t>(pos.y) & 0x7F) << 44) |
                                    ((static_cast<std::uint64_t>(face_code(facing)) & 0x3) << 51) |
                                    ((sonar_tag & 0x3) << 53);
-        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55);
+        return sonar_codec::seal(sonar_key, body);
     }
 
     bool unpack_leader(std::uint64_t message, int& id, int& len, int& when, Position& pos,
                        Direction& facing) const {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
         if ((message >> 63) != 0 || ((body >> 53) & 0x3) != sonar_tag) {
-            return false;
-        }
-        if (sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55)) {
             return false;
         }
         id = static_cast<int>(body & 0xFFFF);
@@ -1533,7 +1522,11 @@ class Bot {
         if (!sonar_enabled) {
             return;
         }
-        for (std::uint64_t const message : ct.get_sonar_messages()) {
+        for (std::uint64_t const wire : ct.get_sonar_messages()) {
+            std::uint64_t message = 0;
+            if (!sonar_codec::open(sonar_key, wire, message)) {
+                continue;
+            }
             int id = -1;
             int len = 0;
             int when = -1;
@@ -1605,13 +1598,12 @@ class Bot {
         std::uint64_t const body = (static_cast<std::uint64_t>(cell) & 0x3FFF) |
                                    ((static_cast<std::uint64_t>(round) & 0x1FF) << 14) |
                                    (static_cast<std::uint64_t>(0xA5) << 38) | ((sonar_tag & 0x3) << 53);
-        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+        return sonar_codec::seal(sonar_key, body | (1ULL << 63));
     }
 
     bool learn_mouth(std::uint64_t message) {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
-            ((body >> 38) & 0x7FFF) != 0xA5 || ((body >> 23) & 0x7FFF) != 0) {
+        if (((body >> 53) & 0x3) != sonar_tag || ((body >> 38) & 0x7FFF) != 0xA5 || ((body >> 23) & 0x7FFF) != 0) {
             return false;
         }
         int const cell = static_cast<int>(body & 0x3FFF);
@@ -3345,13 +3337,12 @@ class Bot {
                                    (static_cast<std::uint64_t>(zone_two ? 1 : 0) << 33) |
                                    (static_cast<std::uint64_t>(zone_claimed ? 1 : 0) << 34) |
                                    (static_cast<std::uint64_t>(0x3C) << 38) | ((sonar_tag & 0x3) << 53);
-        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+        return sonar_codec::seal(sonar_key, body | (1ULL << 63));
     }
 
     bool learn_zone(std::uint64_t message) {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
-            ((body >> 38) & 0x7FFF) != 0x3C) {
+        if (((body >> 53) & 0x3) != sonar_tag || ((body >> 38) & 0x7FFF) != 0x3C) {
             return false;
         }
         if (((body >> 32) & 1ULL) != 0) {
@@ -4550,6 +4541,7 @@ class Bot {
     int known_leader_len = 0;
     int known_leader_round = -1;
     std::uint64_t sonar_tag = 0x2;
+    sonar_codec::Key sonar_key{};
     bool sonar_enabled = false;
     bool aggressive = false;
     int grow_round = LEADER_GROW_ROUND;
