@@ -1,11 +1,11 @@
 # Loop state
 
-- Phase: C (wave 10 closed 10:15). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 11, 10:31-). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
-- Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h13.sh` (pid 8347): H13 TT4 + TT8 held x2 SEED0=3000 (started 10:12, est. ~10:38) -> `H13_held.json`, then `H13_done`.
-- Next wave: H13: `python3 loop/tools/judge.py loop/results/B_held.json loop/results/H13_held.json`; apply the wave 10 pre-registered rule (LEDGER). If a variant passes held, run main x8 and the mechanism check (`mech13.py` on KEEP replays of small held maps vs MB61).
+- Running (check `ps` before starting anything; never more than 8 workers):
+  1. `loop/h14.sh` (pid 45572): H14 SL63 + SL64 held x2 SEED0=3000 (started 10:38, est. ~11:03) -> `H14_held.json`, then `H14_done`.
+- Next wave: if H14 is still open, judge it: `python3 loop/tools/judge.py loop/results/B_held.json loop/results/H14_held.json`; rule in LEDGER wave 11. Compare with SL62 in `H8_held.json` (same seeds).
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -72,11 +72,14 @@
 ### H12 CB — small dragons weigh enemy-head threat 2x: REJECTED (wave 10)
 - ST2 held 74/160 net -6; ST2O 72/160 net -8. With H2 this closes the small-threat-weight family.
 
-### H13 TR — tight terrain next to an enemy head (running, h13.sh)
+### H13 TR — tight terrain next to an enemy head: INCONCLUSIVE (wave 11), not re-queued
+- TT4 held 80/160 net 0 (small -4); TT8 83/160 net +3 (small +1). Only 4-7 of 42 small-map games flip: the penalty barely changes the target zone.
 - Small maps r50-300: our L2-3 self deaths in static tight cells (3-step ball <= 12) with an enemy head within 3: 53.3 vs 29.8 per game (losses), 60.8 vs 29.6 (wins). No gap on maps > 800.
-- Toggle `TR_TIGHT_BALL=12` (+ `TR_TIGHT_MAX_LEN` 3, `TR_TIGHT_NEAR` 3, `TR_TIGHT_PENALTY` 400 TT4 / 800 TT8). Rule in LEDGER wave 10. Falsifier: held net <= 0 both, or tight+E deaths not down 25% in KEEP replays.
 
-- After H13 the queue is empty again: if H13 is rejected, next look at where the tight-terrain deaths come from (post-split heads vs walking in), or at the >1200-cell tight-cell rate in losses (121 vs 92 per 1000 head-rounds; wins 93 vs 90, so likely a symptom).
+### H14 EC — split soft limit dose-response, SL63/SL64 (running, h14.sh)
+- Tests whether the H8 SL62 signal (+15 over 3 seeds) is a real lever: raise SPLIT_SOFT_LIMIT to 63 and 64 (also moves the at-cap trade threshold). Same seeds as H8 (SEED0=3000). Rule in LEDGER wave 11.
+
+- After H14 the non-queen, non-feeding queue is empty (13 tested: 0 candidates; only the SL family stayed positive). The wave rules allow queen/feeding tests when nothing else is queued; a next wave should build a queen or feeding hypothesis from ANALYSIS (record it as overlapping QWQ #2 / Zhe #3), unless H14 opens an SL follow-up. A tight-terrain follow-up is low value after H13 (small-map lever barely binds).
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.

@@ -315,3 +315,16 @@ One section per wave, facts only.
 - New analysis `loop/tools/terr13.py` (+ `terr13_rep.py`, `terr13.pkl`; ANALYSIS wave 10 addendum): on maps <= 800 cells, r50-300, our L2-3 self deaths in static tight cells (3-step ball <= 12) with an enemy head within 3 are about 2x the opponents' in both wins and losses (losses 53.3:29.8, wins 60.8:29.6 per game); no gap on larger maps.
 - H13 pre-registered above (TR_TIGHT_BALL toggle, TT4/TT8). Toggle-off object byte-identical (md5 aee4013d...). `loop/tools/mech13.py <glob>` measures the H13 mechanism on KEEP replays (tight+E L2-3 deaths per game, occupancy).
 - Running: `loop/h13.sh` (pid 8347), H13 TT4 + TT8 held x2 SEED0=3000, started 10:12, est. ~10:38 -> `H13_held.json`, `H13_done`.
+
+## Wave 11 — H13 result and H14 pre-registration (written 10:38 KST, before any H14 game)
+### H13 results (`H13_held.json`, held x2 SEED0=3000, finished 10:37)
+- TT4 80/160 vs B61 80/160: +23 -23, net 0 (small -4, medium +2, large +2; fresh -3, sqheld +3).
+- TT8 83/160: +29 -26, net +3 (small +1, medium -1, large +3; fresh 0, sqheld +3). TT4 vs TT8 33 flips.
+- Small maps (42 games per variant, the target zone): TT4 +0 -4, TT8 +4 -3. Flip counts (46, 55) are below placebo (63, 73): the penalty changes few games where it was aimed.
+- **H13: INCONCLUSIVE** (pre-registered: neither variant reaches net >= 9; TT8 net > 0, so not REJECTED). Main and mechanism not run. Not re-queued: the small-map signal is nil.
+
+### Pre-registration: H14 EC — split soft limit dose-response (H8 family)
+- Claim (H8): on 800+ cell maps r50-150, 82-95% of refused L4+ splits are refused by SPLIT_SOFT_LIMIT=60; ladder opponents hold 62-63 units. SL62 gave +7, +5, +3 on three held seeds (combined +15 over 480 games, parked). If the lever is real, raising the limit further should keep a positive sign on maps > 1200 cells; if SL62 was noise, SL63/SL64 should show nothing or harm. Note: SPLIT_SOFT_LIMIT also sets the at-cap trade threshold (`at_cap` = units >= limit - 1); escape splits keep their own ESCAPE_RESERVE=2 check, unchanged.
+- Toggle: existing `SPLIT_SOFT_LIMIT` (value only). SL63 = B61 + SPLIT_SOFT_LIMIT=63; SL64 = B61 + SPLIT_SOFT_LIMIT=64.
+- Runs: `loop/h14.sh`: held (heldset_sq + freshset) x2 SEED0=3000 -> `H14_held.json`, paired vs `B_held.json` (same seeds as H8's SL62 run, so SL62/SL63/SL64 are directly comparable).
+- Pass rule: a variant PASSES held if net >= 9 (small-map flips expected ~0; > 4 small flips flags an implementation surprise). Then main x8 net >= -14, then SEED0=5000 held (combined net >= 18), mechanism (KEEP replays, maps > 1200 cells: median units r100-r200 up >= 1, self deaths per 100 unit-rounds not up > 15%), CPU. REJECTED if held net <= 0 for both (also weighs against SL62: the H8 family would close). Otherwise INCONCLUSIVE.
