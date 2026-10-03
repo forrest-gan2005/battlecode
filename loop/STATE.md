@@ -4,10 +4,10 @@
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h8c.sh` (pid 40325): H8c B61 + SL62 held x2 SEED0=7000 (started 08:56, est. ~09:22) -> `H8c_held7.json`, then `H8c_done`.
+  1. (done) H8c finished 09:20: INCONCLUSIVE, see queue.
   2. `loop/h11.sh` (pid 11021): waits for `H8c_done`: H11 CS0 + CS2 held x2 SEED0=3000 (est. ~09:48) -> `H11_held.json`, then `H11_done`.
   3. `loop/h12s.sh` (pid 30704): waits for `H11_done`: H12 ST2 + ST2O held x2 SEED0=3000 (est. ~10:15) -> `H12s_held.json`, then `H12s_done`.
-- Next wave: H8c: `judge.py loop/results/H8c_held7.json loop/results/H8c_held7.json` (judge takes the B61 tag from the base file) and add to H8 (+23 -16) and H8b (+23 -18). H11: `judge.py B_held.json H11_held.json`. H12: `judge.py B_held.json H12s_held.json`.
+- Next wave: H11: `judge.py B_held.json H11_held.json`. H12: `judge.py B_held.json H12s_held.json`.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -52,7 +52,8 @@
 - ES300 SEED0=5000 held 76/160, +14 -18, net -4 (B61 80/160). Combined with H7: +29 -29, net 0. H7 family closed.
 - Rule in LEDGER wave 5. PASS = new-seed held net >= 9.
 
-### H8 EC — SPLIT_SOFT_LIMIT 60 -> 62: INCONCLUSIVE (wave 7); H8b confirm running
+### H8 EC — SPLIT_SOFT_LIMIT 60 -> 62: INCONCLUSIVE, parked (H8 wave 7, H8b wave 8, H8c wave 9)
+- Three held seeds +7, +5, +3: combined 480 games +66 -51, net +15 (~1 null SD). Small maps 0 flips. Below the pre-registered candidate bar (combined >= 20); no fourth seed.
 - SL62 held 87/160, +23 -16, net +7 (large +4, medium +3; > 1200 cells +18 -14, <= 800 +3 -0). H8b = SEED0=5000 held, rule in LEDGER wave 7.
 - Diagnosis: on 800+ cell maps in r50-150, 82-95% of refused L4+ split turns are refused by the soft limit (we sit at 60; engine cap 64; opponents 62-63 on the ladder). Rule in LEDGER wave 5. Risk: escape splits lose their 2-unit reserve at the cap.
 

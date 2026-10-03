@@ -286,3 +286,8 @@ One section per wave, facts only.
 - Runs: held x2 SEED0=3000 -> `H12s_held.json` (chain `loop/h12s.sh`, waits for `H11_done`), paired vs `B_held.json`. Main x8 only if held passes.
 - PASS = held net >= 9 and main net >= -14 (per variant). CANDIDATE = PASS + SEED0=5000 held net > 0 + mechanism (KEEP replays, `mech11.py`: pressure deaths per 100 unit-rounds r25-150 down >= 15% vs MB61 0.246) + CPU. REJECTED = held net <= 0. Otherwise INCONCLUSIVE.
 - Falsifier also: if ST2 passes but pressure deaths per unit do not fall, the gain is not from the claimed mechanism (INCONCLUSIVE at best).
+
+### H8c results (`H8c_held7.json`, B61 and SL62 held x2 SEED0=7000, same batch, finished 09:20)
+- B61 79/160, SL62 82/160: +20 -17, net +3 (large +1, medium +2, small 0 flips; sqheld +1, fresh +2). Wiped 28 vs 29. Mean final length 40.5 vs 43.0.
+- Three seeds: +7, +5, +3; combined 480 games +66 -51, net +15 (null SD ~14.7, so ~1 SD). Small maps: 0 flips in all three seeds.
+- **H8c SL62: INCONCLUSIVE** under the pre-registered rule (combined 15 < 20 for the candidate path; seed net +3 > -5 and combined >= 10, so not rejected). Family parked; no fourth seed. SL62 is consistently non-negative but too small to separate from noise locally.
