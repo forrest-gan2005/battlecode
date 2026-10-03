@@ -74,3 +74,8 @@ Source: `work/nr_meow.txt`, 36 battles, 228 games, all with replays. Tools: `loo
 - Maps <= 800, tight+E deaths per game by length: losses L2 28.5:16.6, L3 24.8:13.2; wins L2 31.2:15.3, L3 29.6:14.3. L4+ < 3 per game for both.
 - Maps > 800: tight+E deaths per game L2-3 losses 9.9:7.8, wins 5.8:7.5 (no gap). Tight cells without an enemy near, maps > 1200 losses: rate 121 vs 92.
 - Reading: on small maps our L2-3 dragons die about 2x as often as the opponents' in corridor and dead-end cells while an enemy head is close, in both wins and losses (a style difference, not a result symptom). Open-terrain rates are equal or lower for us.
+
+## Wave 12 addendum: local queen fate (queen area, owner QWQ #2; `loop/tools/qfate.py`)
+- B61 held x2 SEED0=3000 (`B_held.json`, 160 games): ends elimination 56, longest (both queens dead) 102, total 2, queen 0. Main (official + newset x8): queen 34 of 176.
+- MB61 vs v61 KEEP replays (40 devset games, both sides v61-like): 76/80 queens die; death round p10 16, p25 32, median 57, p75 82, p90 115 (none after r300); length at death median 2 (p90 4). Reasons: head-on 46, wall 10, self 10, body 10. Queen growth splits 5.5 per queen.
+- Held map sizes (width x height): <= 600 cells 24, 601-800 9, 801-1200 12, > 1200 35.

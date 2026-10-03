@@ -340,7 +340,7 @@ One section per wave, facts only.
 - H14 SL63 net -4, SL64 net +5 (SL62 +7 on the same seeds; no dose-response): INCONCLUSIVE, SL family parked.
 - Nothing running. Non-queen, non-feeding queue is empty after 14 hypotheses (0 candidates).
 
-## Wave 12 — pre-registration H15 (written 11:24 KST, before any H15 game)
+## Wave 12 — pre-registration H15 (written 11:12 KST, before any H15 game)
 - Context: the non-queen, non-feeding queue is empty (14 tested, 0 candidates). The wave rules allow a queen test; this overlaps QWQ's issue #2 (queen survival) and is recorded as such.
 - Local facts (B61 held x2 SEED0=3000, `B_held.json`): 102/160 games end on "longest" (both queens dead), 0 on queen. KEEP replays of MB61 vs v61 (40 devset games, `loop/tools/qfate.py`): 76/80 queens die, median round 57 (p25 32, p75 82, p90 115), death length median 2; reasons head-on 46, wall 10, self 10, body 10; 5.5 queen splits per queen. A side whose queen survives while the other's dies wins any game that is not an elimination.
 - H15 QG, big-map queen guard. Claim: on maps large enough that the team fight is not decided by every unit (> N cells), the strong queen protection set (threat x6, pessimist survey, guard radius 5, dead penalty 6000, split clear 6) keeps the queen alive past the mid game more often than it costs economy, turning "longest" games into queen wins. Older full-protection tests (v54 era, all sizes) lost small/medium maps by elimination; this variant leaves maps <= N unchanged.
@@ -348,3 +348,20 @@ One section per wave, facts only.
 - Runs: `loop/h15.sh`: held (heldset_sq + freshset) x2 SEED0=3000 vs v61 -> `H15_held.json`; judge paired vs B61 (`judge.py B_held.json H15_held.json`).
 - Pass rule (null net SD ~8-9 per 160): a variant PASSES held if net >= 9 and small-map flips <= 4 (maps <= 800 should not change; more flags an implementation surprise). Then main x8 net >= -14, SEED0=5000 held (combined two-seed net >= 18), mechanism (KEEP replays on maps > N: our queen alive at r200 rate up vs MB61, and queen-decided wins appear), CPU (pessimist survey on 64x64 under 60M). REJECTED if held net <= 0 for both. Otherwise INCONCLUSIVE.
 - Falsifier: held net <= 0; or wins rise without queen survival rising (gain not from the claimed mechanism).
+
+### H15 results (`H15_held.json`, held x2 SEED0=3000, 11:12-11:36)
+- QG8 (QUEEN_GUARD_CELLS=800) 65/160 vs B61 80/160: +18 -33, net -15 (large -8, medium -7, small 0 flips; fresh -7, sqheld -8). Ends: elim 59, longest 100, queen 0; wiped 32 (B61 28).
+- QG12 (=1200) 71/160: +17 -26, net -9 (large -8, medium -1, small 0; fresh -3, sqheld -6). Ends: queen 0; wiped 29. QG8 vs QG12 8 flips; large-map games identical between them.
+- **H15: REJECTED** (pre-registered: held net <= 0 for both).
+- Mechanism look (KEEP, `H15_mech.json`, MQG12 vs v61, 6 devset large maps x2 SEED0=7000; wins 5/12): our queen alive at end 0/12; death median r155 (opponent v61 queen r113 in the same games; MB61 on 3 large devset maps r83). Our queen deaths: wall 4, self 4, body 3, head-on 1; 10/12 at length 2-4. The guard removes head-on deaths but a length-2 queen is later boxed and dies to its own move; 6.2 queen growth splits per queen.
+
+### Pre-registration: H16 QG — guarded queen keeps length (written 11:42 KST, before any H16 game)
+- Claim: the guarded queen (H15) dies to its own move at length 2-4 because growth splits (child = 2) keep it at length 2 with one free step. On maps > 1200 cells, if the guarded queen only splits while it keeps >= K length afterwards, it keeps >= 2 free steps and survives to the end more often, turning "longest" games into queen wins. Prior: QK5 (QUEEN_KEEP=5, no guard, all sizes >600, v55 era) was rejected (held +12 -16); this tests the keep rule only together with the guard on > 1200 cells.
+- Toggle: existing `QG_KEEP` with `QUEEN_GUARD_CELLS=1200`. QGK4 = B61 + QUEEN_GUARD_CELLS=1200,QG_KEEP=4; QGK6 = ... QG_KEEP=6.
+- Runs: `loop/h16.sh` held x2 SEED0=3000 -> `H16_held.json`; judge vs B61 (`judge.py B_held.json H16_held.json`) and vs QG12 (`paired.py`-style, same seeds in `H15_held.json`).
+- Pass rule: as H15 (held net >= 9 vs B61, small+medium <= 800 flips <= 4; then main x8 >= -14, SEED0=5000 combined >= 18, mechanism: our queen alive at end on > 1200 maps in KEEP replays >= 3/12 and queen wins appear, CPU). REJECTED if held net <= 0 vs B61 for both. Otherwise INCONCLUSIVE.
+
+## Wave 12 — 2026-10-03 11:45 KST
+- Queue was empty; built a queen hypothesis (overlaps QWQ #2). New tool `loop/tools/qfate.py`; ANALYSIS wave 12 addendum (local queen fate: 76/80 queens die, median r57; held B61 ends longest 102/160, queen 0).
+- H15 QG8 net -15, QG12 net -9 (held x2): REJECTED. KEEP check: guarded queen dies later (median r155 vs r113) but alive 0/12, mostly self-inflicted at length 2-4.
+- H16 pre-registered (QG_KEEP 4/6 with the 1200-cell guard). Running: `loop/h16.sh` (pid 49605), started 11:42, est. ~12:06 -> `H16_held.json`, `H16_done`.

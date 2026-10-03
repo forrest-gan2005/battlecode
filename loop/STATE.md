@@ -1,10 +1,10 @@
 # Loop state
 
-- Phase: C (wave 11 closed 11:05). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 12 closed 11:45). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
-- Running: nothing (check `ps` before starting anything; never more than 8 workers).
-- Next wave: queue is empty. Build a new hypothesis (see the note after H14 below), pre-register it in LEDGER, then run held x2 SEED0=3000.
+- Running: `loop/h16.sh` (pid 49605), H16 QGK4 + QGK6 held x2 SEED0=3000, started 11:42, est. ~12:06 -> `H16_held.json`, `H16_done` (check `ps` before starting anything; never more than 8 workers).
+- Next wave: judge H16 (`python3 loop/tools/judge.py loop/results/B_held.json loop/results/H16_held.json`; also compare with QG12 in `H15_held.json`) under the wave 12 rule in LEDGER.
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -79,6 +79,13 @@
 - SL63 held 76/160 net -4 (large -6); SL64 85/160 net +5. Same seeds SL62 +7. No dose-response; small-map flips 0. No further SL seeds.
 
 - After H14 the non-queen, non-feeding queue is empty (13 tested: 0 candidates; only the SL family stayed positive). The wave rules allow queen/feeding tests when nothing else is queued; a next wave should build a queen or feeding hypothesis from ANALYSIS (record it as overlapping QWQ #2 / Zhe #3), H14 did not open an SL follow-up. A tight-terrain follow-up is low value after H13 (small-map lever barely binds).
+
+### H15 QG — big-map queen guard: REJECTED (wave 12; overlaps QWQ #2)
+- QG8 held 65/160 net -15; QG12 71/160 net -9 (small 0 flips, large -8 both). Queen-decided games still 0.
+- KEEP (MQG12, 6 devset large maps x2): our queen alive at end 0/12, death median r155 (opponent v61 r113); deaths wall 4, self 4, body 3, head-on 1, 10/12 at length 2-4. The guard stops head-ons; the length-2 queen then dies to its own move.
+
+### H16 QG — guarded queen keeps length: RUNNING (wave 12; overlaps QWQ #2)
+- QUEEN_GUARD_CELLS=1200 + QG_KEEP=4 (QGK4) / 6 (QGK6): the guarded queen splits only if it keeps >= K length. Prior QK5 (no guard, v55 era) rejected. Rule in LEDGER wave 12.
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.
