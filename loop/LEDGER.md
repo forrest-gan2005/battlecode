@@ -339,3 +339,12 @@ One section per wave, facts only.
 - H13 TT4 net 0, TT8 net +3 (small-map flips 4 and 7 of 42): INCONCLUSIVE, not re-queued.
 - H14 SL63 net -4, SL64 net +5 (SL62 +7 on the same seeds; no dose-response): INCONCLUSIVE, SL family parked.
 - Nothing running. Non-queen, non-feeding queue is empty after 14 hypotheses (0 candidates).
+
+## Wave 12 — pre-registration H15 (written 11:24 KST, before any H15 game)
+- Context: the non-queen, non-feeding queue is empty (14 tested, 0 candidates). The wave rules allow a queen test; this overlaps QWQ's issue #2 (queen survival) and is recorded as such.
+- Local facts (B61 held x2 SEED0=3000, `B_held.json`): 102/160 games end on "longest" (both queens dead), 0 on queen. KEEP replays of MB61 vs v61 (40 devset games, `loop/tools/qfate.py`): 76/80 queens die, median round 57 (p25 32, p75 82, p90 115), death length median 2; reasons head-on 46, wall 10, self 10, body 10; 5.5 queen splits per queen. A side whose queen survives while the other's dies wins any game that is not an elimination.
+- H15 QG, big-map queen guard. Claim: on maps large enough that the team fight is not decided by every unit (> N cells), the strong queen protection set (threat x6, pessimist survey, guard radius 5, dead penalty 6000, split clear 6) keeps the queen alive past the mid game more often than it costs economy, turning "longest" games into queen wins. Older full-protection tests (v54 era, all sizes) lost small/medium maps by elimination; this variant leaves maps <= N unchanged.
+- Toggle: existing `QUEEN_GUARD_CELLS` (0 = off; the QG_* constants keep their defaults). Never run on the loop's base before (plan.md qm1 was queued, no result recorded). QG8 = B61 + QUEEN_GUARD_CELLS=800; QG12 = B61 + QUEEN_GUARD_CELLS=1200. Toggle off = B61 (ident on record).
+- Runs: `loop/h15.sh`: held (heldset_sq + freshset) x2 SEED0=3000 vs v61 -> `H15_held.json`; judge paired vs B61 (`judge.py B_held.json H15_held.json`).
+- Pass rule (null net SD ~8-9 per 160): a variant PASSES held if net >= 9 and small-map flips <= 4 (maps <= 800 should not change; more flags an implementation surprise). Then main x8 net >= -14, SEED0=5000 held (combined two-seed net >= 18), mechanism (KEEP replays on maps > N: our queen alive at r200 rate up vs MB61, and queen-decided wins appear), CPU (pessimist survey on 64x64 under 60M). REJECTED if held net <= 0 for both. Otherwise INCONCLUSIVE.
+- Falsifier: held net <= 0; or wins rise without queen survival rising (gain not from the claimed mechanism).
