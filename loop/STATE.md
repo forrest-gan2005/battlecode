@@ -1,11 +1,11 @@
 # Loop state
 
-- Phase: C (wave 9 closed 09:48). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
+- Phase: C (wave 10 closed 10:15). Phase A done (`loop/ANALYSIS.md`), Phase B done (noise table below).
 - Baseline B61 = mybot2 + `loop/dev/v61toggles.txt` (= `work/v60toggles.txt` + POCKET_CAP=48,QUEEN_HOME_CLOSED=true). `ident_B61.txt` identical. B61c (mybot2 with CB_TRAP code) ident in `ident_B61c.txt`. TR_PRESS_DEPTH (wave 3) and EC_SPLIT_ROUND_BIG (wave 4): toggle-off object file byte-identical (md5 aee4013d...).
 - Placebos: P1 = B61 + TIE_SEED=1, P2 = B61 + TIE_SEED=2 (tie-break jitter only).
 - Running chain (check `ps` before starting anything; never more than 8 workers):
-  1. `loop/h12s.sh` (pid 30704): H12 ST2 + ST2O held x2 SEED0=3000 (started 09:46, est. ~10:12) -> `H12s_held.json`, then `H12s_done`.
-- Next wave: H12: `judge.py B_held.json H12s_held.json`.
+  1. `loop/h13.sh` (pid 8347): H13 TT4 + TT8 held x2 SEED0=3000 (started 10:12, est. ~10:38) -> `H13_held.json`, then `H13_done`.
+- Next wave: H13: `python3 loop/tools/judge.py loop/results/B_held.json loop/results/H13_held.json`; apply the wave 10 pre-registered rule (LEDGER). If a variant passes held, run main x8 and the mechanism check (`mech13.py` on KEEP replays of small held maps vs MB61).
 - Stopping an ab3 batch: kill the chain script first (it would move on), then `ab3.py`, its `multiprocessing.spawn` workers, then leftover `unswbc run` processes.
 - Diagnostic split-reason build: `loop/dev/diag8/` + `diag8_run.py <maps>` (run from `work/`, 8 workers) + `diag8_rep.py`. Reusable for other binding checks (edit the dg() codes).
 
@@ -69,10 +69,14 @@
 - CS0 held 68/160 net -12; CS2 76/160 net -4.
 - CONTEST_SLACK 1 -> 0 (CS0) and 2 (CS2). Rule in LEDGER wave 8. Mechanism tool `mech11.py` (MB61 near-enemy eaten 84.2/game, pressure 0.246 per 100 unit-rounds).
 
-### H12 CB — small dragons weigh enemy-head threat 2x (running, h12s.sh)
-- SMALL_THREAT_MULT=2.0 (ST2), + SMALL_THREAT_OUTNUMBERED=true (ST2O). Rule in LEDGER wave 9. Evidence: pressure deaths ~2x the opponents' per unit; threat penalty for L<=2 (~225) < pearl + EAT_BONUS.
+### H12 CB — small dragons weigh enemy-head threat 2x: REJECTED (wave 10)
+- ST2 held 74/160 net -6; ST2O 72/160 net -8. With H2 this closes the small-threat-weight family.
 
-- Queue is nearly empty after H12: next wave should derive new terrain/opening hypotheses from the ladder data.
+### H13 TR — tight terrain next to an enemy head (running, h13.sh)
+- Small maps r50-300: our L2-3 self deaths in static tight cells (3-step ball <= 12) with an enemy head within 3: 53.3 vs 29.8 per game (losses), 60.8 vs 29.6 (wins). No gap on maps > 800.
+- Toggle `TR_TIGHT_BALL=12` (+ `TR_TIGHT_MAX_LEN` 3, `TR_TIGHT_NEAR` 3, `TR_TIGHT_PENALTY` 400 TT4 / 800 TT8). Rule in LEDGER wave 10. Falsifier: held net <= 0 both, or tight+E deaths not down 25% in KEEP replays.
+
+- After H13 the queue is empty again: if H13 is rejected, next look at where the tight-terrain deaths come from (post-split heads vs walking in), or at the >1200-cell tight-cell rate in losses (121 vs 92 per 1000 head-rounds; wins 93 vs 90, so likely a symptom).
 
 ### H6 OP — opening (priority 6, low)
 - No opening deficit found (r50 29:21 overall). Only if something new shows up.

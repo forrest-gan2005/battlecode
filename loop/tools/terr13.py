@@ -7,7 +7,7 @@ R = ['wall', 'self', 'body', 'head', 'none']
 NR = '/Users/quasarpark/meow-loop/work/nr'
 def one(arg):
     gid, ours, res = arg
-    p = os.path.join(NR, gid + '.replay')
+    p = gid if gid.endswith('.replay') else os.path.join(NR, gid + '.replay')
     info, _, team_of = replay.parse(p)
     side = lambda d: 'us' if team_of.get(d) == ours else 'them'
     lines = info['map'].splitlines()

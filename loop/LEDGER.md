@@ -308,3 +308,10 @@ One section per wave, facts only.
 - Runs: `loop/h13.sh` (chained after H12s_done): held (heldset_sq + freshset) x2 SEED0=3000 vs v61 -> `H13_held.json`; judge paired vs B61 (`judge.py B_held.json H13_held.json`).
 - Pass rule (noise table: held null net SD ~8-9): a variant PASSES held if net >= 9 and its small-map held net >= 0. Then main (official + newset) x8: net >= -14. Then SEED0=5000 held confirm: combined two-seed net >= 18. Mechanism (KEEP replays, small held maps): L2-3 tight+E self deaths per game down >= 25% vs MB61. REJECT if held net <= 0 for both variants. Otherwise INCONCLUSIVE.
 - Falsifier: held net <= 0, or in KEEP replays the tight+E death count does not fall (the penalty fires but deaths move elsewhere).
+
+## Wave 10 — 2026-10-03 10:14 KST
+- H12 held (SEED0=3000, x2, paired vs B61 80/160): ST2 74/160, +30 -36, net -6 (small -3, medium -3, large 0; fresh -1, sqheld -5). ST2O 72/160, +27 -35, net -8 (small -2, medium -5, large -1). ST2 vs ST2O 50 flips.
+- **H12: REJECTED** (pre-registered: held net <= 0 for both variants). Main not run. With H2 (SR2 -11) this closes the "raise small-dragon threat weight" family: a uniform threat increase costs more than it saves.
+- New analysis `loop/tools/terr13.py` (+ `terr13_rep.py`, `terr13.pkl`; ANALYSIS wave 10 addendum): on maps <= 800 cells, r50-300, our L2-3 self deaths in static tight cells (3-step ball <= 12) with an enemy head within 3 are about 2x the opponents' in both wins and losses (losses 53.3:29.8, wins 60.8:29.6 per game); no gap on larger maps.
+- H13 pre-registered above (TR_TIGHT_BALL toggle, TT4/TT8). Toggle-off object byte-identical (md5 aee4013d...). `loop/tools/mech13.py <glob>` measures the H13 mechanism on KEEP replays (tight+E L2-3 deaths per game, occupancy).
+- Running: `loop/h13.sh` (pid 8347), H13 TT4 + TT8 held x2 SEED0=3000, started 10:12, est. ~10:38 -> `H13_held.json`, `H13_done`.
