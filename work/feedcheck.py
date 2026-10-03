@@ -2,7 +2,8 @@
 """Feeding mechanism check from kept replays (work/ab2/<TAG>_<map>_<seed>_<side>.replay).
 
 usage: python3 feedcheck.py BASE_TAG CAND_TAG [--maps a,b,...]
-Per game, for our side: suicides from round 300 on (feeding), the longest dragon at rounds 450 and at the end,
+Per game, for our side: suicides from round 300 on (feeding), the mean distance of our other dragons to our
+longest dragon at rounds 420 and 470 (wrap-aware), the longest dragon at rounds 450 and at the end,
 and our total length at the end. Prints per-map and overall means for both tags, paired by (map, seed, side).
 """
 import argparse, glob, os, sys
@@ -13,10 +14,43 @@ sys.path.insert(0, os.path.dirname(HERE))
 import replay
 
 
+def heads_by_round(path, rounds):
+    W, H = map(int, replay.parse(path)[0]["map"].splitlines()[0].split()[1:3])
+    snaps, heads, rnd = {}, {}, 0
+    for ev in replay.load(path).root().pointer(3):
+        kind = replay.EVENT_NAMES[ev.u16(0)]
+        pl = ev.pointer(0)
+        if kind == "roundStart":
+            rnd = pl.i32(0)
+            for r in rounds:
+                if r not in snaps and rnd >= r:
+                    snaps[r] = dict(heads)
+        elif kind == "dragonUpdate":
+            heads[pl.i32(0)] = replay.point(pl.pointer(0))
+        elif kind == "dragonDeath":
+            heads.pop(pl.i32(0), None)
+    return snaps, W, H
+
+
+def spread(heads, length, team_of, ours, W, H):
+    mine = {i: l for i, l in length.items() if team_of.get(i) == ours and i in heads}
+    if len(mine) < 2:
+        return 0.0
+    lead = max(mine, key=mine.get)
+    lx, ly = heads[lead]
+    d = [min(abs(heads[i][0] - lx), W - abs(heads[i][0] - lx)) + min(abs(heads[i][1] - ly), H - abs(heads[i][1] - ly))
+         for i in mine if i != lead]
+    return sum(d) / len(d)
+
+
 def metrics(path, ours):
     info, events, team_of = replay.parse(path)
-    length, feeds, longest450 = {}, 0, None
+    snaps, W, H = heads_by_round(path, (420, 470))
+    length, feeds, longest450, lens_at = {}, 0, None, {}
     for e in events:
+        for r in (420, 470):
+            if r not in lens_at and e["round"] >= r:
+                lens_at[r] = dict(length)
         if longest450 is None and e["round"] >= 450:
             longest450 = max((l for i, l in length.items() if team_of.get(i) == ours), default=0)
         if e["kind"] == "update":
@@ -27,7 +61,8 @@ def metrics(path, ours):
             feeds += 1
     mine = [l for i, l in length.items() if team_of.get(i) == ours]
     end_longest = max(mine, default=0)
-    return {"feeds": feeds, "lead450": longest450 if longest450 is not None else end_longest,
+    sp = {r: spread(snaps.get(r, {}), lens_at.get(r, length), team_of, ours, W, H) for r in (420, 470)}
+    return {"feeds": feeds, "spread420": sp[420], "spread470": sp[470], "lead450": longest450 if longest450 is not None else end_longest,
             "lead_end": end_longest, "total_end": sum(mine), "win": int(info["winner"] == ours)}
 
 
@@ -53,7 +88,7 @@ def main():
     keys = sorted(set(base) & set(cand))
     if not keys:
         sys.exit("no paired replays found")
-    fields = ["feeds", "lead450", "lead_end", "total_end", "win"]
+    fields = ["feeds", "spread420", "spread470", "lead450", "lead_end", "total_end", "win"]
     per_map = defaultdict(list)
     for k in keys:
         per_map[k[0]].append(k)

@@ -48,6 +48,8 @@ constexpr int FEEDER_APPROACH = 15;
 constexpr bool FD_APPROACH_SCALE = false;
 constexpr int FD_APPROACH_BASE_SPAN = 100;
 constexpr int FD_APPROACH_DIV = 4;
+constexpr bool FD_RALLY_BIG = false;
+constexpr int FD_RALLY_FRESH = 25;
 constexpr int FEEDER_DROP_MIN = 4;
 constexpr int FEEDER_DROP_MAX = 8;
 constexpr int FEEDER_KEEP_OFF = 2;
@@ -416,6 +418,7 @@ class Bot {
         center_rounds = long_map ? CENTER_ROUNDS : CENTER_SMALL_ROUNDS;
         center_margin = long_map ? cells : CENTER_OUTNUMBER_MARGIN;
         feeder_approach = FEEDER_APPROACH + (FD_APPROACH_SCALE ? std::max(0, width + height - FD_APPROACH_BASE_SPAN) / FD_APPROACH_DIV : 0);
+        rally_fresh = FD_RALLY_BIG && width + height > FD_APPROACH_BASE_SPAN ? FD_RALLY_FRESH : RALLY_FRESH;
     }
 
     void split_off(int child) {
@@ -500,7 +503,7 @@ class Bot {
         if (route_target < 0 && is_assassin() && enemy_heads.empty() && manhattan(head, big_enemy_pos) > 2) {
             route_target = index_of(big_enemy_pos);
         }
-        if (RALLY_FRESH > 0 && route_target < 0 && rally_ready()) {
+        if (rally_fresh > 0 && route_target < 0 && rally_ready()) {
             route_target = index_of(known_leader_pos);
         }
         Direction const best = pick_direction();
@@ -3450,7 +3453,7 @@ class Bot {
 
     bool rally_ready() const {
         if (!feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
-            known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > RALLY_FRESH ||
+            known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
@@ -3934,6 +3937,7 @@ class Bot {
     int center_margin = CENTER_OUTNUMBER_MARGIN;
     bool center_map = false;
     int feeder_approach = FEEDER_APPROACH;
+    int rally_fresh = RALLY_FRESH;
     Position known_leader_pos{};
     Direction known_leader_dir = dir_of(Direction::NORTH);
     bool zone_active = false;
