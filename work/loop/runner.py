@@ -17,6 +17,7 @@ from jobs import OLD_MAPS, busy, lock, read, stage, worker, write
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 GH_REPO = 'forrest-gan2005/battlecode'
+ZHE_LOGIN = 'zhex0121'
 SWARM = REPO.parent / 'unsw-swarm'
 KST = dt.timezone(dt.timedelta(hours=9))
 FREEZE = dt.datetime(2026, 10, 8, 20, tzinfo=KST)
@@ -59,7 +60,7 @@ def human_replies(card, after, zhe=False):
     # GitHub bot comments and our marker-bearing comments never count as answers.
     author = card.get('author', {}).get('login')
     # by:zhe cards created through meowbot may have the bot as issue author.
-    wanted = os.environ.get('LOOP_ZHE_LOGIN', author) if zhe else None
+    wanted = os.environ.get('LOOP_ZHE_LOGIN', ZHE_LOGIN) if zhe else None
     result = []
     for c in card.get('comments', []):
         user = c.get('user') or c.get('author') or {}
