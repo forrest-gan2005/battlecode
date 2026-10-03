@@ -22,7 +22,7 @@ import runner
 
 def card(n=1, status='ready', by='junsing', comments=None):
     return {'number': n, 'title': '[Idea] Test a general behaviour', 'body': 'A hypothesis',
-            'createdAt': '2026-10-01T00:00:00Z', 'author': {'login': 'zhe-user' if by == 'zhe' else 'human'},
+            'createdAt': '2026-10-01T00:00:00Z', 'author': {'login': 'zhex0121' if by == 'zhe' else 'human'},
             'labels': [{'name': 'status:' + status}, {'name': 'by:' + by}], 'comments': comments or []}
 
 
@@ -108,9 +108,9 @@ else:
             self.assertIsNone(guard.check({'tool_name': 'Bash', 'tool_input': {'command': 'python3 work/ident.py bot'}}))
 
     def test_human_reply_order_language_and_zhe_identity(self):
-        c = card(by='zhe', comments=[comment('OK', '2026-10-03T00:00:00Z', 'zhe-user'),
+        c = card(by='zhe', comments=[comment('OK', '2026-10-03T00:00:00Z', 'zhex0121'),
                   comment('ok', who='other'), comment('status', who='bot[bot]', kind='Bot'),
-                  comment('아니요, 수정해주세요', who='zhe-user'),
+                  comment('아니요, 수정해주세요', who='zhex0121'),
                   comment('Answer from Zhe: 就是这个', who='meow[bot]', kind='Bot')])
         rs = runner.human_replies(c, '2026-10-04T00:00:00Z', zhe=True)
         self.assertEqual(len(rs), 2)
@@ -235,7 +235,7 @@ else:
         c = card(status='needs-look', by='zhe')
         meta = {'attempt': 1, 'base': 'a' * 40, 'phase': 'look'}
         c['comments'] = [comment('<!-- card-loop ' + json.dumps(meta) + ' -->', '2026-10-04T00:00:00Z'),
-                         comment('어떤 판을 보나요?', who='zhe-user')]
+                         comment('어떤 판을 보나요?', who='zhex0121')]
         out = Path(self.loop.context(c, meta)['out'])
         jobs.write(out / 'look.json', {'replays': ['a', 'b']})
         jobs.write(out / 'reply.json', {'decision': 'unclear'})
