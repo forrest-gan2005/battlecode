@@ -4365,11 +4365,11 @@ class Bot {
         std::array<bool, 4> closed{};
         std::array<bool, 4> imminent{};
         double best_base = SCORE_REJECT;
-        // TERRAIN_PASSAGE: no-loop steps with room beyond, and the best looping step's space.
+        // TERRAIN_PASSAGE: no-loop steps with room beyond, and the best looping step's space. Never the queen.
         std::array<bool, 4> passage{};
         std::array<double, 4> passage_lift{};
         double loop_space = SCORE_REJECT;
-        bool const passable = TERRAIN_PASSAGE && length <= TP_MAX_LENGTH && tail_index >= 0;
+        bool const passable = TERRAIN_PASSAGE && length <= TP_MAX_LENGTH && tail_index >= 0 && ct.get_id() > 1;
         bool const scouting = can_scout_portals();
 
         for (std::size_t k = 0; k < directions.size(); k++) {

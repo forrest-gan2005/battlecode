@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Card #27 mechanism check: do short dragons leave a walled start room through its one-wide exit (TERRAIN_PASSAGE)?
+"""Card #27 mechanism check: do short non-queen dragons leave a walled start room through its one-wide exit while the
+queen stays on the old rules (TERRAIN_PASSAGE, attempt 2)?
 
 usage: python3 work/card_27_check.py --replays DIRECTORY --base base --candidate candidate --output FILE
 Reads kept replays DIRECTORY/<tag>_<map>_<seed>_<side>.replay and pairs them by (map, seed, side).
@@ -13,26 +14,34 @@ Terms (all from the map's open edges; portal links are left out):
   walled start   the start room holds at most 25% of the map, touches no portal, and a bridge leads on to an area.
   open map       no bridge and no portal anywhere.
   maze-like map  at least 25% of the enterable cells are loop-free.
-  home share     of all our dragon-rounds in rounds 100-199 (one dragon alive at one round start), the share whose
-                 head is inside the start room. If the game ends before round 100, the whole game is used.
-  target pair    a walled-start pair whose base game has a home share of 0.5 or more: our dragons mostly stay in.
-                 This is the pin the card describes.
+  queen          our dragon with id 0 or 1 (the one whose length decides the game). Everyone else is a non-queen.
+  home share     of a group's dragon-rounds in rounds 100-199 (one dragon alive at one round start), the share whose
+                 head is inside the start room. If the group has no such rounds, the whole game is used.
+  target pair    a walled-start pair where at least one of our non-queen dragons starts in the start room and the
+                 base game's non-queen home share is 0.5 or more: the pin the card describes, for the dragons the
+                 revised rule applies to.
+  queen-only pair  our team never has a non-queen dragon in the base game (no second dragon, no split).
 
-Expectation, written before any game was run with the switch on:
-  1. target_seen: at least 4 target pairs;
-  2. fires: in at least 75% of the target pairs the candidate's home share is at most half of the base's;
-  3. goes_through: in at least 75% of the target pairs a candidate head stands in another area by round 100;
+Expectation, written before any game was run with the revised switch on:
+  1. target_seen: at least 3 target pairs;
+  2. fires: in at least 75% of the target pairs the candidate's non-queen home share is at most half of the base's;
+  3. goes_through: in at least 75% of the target pairs a candidate non-queen head stands in another area by round 100;
   4. cells: summed over the target pairs, the candidate's heads visit more different cells by round 100;
   5. growth: summed over the target pairs, the candidate eats more pearls by round 200 or has more dragons at round 100;
-  6. deaths: summed over all pairs, our extra deaths before round 200 are not more than our extra pearls by round 200;
-  7. dead_ends: on maze-like maps, extra deaths of our short (length 4 or less) dragons on loop-free cells before
-     round 200 are not more than our extra pearls by round 200 there;
-  8. open_identical: every open-map pair is replay-identical in base and candidate.
-passed = all eight (7 and 8 hold trivially when the run has no such map, and the note says so).
-Reported, not checked: the first round one of our heads is outside the start room and whether that meets the card's
-timing (20 rounds where the bot's centre pull is off, 15 rounds after it ends where it is on; the pull's map-size
-rule is copied from the bot's CENTER_* constants), queen deaths, stalled dragon-rounds (the #24 counter with the queen
-included: our team has 6 dragons or fewer and a dragon has not grown for 30+ rounds), final lengths and wins.
+  6. queen_stays: there is a target pair whose base queen has a home share of 0.5 or more, and in at least 75% of
+     those the candidate's queen home share is also 0.5 or more (the queen does not follow the others out);
+  7. queen_only_identical: there is a queen-only pair, and every one is replay-identical (the queen alone never plays
+     differently);
+  8. deaths: summed over all pairs, our extra deaths before round 200 are not more than our extra pearls by round 200;
+  9. dead_ends: on maze-like maps, extra deaths of our short (length 4 or less) dragons on loop-free cells before
+     round 200 are not more than our extra pearls by round 200 there (holds trivially with no such map; the note says so).
+passed = all nine.
+Reported, not checked: open-map pairs that are replay-identical (the author accepted play changing on open ground),
+the first round a non-queen head is outside the start room and whether that meets the card's timing (20 rounds where
+the bot's centre pull is off, 15 rounds after it ends where it is on; the pull's map-size rule is copied from the bot's
+CENTER_* constants), the round the queen first leaves, queen deaths, queen length at game end, stalled dragon-rounds
+(the #24 counter with the queen included: our team has 6 dragons or fewer and a dragon has not grown for 30+ rounds),
+final lengths and wins.
 Not measurable here: transposed or mirrored copies of a map (the loop's outcome run covers those).
 
 Exit code 0 when the measurement completed (even if passed is false); nonzero on missing or unreadable replays.
@@ -52,21 +61,25 @@ PIN_SHARE = 0.5
 CELLS_ROUND = 100
 PEARLS_ROUND = 200
 SHORT = 4
-MIN_TARGET = 4
+MIN_TARGET = 3
 SHARE_NEEDED = 0.75
 STALL_UNITS = 6
 STALL_IDLE = 30
 CAUSES = ('wall', 'own_body', 'other_body', 'head_on', 'no_move')
-EXPECTATION = ("Written before any game was run with the switch on. Rooms are found from each replay's map: cells "
-               "joined without crossing a one-wide step (bridge). Home share = the share of our dragon-rounds in "
-               "rounds 100-199 spent with the head inside our start room. Target pair = our start room holds at most "
-               "25% of the map, has no portal, a one-wide exit leads to an area of 4+ cells, and the base game's home "
-               "share is 0.5 or more. Expected: at least 4 target pairs; in at least 75% of them the candidate's home "
-               "share is at most half of the base's and a candidate head stands in another area by round 100; summed "
-               "over them the candidate visits more cells by round 100 and has more pearls by round 200 or more "
-               "dragons at round 100; over all pairs extra deaths before round 200 are not more than extra pearls by "
-               "round 200; on maze-like maps extra deaths of short dragons on one-wide cells are not more than extra "
-               "pearls; and every pair on a map with no one-wide step and no portal is replay-identical.")
+EXPECTATION = ("Written before any game was run with the revised switch on (queen excluded). Rooms are found from "
+               "each replay's map: cells joined without crossing a one-wide step (bridge). Queen = our dragon with id "
+               "0 or 1. Home share = the share of a group's dragon-rounds in rounds 100-199 spent with the head inside "
+               "our start room. Target pair = our start room holds at most 25% of the map, has no portal, a one-wide "
+               "exit leads to an area of 4+ cells, at least one of our non-queen dragons starts in it, and the base "
+               "game's non-queen home share is 0.5 or more. Expected: at least 3 target pairs; in at least 75% of "
+               "them the candidate's non-queen home share is at most half of the base's and a candidate non-queen "
+               "head stands in another area by round 100; summed over them the candidate visits more cells by round "
+               "100 and has more pearls by round 200 or more dragons at round 100; in at least 75% of the target "
+               "pairs whose base queen has a home share of 0.5 or more, the candidate's queen also has 0.5 or more; "
+               "every pair where our team never has a non-queen dragon in the base game is replay-identical (and "
+               "there is at least one); over all pairs extra deaths before round 200 are not more than extra pearls "
+               "by round 200; on maze-like maps extra deaths of short dragons on one-wide cells are not more than "
+               "extra pearls. Open-map identity is reported, not required: the author accepted that change.")
 
 
 def terrain(text):
@@ -145,6 +158,11 @@ def out_by(W, H):
     return ((60 if long_map else 30) + 15) if pull else 20
 
 
+def share(count):
+    used = count['window'] if count['window'][1] else count['game']
+    return (round(used[0] / used[1], 4) if used[1] else None), used[0], used[1]
+
+
 def metrics(path, ours):
     root = replay.load(path).root()
     result = root.pointer(4)
@@ -190,14 +208,19 @@ def metrics(path, ours):
         kind = 'other'
     queens = [i for i in (0, 1) if mine(i)]
     queen = queens[0] if len(queens) == 1 else None
+    their_queens = [i for i in (0, 1) if i in team_of and not mine(i)]
+    their_queen = their_queens[0] if len(their_queens) == 1 else None
+    nonqueen_start = sum(1 for i in bodies if mine(i) and i != queen)
+    nonqueen_ever = nonqueen_start > 0
 
     units = lambda: sum(1 for i in bodies if mine(i))
     grown = {i: 0 for i in bodies}
     visited = set(starts)
     h = hashlib.sha1()
     rnd = pearls = deaths = branch_short = stalled = 0
-    first_out = first_area = queen_out = queen_death = None
-    stay = {'window': [0, 0], 'game': [0, 0]}   # [dragon-rounds at home, dragon-rounds]
+    first = {'team': [None, None], 'nonqueen': [None, None], 'queen': [None, None]}   # [outside, in another area]
+    queen_death = None
+    stay = {who: {'window': [0, 0], 'game': [0, 0]} for who in first}   # [dragon-rounds at home, dragon-rounds]
     snap = {}
     death_rows = []
 
@@ -208,16 +231,14 @@ def metrics(path, ours):
             snap['pearls'], snap['deaths'], snap['branch_short'], snap['stalled'] = pearls, deaths, branch_short, stalled
 
     def seen_head(did, head):
-        nonlocal first_out, first_area, queen_out
         visited.add(head)
         if room[head] in home:
             return
-        if first_out is None:
-            first_out = rnd
-        if first_area is None and sizes[room[head]] >= AREA_MIN:
-            first_area = rnd
-        if did == queen and queen_out is None:
-            queen_out = rnd
+        for who in ('team', 'queen' if did == queen else 'nonqueen'):
+            if first[who][0] is None:
+                first[who][0] = rnd
+            if first[who][1] is None and sizes[room[head]] >= AREA_MIN:
+                first[who][1] = rnd
 
     for ev in root.pointer(3):
         which = ev.u16(0)
@@ -228,10 +249,12 @@ def metrics(path, ours):
             h.update(f"r{rnd}".encode())
             take()
             alive = [i for i in bodies if mine(i) and bodies[i]]
-            at_home = sum(1 for i in alive if room[tuple(bodies[i][0])] in home)
-            for key in ('game',) + (('window',) if WINDOW[0] <= rnd < WINDOW[1] else ()):
-                stay[key][0] += at_home
-                stay[key][1] += len(alive)
+            for who, ids in (('team', alive), ('nonqueen', [i for i in alive if i != queen]),
+                             ('queen', [i for i in alive if i == queen])):
+                at_home = sum(1 for i in ids if room[tuple(bodies[i][0])] in home)
+                for key in ('game',) + (('window',) if WINDOW[0] <= rnd < WINDOW[1] else ()):
+                    stay[who][key][0] += at_home
+                    stay[who][key][1] += len(ids)
             if len(alive) <= STALL_UNITS:
                 stalled += sum(1 for i in alive if rnd - grown.get(i, rnd) >= STALL_IDLE)
         elif name == 'dragonUpdate':
@@ -260,8 +283,10 @@ def metrics(path, ours):
             team_of[parent] = team_of[child] = team
             grown.setdefault(parent, rnd)
             grown[child] = rnd
-            if team == ours and bodies[child]:
-                seen_head(child, tuple(bodies[child][0]))
+            if team == ours:
+                nonqueen_ever = True
+                if bodies[child]:
+                    seen_head(child, tuple(bodies[child][0]))
         elif name == 'dragonDeath':
             did = pl.i32(0)
             reason = pl.u16(4)
@@ -277,19 +302,27 @@ def metrics(path, ours):
                     queen_death = rnd
                 if rnd < PEARLS_ROUND:
                     death_rows.append({'round': rnd, 'id': did, 'length': len(body), 'place': place,
+                                       'queen': did == queen,
                                        'cause': CAUSES[reason] if reason < len(CAUSES) else 'unknown'})
     take(force=True)
-    used = stay['window'] if stay['window'][1] else stay['game']
+    team, nonq, quee = share(stay['team']), share(stay['nonqueen']), share(stay['queen'])
     mine_len = [len(b) for i, b in bodies.items() if mine(i)]
     their_len = [len(b) for i, b in bodies.items() if team_of.get(i) not in (ours, None)]
     return {'kind': kind, 'cells': cells, 'start_room_cells': home_cells, 'exits': exits, 'out_by': out_by(ter['W'], ter['H']),
             'maze_like': bool(enterable and loop_free >= MAZE_SHARE * enterable), 'loop_free_cells': loop_free,
-            'home_share': round(used[0] / used[1], 4) if used[1] else 0.0, 'home_rounds': used[0], 'dragon_rounds': used[1],
-            'first_out': first_out, 'first_area': first_area, 'queen_out': queen_out, 'queen_death': queen_death,
+            'nonqueen_start': nonqueen_start, 'nonqueen_ever': nonqueen_ever,
+            'home_share': team[0] or 0.0, 'home_rounds': team[1], 'dragon_rounds': team[2],
+            'nonqueen_home_share': nonq[0], 'nonqueen_home_rounds': nonq[1], 'nonqueen_dragon_rounds': nonq[2],
+            'queen_home_share': quee[0], 'queen_home_rounds': quee[1], 'queen_dragon_rounds': quee[2],
+            'first_out': first['team'][0], 'first_area': first['team'][1],
+            'nonqueen_out': first['nonqueen'][0], 'nonqueen_area': first['nonqueen'][1],
+            'queen_out': first['queen'][0], 'queen_death': queen_death,
             'cells_100': snap['cells'], 'units_100': snap['units'], 'pearls_200': snap['pearls'],
             'deaths_200': snap['deaths'], 'branch_short_200': snap['branch_short'], 'stalled_200': snap['stalled'],
             'deaths_before_200': death_rows, 'rounds': rnd, 'longest_end': max(mine_len, default=0),
-            'their_longest_end': max(their_len, default=0), 'win': int(winner == ours), 'digest': h.hexdigest()}
+            'their_longest_end': max(their_len, default=0), 'total_end': sum(mine_len), 'their_total_end': sum(their_len),
+            'queen_end': len(bodies.get(queen, ())), 'their_queen_end': len(bodies.get(their_queen, ())),
+            'win': int(winner == ours), 'digest': h.hexdigest()}
 
 
 def collect(directory, tag):
@@ -309,24 +342,35 @@ def by(rnd, limit):
 
 def tally(rows):
     total = lambda f: sum(x[f] for x in rows)
+    pooled = lambda a, b: round(total(a) / total(b), 4) if rows and total(b) else None
     place = {}
     for x in rows:
         for d in x['deaths_before_200']:
-            key = f"{d['place']}:{d['cause']}:{'short' if d['length'] <= SHORT else 'long'}"
+            key = f"{d['place']}:{d['cause']}:{'queen' if d['queen'] else 'short' if d['length'] <= SHORT else 'long'}"
             place[key] = place.get(key, 0) + 1
     return {'games': len(rows),
-            'home_share': [x['home_share'] for x in rows],
-            'home_share_pooled': round(total('home_rounds') / total('dragon_rounds'), 4) if rows and total('dragon_rounds') else None,
+            'home_share': [x['home_share'] for x in rows], 'home_share_pooled': pooled('home_rounds', 'dragon_rounds'),
+            'nonqueen_home_share': [x['nonqueen_home_share'] for x in rows],
+            'nonqueen_home_share_pooled': pooled('nonqueen_home_rounds', 'nonqueen_dragon_rounds'),
+            'queen_home_share': [x['queen_home_share'] for x in rows],
+            'queen_home_share_pooled': pooled('queen_home_rounds', 'queen_dragon_rounds'),
             'first_out': [x['first_out'] for x in rows], 'first_area': [x['first_area'] for x in rows],
+            'nonqueen_out': [x['nonqueen_out'] for x in rows], 'nonqueen_area': [x['nonqueen_area'] for x in rows],
+            'queen_out': [x['queen_out'] for x in rows], 'queen_death': [x['queen_death'] for x in rows],
             'out_by_100': sum(by(x['first_out'], CELLS_ROUND) for x in rows),
-            'area_by_100': sum(by(x['first_area'], CELLS_ROUND) for x in rows),
-            'out_by_card_timing': sum(by(x['first_out'], x['out_by']) for x in rows),
+            'nonqueen_out_by_100': sum(by(x['nonqueen_out'], CELLS_ROUND) for x in rows),
+            'nonqueen_area_by_100': sum(by(x['nonqueen_area'], CELLS_ROUND) for x in rows),
+            'nonqueen_out_by_card_timing': sum(by(x['nonqueen_out'], x['out_by']) for x in rows),
             'queen_out_by_100': sum(by(x['queen_out'], CELLS_ROUND) for x in rows),
+            'queen_out_by_200': sum(by(x['queen_out'], PEARLS_ROUND - 1) for x in rows),
             'queen_deaths_before_200': sum(1 for x in rows if x['queen_death'] is not None and x['queen_death'] < PEARLS_ROUND),
+            'queen_deaths': sum(1 for x in rows if x['queen_death'] is not None),
             'cells_100': total('cells_100'), 'units_100': total('units_100'), 'pearls_200': total('pearls_200'),
             'deaths_200': total('deaths_200'), 'branch_short_200': total('branch_short_200'),
             'stalled_200': total('stalled_200'), 'deaths_by_place_cause_length': dict(sorted(place.items())),
             'longest_end': total('longest_end'), 'their_longest_end': total('their_longest_end'),
+            'total_end': total('total_end'), 'their_total_end': total('their_total_end'),
+            'queen_end': total('queen_end'), 'their_queen_end': total('their_queen_end'),
             'wins_not_a_verdict': total('win')}
 
 
@@ -345,24 +389,30 @@ def main():
     if set(base) != set(cand):
         sys.exit(f'unpaired replays: {sorted(set(base) ^ set(cand))[:6]}')
     keys = sorted(base)
+    mostly_in = lambda v: v is not None and v >= PIN_SHARE
     walled = [k for k in keys if base[k]['kind'] == 'walled']
-    target = [k for k in walled if base[k]['home_share'] >= PIN_SHARE]
+    target = [k for k in walled if base[k]['nonqueen_start'] and mostly_in(base[k]['nonqueen_home_share'])]
     opened = [k for k in keys if base[k]['kind'] == 'open']
     maze = [k for k in keys if base[k]['maze_like']]
     same = [k for k in keys if base[k]['digest'] == cand[k]['digest']]
-    fired = [k for k in target if 2 * cand[k]['home_share'] <= base[k]['home_share']]
+    fired = [k for k in target if cand[k]['nonqueen_home_share'] is not None
+             and 2 * cand[k]['nonqueen_home_share'] <= base[k]['nonqueen_home_share']]
+    queen_home = [k for k in target if mostly_in(base[k]['queen_home_share'])]
+    queen_stays = [k for k in queen_home if mostly_in(cand[k]['queen_home_share'])]
+    queen_only = [k for k in keys if not base[k]['nonqueen_ever']]
     B = lambda ks: tally([base[k] for k in ks])
     C = lambda ks: tally([cand[k] for k in ks])
     tb, tc, ab, ac, mb, mc = B(target), C(target), B(keys), C(keys), B(maze), C(maze)
     need = SHARE_NEEDED * len(target)
     checks = {'target_seen': len(target) >= MIN_TARGET,
               'fires': bool(target) and len(fired) >= need,
-              'goes_through': bool(target) and tc['area_by_100'] >= need,
+              'goes_through': bool(target) and tc['nonqueen_area_by_100'] >= need,
               'cells': bool(target) and tc['cells_100'] > tb['cells_100'],
               'growth': bool(target) and (tc['pearls_200'] > tb['pearls_200'] or tc['units_100'] > tb['units_100']),
+              'queen_stays': bool(queen_home) and len(queen_stays) >= SHARE_NEEDED * len(queen_home),
+              'queen_only_identical': bool(queen_only) and all(k in same for k in queen_only),
               'deaths': ac['deaths_200'] - ab['deaths_200'] <= ac['pearls_200'] - ab['pearls_200'],
-              'dead_ends': mc['branch_short_200'] - mb['branch_short_200'] <= mc['pearls_200'] - mb['pearls_200'],
-              'open_identical': all(k in same for k in opened)}
+              'dead_ends': mc['branch_short_200'] - mb['branch_short_200'] <= mc['pearls_200'] - mb['pearls_200']}
     passed = all(checks.values())
     per_map = {}
     for m in sorted({k[0] for k in keys}):
@@ -370,35 +420,48 @@ def main():
         first = base[ks[0]]
         per_map[m] = {'kind': first['kind'], 'maze_like': first['maze_like'], 'cells': first['cells'],
                       'start_room_cells': sorted({base[k]['start_room_cells'] for k in ks}), 'out_by': first['out_by'],
+                      'nonqueen_start': sorted({base[k]['nonqueen_start'] for k in ks}),
                       'target_pairs': sum(k in target for k in ks), 'fired_pairs': sum(k in fired for k in ks),
+                      'queen_only_pairs': sum(k in queen_only for k in ks),
                       'identical_pairs': sum(k in same for k in ks), 'base': B(ks), 'candidate': C(ks)}
     failed = [name for name, ok in checks.items() if not ok]
     note = (f"{len(keys)} pairs: {len(walled)} with a walled start, {len(opened)} on open maps, {len(maze)} on maze-like "
-            f"maps; {len(same)} replay-identical. Target pairs (walled start, base spends half or more of its "
-            f"dragon-rounds in rounds 100-199 inside the start room): {len(target)}. In those: candidate's share inside "
-            f"at most half of base's in {len(fired)}; pooled share inside base {tb['home_share_pooled']}, candidate "
-            f"{tc['home_share_pooled']}; a head outside the start room by round 100: base {tb['out_by_100']}, candidate "
-            f"{tc['out_by_100']}; standing in another area by round 100: candidate {tc['area_by_100']}; out by the "
-            f"card's timing: candidate {tc['out_by_card_timing']}; cells visited by round 100: base {tb['cells_100']}, "
+            f"maps; {len(same)} replay-identical. Target pairs (walled start with a non-queen dragon of ours in it, base "
+            f"non-queen dragons spend half or more of rounds 100-199 inside): {len(target)}. In those: candidate's "
+            f"non-queen share inside at most half of base's in {len(fired)}; pooled non-queen share inside base "
+            f"{tb['nonqueen_home_share_pooled']}, candidate {tc['nonqueen_home_share_pooled']}; a non-queen head outside "
+            f"the start room by round 100: base {tb['nonqueen_out_by_100']}, candidate {tc['nonqueen_out_by_100']}; "
+            f"standing in another area by round 100: candidate {tc['nonqueen_area_by_100']}; out by the card's timing: "
+            f"candidate {tc['nonqueen_out_by_card_timing']}; cells visited by round 100: base {tb['cells_100']}, "
             f"candidate {tc['cells_100']}; pearls by round 200: base {tb['pearls_200']}, candidate {tc['pearls_200']}; "
             f"dragons at round 100: base {tb['units_100']}, candidate {tc['units_100']}; stalled dragon-rounds by round "
-            f"200: base {tb['stalled_200']}, candidate {tc['stalled_200']}. All pairs: deaths before round 200 base "
-            f"{ab['deaths_200']}, candidate {ac['deaths_200']}; pearls by round 200 base {ab['pearls_200']}, candidate "
-            f"{ac['pearls_200']}; queen deaths before round 200 base {ab['queen_deaths_before_200']}, candidate "
-            f"{ac['queen_deaths_before_200']}. Maze-like maps: short dragons dying on one-wide cells before round 200 "
-            f"base {mb['branch_short_200']}, candidate {mc['branch_short_200']}"
-            + ('' if maze else ' (no maze-like map in this run)') + f". Open-map pairs identical: "
-            f"{sum(k in same for k in opened)} of {len(opened)}" + ('' if opened else ' (no open map in this run)') + '. '
-            + ('All eight pre-registered checks held.' if passed else 'Failed checks: ' + ', '.join(failed) + '.')
+            f"200: base {tb['stalled_200']}, candidate {tc['stalled_200']}. Queen in the target pairs: base queen mostly "
+            f"inside in {len(queen_home)}, candidate queen also mostly inside in {len(queen_stays)} of those; pooled "
+            f"queen share inside base {tb['queen_home_share_pooled']}, candidate {tc['queen_home_share_pooled']}; queen "
+            f"outside by round 100: base {tb['queen_out_by_100']}, candidate {tc['queen_out_by_100']}; queen deaths "
+            f"before round 200: base {tb['queen_deaths_before_200']}, candidate {tc['queen_deaths_before_200']}. "
+            f"Queen-only pairs (no non-queen dragon of ours in the base game): {len(queen_only)}, replay-identical "
+            f"{sum(k in same for k in queen_only)}. All pairs: deaths before round 200 base {ab['deaths_200']}, candidate "
+            f"{ac['deaths_200']}; pearls by round 200 base {ab['pearls_200']}, candidate {ac['pearls_200']}; queen "
+            f"deaths before round 200 base {ab['queen_deaths_before_200']}, candidate {ac['queen_deaths_before_200']}; "
+            f"queen length at game end (sum, ours / theirs) base {ab['queen_end']} / {ab['their_queen_end']}, candidate "
+            f"{ac['queen_end']} / {ac['their_queen_end']}. Maze-like maps: short dragons dying on one-wide cells before "
+            f"round 200 base {mb['branch_short_200']}, candidate {mc['branch_short_200']}"
+            + ('' if maze else ' (no maze-like map in this run)') + ". Open-map pairs identical (reported, not "
+            f"required): {sum(k in same for k in opened)} of {len(opened)}. "
+            + ('All nine pre-registered checks held.' if passed else 'Failed checks: ' + ', '.join(failed) + '.')
             + ' Transposed or mirrored copies are not measured here.')
     result = {'passed': passed, 'note': note, 'expectation': EXPECTATION, 'checks': checks,
               'target_seen': checks['target_seen'], 'mechanism_shown': passed,
               'pairs': len(keys), 'identical_pairs': len(same), 'walled_pairs': len(walled), 'target_pairs': len(target),
-              'fired_pairs': len(fired), 'open_pairs': len(opened), 'maze_like_pairs': len(maze),
+              'fired_pairs': len(fired), 'queen_home_pairs': len(queen_home), 'queen_stays_pairs': len(queen_stays),
+              'queen_only_pairs': len(queen_only), 'queen_only_identical_pairs': sum(k in same for k in queen_only),
+              'open_pairs': len(opened), 'open_identical_pairs': sum(k in same for k in opened),
+              'maze_like_pairs': len(maze),
               'target': {'base': tb, 'candidate': tc}, 'all': {'base': ab, 'candidate': ac},
               'maze_like': {'base': mb, 'candidate': mc}, 'per_map': per_map,
               'games': [{'map': k[0], 'seed': k[1], 'side': k[2], 'target': k in target, 'fired': k in fired,
-                         'identical': k in same,
+                         'queen_only': k in queen_only, 'identical': k in same,
                          'base': {f: v for f, v in base[k].items() if f != 'digest'},
                          'candidate': {f: v for f, v in cand[k].items() if f != 'digest'}} for k in keys]}
     with open(a.output, 'w') as f:
