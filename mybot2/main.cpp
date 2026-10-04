@@ -240,6 +240,10 @@ constexpr int IDLE_ESCAPE = 0;
 constexpr int IDLE_REGION_MAX = 40;
 constexpr bool IDLE_STRICT = false;
 constexpr int IDLE_LOG = 0;
+// stalled tiny team: route to the nearest pearl or unseen cell (card #24)
+constexpr bool EC_BREAKOUT = false;
+constexpr int EC_BREAKOUT_UNITS = 6;
+constexpr int EC_BREAKOUT_IDLE = 30;
 constexpr double FAR_GAIN = 0.0;
 constexpr int FAR_RANGE = 80;
 constexpr int FAR_IDLE = 0;
@@ -497,6 +501,8 @@ class Bot {
             return;
         }
 
+        breakout = EC_BREAKOUT && breakout_on();
+
         std::vector<Direction> hunt;
         if (hunt_path(hunt)) {
             ct.make_moves(hunt);
@@ -544,6 +550,9 @@ class Bot {
         }
         if (QG_CORNER && route_target < 0 && corner_target >= 0) {
             route_target = corner_target;
+        }
+        if (breakout && route_target < 0) {
+            route_target = breakout_target();
         }
         Direction const best = pick_direction();
         if (IDLE_LOG > 0 && round - last_growth_round >= IDLE_LOG) {
@@ -3803,6 +3812,42 @@ class Bot {
         inc_round = round;
     }
 
+    bool breakout_on() const {
+        return ct.get_id() > 1 && ct.get_unit_count() <= EC_BREAKOUT_UNITS &&
+               round - last_growth_round >= EC_BREAKOUT_IDLE && !is_leader() && !is_feeder();
+    }
+
+    // nearest pearl or unseen cell by real path; -1 if none
+    int breakout_target() {
+        if (escape_stamp.empty()) {
+            escape_stamp.assign(cells, 0);
+            escape_steps.assign(cells, 0);
+            escape_queue.assign(cells, 0);
+        }
+        escape_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        escape_stamp[start] = escape_mark;
+        escape_queue[queue_tail++] = start;
+        while (queue_head < queue_tail) {
+            int const index = escape_queue[queue_head++];
+            if (index != start && (seen_round[index] < 0 || (pearl_here[index] && !in_leader_pearl_zone(index)))) {
+                return index;
+            }
+            Position const position = position_of(index);
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || escape_stamp[next] == escape_mark || enter_time[next] >= BLOCKED_FOREVER) {
+                    continue;
+                }
+                escape_stamp[next] = escape_mark;
+                escape_queue[queue_tail++] = next;
+            }
+        }
+        return -1;
+    }
+
     void idle_update() {
         if (is_leader() || is_feeder() || tail_index < 0) {
             return;
@@ -4142,7 +4187,7 @@ class Bot {
         if (avail < length + 2.0) {
             cramped += PENALTY_TRAPPED * (length + 2.0 - avail);
         }
-        if (tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0)) {
+        if (tail_index >= 0 && !survey.reaches_tail && !breakout && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0)) {
             cramped += PENALTY_NO_TAIL;
         }
         last_space = space;
@@ -4209,7 +4254,7 @@ class Bot {
         if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
             score -= ZONE_PEARL_PENALTY;
         }
-        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
+        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH && !breakout &&
             static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
             std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
             score -= CENTER_PULL * center_distance(destination);
@@ -4617,6 +4662,7 @@ class Bot {
     bool harvesting_now = false;
     int survey_back = -1;
     int last_growth_round = 0;
+    bool breakout = false;
     int inc_target = -1;
     int inc_round = -1000;
     std::vector<std::pair<Position, int>> recent_allies;
