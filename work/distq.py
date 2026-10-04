@@ -7,23 +7,26 @@ LEASE = 900
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+SOURCE_EXT = ('.toml', '.hpp', '.h', '.hh', '.cpp', '.cc', '.c')
+
+
+def bot_files(path):
+    return [n for n in sorted(os.listdir(path)) if os.path.isfile(os.path.join(path, n)) and n.endswith(SOURCE_EXT)]
+
+
 def bot_hash(path):
     h = hashlib.sha1()
-    for name in ('main.cpp', 'helper.hpp', 'bot.toml'):
-        p = os.path.join(path, name)
-        if os.path.exists(p):
-            h.update(name.encode())
-            h.update(open(p, 'rb').read())
+    for name in bot_files(path):
+        h.update(name.encode())
+        h.update(open(os.path.join(path, name), 'rb').read())
     return h.hexdigest()[:16]
 
 
 def bot_tar(path):
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as tar:
-        for name in ('main.cpp', 'helper.hpp', 'bot.toml'):
-            p = os.path.join(path, name)
-            if os.path.exists(p):
-                tar.add(p, arcname=name)
+        for name in bot_files(path):
+            tar.add(os.path.join(path, name), arcname=name)
     return buf.getvalue()
 
 
