@@ -18,6 +18,7 @@ Requires the GitHub CLI (gh) with write access to the repo.
 import argparse, datetime, json, os, re, socket, subprocess, sys, tempfile
 
 from card_names import card_ref as format_card_ref
+from fair_queue import priority, order_cards, read_fair
 
 REPO = "forrest-gan2005/battlecode"
 STATUS_TITLE = "Loop status"
@@ -107,17 +108,12 @@ def remove_loop(loop):
     return True
 
 
-def priority(i):
-    labels = {l["name"] for l in i["labels"]}
-    return (0 if "type:task" in labels else 1 if "by:zhe" in labels else 3 if "by:ai" in labels else 2, i["createdAt"], i["number"])
-
-
 def cmd_next(a):
     q = gh("issue", "list", "--repo", REPO, "--state", "open", "--label", f"status:{a.state or 'ready'}",
            "--limit", "1000", "--json", "number,title,labels,body,createdAt")
     if a.wf:
         q = [i for i in q if any(l["name"] == f"wf:{a.wf}" for l in i["labels"])]
-    q.sort(key=priority)
+    q = order_cards(q, read_fair())
     if not q:
         print("queue empty")
         return

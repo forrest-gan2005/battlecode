@@ -14,6 +14,7 @@ from string import Template
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from card_names import card_ref, card_name, unique_slug, valid_slug
+from fair_queue import priority, order_cards, read_fair, served
 
 from jobs import OLD_MAPS, busy, lock, read, stage, worker, write, eta_minutes, step_timing, remaining_wait
 
@@ -61,12 +62,6 @@ def is_task(card):
 def state(card):
     states = [x[7:] for x in labels(card) if x.startswith('status:')]
     return states[0] if len(states) == 1 else 'conflicting-labels'
-
-
-def priority(card):
-    names = labels(card)
-    return (0 if 'type:task' in names else 1 if 'by:zhe' in names else 3 if 'by:ai' in names else 2,
-            card.get('createdAt', ''), card['number'])
 
 
 def records(card):
@@ -120,6 +115,7 @@ class Loop:
         self.repo = Path(args.repo).resolve()
         self.out = Path(args.out).expanduser().resolve()
         self.cards = Path(args.cards).expanduser().resolve()
+        self.fair_path = Path.home() / "meow-loop-out/fair.json"
         # Machine-global even with different --out directories or repository worktrees.
         self.locks = Path.home() / '.meow-card-loop-locks'
         self.status = {}
@@ -156,7 +152,7 @@ class Loop:
             if state(card) == 'tested' and not ai_done and not any(r.get('phase') == 'tested' for r in records(card)):
                 continue  # tested by hand, no loop results to decide on
             cards.append(card)
-        return sorted(cards, key=priority)
+        return order_cards(cards, read_fair(self.fair_path))
 
     def notice(self, card, text, metadata=None):
         key = str(card['number'])
@@ -175,6 +171,8 @@ class Loop:
 
     def transition(self, card, target):
         self.board('state', str(card['number']), target)
+        if state(card) == 'ready' and target in {'building', 'needs-info'}:
+            write(self.fair_path, served(read_fair(self.fair_path), card))
 
     def post(self, card, key, text, target=None, kind=None, ask=False, metadata=None, close=False):
         """A remote marker repairs a crash between comment creation and label replacement."""
@@ -967,7 +965,10 @@ class Loop:
                                            'cards': self.status,
                                            'message': 'Paused by a member; running jobs finish normally.'})
             return
-        for card in self.cards_on_board():
+        pending_cards = self.cards_on_board()
+        while pending_cards:
+            card = order_cards(pending_cards, read_fair(self.fair_path))[0]
+            pending_cards.remove(card)
             try:
                 if self.args.dry_run:
                     self.dry(card)

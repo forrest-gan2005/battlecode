@@ -36,6 +36,7 @@ class Tests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.loop = runner.Loop(argparse.Namespace(repo=str(runner.REPO), out=str(self.root / 'out'),
                            cards=str(self.root / 'cards'), dry_run=False, game_env={}))
+        self.loop.fair_path = self.root / 'fair.json'
         self.loop.locks = self.root / 'locks'
         self.loop.launched = set()
 
@@ -71,7 +72,7 @@ else:
                             '--out', self.root / 'out', '--cards', self.root / 'cards'],
                            env=env, capture_output=True, text=True, timeout=20)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertLess(p.stdout.index('#7 '), p.stdout.index('#5 '))
+        self.assertLess(p.stdout.index('#5 '), p.stdout.index('#7 '))
         self.assertLess(p.stdout.index('#5 '), p.stdout.index('#9 '))
         self.assertIn('human answer found → building', p.stdout)
         self.assertIn('wait/classify Zhe reply', p.stdout)
