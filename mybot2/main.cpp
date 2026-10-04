@@ -176,6 +176,9 @@ constexpr int QG_CORNER_DANGER = 4;
 constexpr int QG_CORNER_EVERY = 10;
 constexpr double QG_CORNER_PENALTY = 1000.0;
 constexpr bool QG_CORNER_LOG = false;
+constexpr bool QUEEN_NO_TRAP = false;
+constexpr double QNT_VETO = 1e10;
+constexpr double QNT_ROOM_GAIN = 1e7;
 constexpr int QUEEN_GIVE_WAY = 0;
 constexpr double QUEEN_GIVE_WAY_PENALTY = 3000.0;
 constexpr bool QUEEN_BRAIN = false;
@@ -732,6 +735,9 @@ class Bot {
                     break;
                 }
                 double const value = stride_value(next);
+                if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                    continue;
+                }
                 if (value > best_value) {
                     best_value = value;
                     best_next = next;
@@ -874,7 +880,7 @@ class Bot {
         if (!no_move && !boxed) {
             return 0;
         }
-        if (is_queen() && !no_move) {
+        if ((is_queen() || trap_queen()) && !no_move) {
             return 0;
         }
         int const child = length - 2;
@@ -902,7 +908,7 @@ class Bot {
     
     bool harvestable(int pocket_pearls, double pocket_room, bool inside) {
         int const min_size = unswbc::Constants::MIN_SIZE;
-        if (is_feeder() || is_leader() || is_queen() || tail_index < 0) {
+        if (is_feeder() || is_leader() || is_queen() || trap_queen() || tail_index < 0) {
             return false;
         }
         
@@ -2182,6 +2188,9 @@ class Bot {
                 break;
             }
             double const score = score_step(position_of(nodes[k].cell));
+            if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                continue;
+            }
             if (score > best) {
                 best = score;
                 best_node = k;
@@ -2240,6 +2249,9 @@ class Bot {
                             return found;
                         }
                         double const score = score_step(position_of(c2)) - (sprint_free() >= 2 ? 0.0 : SPRINT_ESCAPE_COST);
+                        if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                            continue;
+                        }
                         if (score > best) {
                             best = score;
                             path = {first, second};
@@ -2267,6 +2279,9 @@ class Bot {
                             return found;
                         }
                         double const score = score_step(position_of(c3)) - std::max(0, 3 - sprint_free()) * SPRINT_ESCAPE_COST;
+                        if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                            continue;
+                        }
                         if (score > best) {
                             best = score;
                             path = {first, second, third};
@@ -2674,6 +2689,14 @@ class Bot {
 
     bool queen_guard() const {
         return QUEEN_GUARD_CELLS > 0 && cells > QUEEN_GUARD_CELLS && is_queen();
+    }
+
+    bool trap_queen() const {
+        return QUEEN_NO_TRAP && ct.get_id() <= 1;
+    }
+
+    bool trap_step(double room, bool reaches) const {
+        return !reaches && room < 3.0 * length + 8.0;
     }
 
     void ensure_queen_buffers() {
@@ -4461,6 +4484,36 @@ class Bot {
                 }
             }
             cornered = any_scored && ((all_imminent && length >= DODGE_MIN_LENGTH) || (is_big() && all_exposed));
+        }
+
+        if (trap_queen()) {
+            std::array<bool, 4> live{};
+            std::array<bool, 4> trap{};
+            std::array<bool, 4> hot{};
+            bool free_any = false;
+            bool free_calm = false;
+            bool trap_calm = false;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                live[k] = scored[k] && dests[k] >= 0 && scores[k] > SCORE_REJECT * 0.5;
+                if (!live[k]) {
+                    continue;
+                }
+                trap[k] = trap_step(rooms[k], reaches[k]);
+                hot[k] = enemy_can_step_to(position_of(dests[k]));
+                free_any = free_any || !trap[k];
+                free_calm = free_calm || (!trap[k] && !hot[k]);
+                trap_calm = trap_calm || (trap[k] && !hot[k]);
+            }
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (!live[k] || !trap[k]) {
+                    continue;
+                }
+                if (free_calm || (free_any && hot[k])) {
+                    scores[k] -= QNT_VETO;
+                } else if (!free_any && (!hot[k] || !trap_calm)) {
+                    scores[k] += QNT_ROOM_GAIN * rooms[k];
+                }
+            }
         }
 
         for (std::size_t k = 0; k < directions.size(); k++) {
