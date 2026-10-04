@@ -310,6 +310,17 @@ class Loop:
                         'labels': ['status:running'] + (['name:' + spec['name']] if spec.get('name') else [])}
                 self.job_notice(card, spec['step'], file.parent, f"{spec['step']} running")
 
+    def short_step_waiting(self, card):
+        """Another card's short game step (from the last tick's status) goes before a long outcome run."""
+        ai_free = 'ai' not in self.launched and not busy(self.locks / 'ai.lock')
+        for number, info in (read(self.out / 'status.json', {}).get('cards') or {}).items():
+            if number == str(card['number']) or not isinstance(info, dict) or 'batch' not in (info.get('queue') or ''):
+                continue
+            kind = info.get('step_kind')
+            if kind == 'mechanism' or (kind in ('build', 'task', 'adopt') and ai_free):
+                return True
+        return False
+
     def job(self, card, meta, step, light=False, output=None):
         ctx = self.context(card, meta)
         path = Path(ctx['out']) / 'jobs' / step
@@ -328,6 +339,10 @@ class Loop:
         if any(busy(self.locks / f'{r}.lock') for r in resources):
             self.job_notice(card, step, path, f'{step} waiting for {" + ".join(resources)} lock',
                             queue=' + '.join(resources) + ' lock', resources=resources)
+            return False
+        if step == 'outcome' and self.short_step_waiting(card):
+            self.job_notice(card, step, path, 'outcome waiting for shorter steps first',
+                            queue='batch lock', resources=resources)
             return False
         if 'batch' in resources:
             import shutil

@@ -44,6 +44,7 @@ The ladder is the online competition and its game history. After each new batch 
 | 4 | `by:ai`: hypotheses from our latest ladder games |
 
 Within a group, pick the oldest ready card first. Waiting for a person does not block work on other cards.
+The game slot runs one batch at a time. A long local outcome run waits when another card's short game step (the behaviour check, or a build's identity check) is queued for the slot, so a few-minute step never sits behind a 50-minute run.
 
 ## Task cards
 

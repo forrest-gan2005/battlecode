@@ -231,6 +231,26 @@ else:
             self.loop.ladder()
             ai.assert_not_called()
 
+    def test_outcome_lets_shorter_game_steps_go_first(self):
+        c = card(29, 'testing', by='zhe')
+        meta = {'attempt': 1, 'base': 'a' * 40}
+        def status(cards):
+            jobs.write(self.loop.out / 'status.json', {'cards': cards})
+        status({'30': {'step_kind': 'mechanism', 'queue': 'batch lock'}})
+        with patch.object(self.loop, 'job_notice') as notice:
+            self.assertFalse(self.loop.job(c, meta, 'outcome'))
+        self.assertEqual(notice.call_args.args[3], 'outcome waiting for shorter steps first')
+        status({'23': {'step_kind': 'build', 'queue': 'ai + batch lock'}})
+        self.assertTrue(self.loop.short_step_waiting(c))
+        self.loop.launched = {'ai'}
+        self.assertFalse(self.loop.short_step_waiting(c))
+        self.loop.launched = set()
+        for cards in ({}, {'31': {'step_kind': 'outcome', 'queue': 'batch lock'}},
+                      {'29': {'step_kind': 'mechanism', 'queue': 'batch lock'}},
+                      {'30': {'step_kind': 'mechanism', 'queue': None}}):
+            status(cards)
+            self.assertFalse(self.loop.short_step_waiting(c))
+
     def test_ladder_waits_while_cards_are_running_or_queued(self):
         jobs.write(self.loop.out / 'ladder.json', {'seen': [], 'checked': 0})
         battles = '[{"id":42,"at":"2026-10-03","wait":null,"ranked":true}]'
