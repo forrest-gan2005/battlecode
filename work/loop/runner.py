@@ -143,12 +143,15 @@ class Loop:
         for card in rows:
             if not (card['title'].lower().startswith('[idea]') or is_task(card)):
                 continue
-            if state(card) not in ACTIVE and not (
-                    'by:ai' in labels(card) and not is_task(card)
-                    and state(card) in {'tested', 'rejected', 'inconclusive'}):
+            ai_done = ('by:ai' in labels(card) and not is_task(card)
+                       and state(card) in {'tested', 'rejected', 'inconclusive'})
+            # Tested cards stay polled so a reply after the results can act as the decision.
+            if state(card) not in ACTIVE and state(card) != 'tested' and not ai_done:
                 continue
             pages = self.gh('api', f"repos/{GH_REPO}/issues/{card['number']}/comments", '--paginate', '--slurp')
             card['comments'] = [c for page in pages for c in page]
+            if state(card) == 'tested' and not ai_done and not any(r.get('phase') == 'tested' for r in records(card)):
+                continue  # tested by hand, no loop results to decide on
             cards.append(card)
         return sorted(cards, key=priority)
 
