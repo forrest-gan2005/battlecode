@@ -119,6 +119,9 @@ constexpr int STRIDE_BUDGET = 12000;
 constexpr int STRIDE_CAP = 1500;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
+constexpr bool STRIDE_SAFE_END = false;
+constexpr int STRIDE_SAFE_RADIUS = 2;
+constexpr int STRIDE_SAFE_UNSEEN = 4;
 constexpr bool TURN_DIST = false;
 constexpr bool SHARE_SIGHT = false;
 constexpr int CELL_BUDGET = 12000;
@@ -364,6 +367,19 @@ struct Ghost {
     int round = -1;
     int parts = 0;
     bool shared = false;
+};
+
+struct StrideEnd {
+    double room = 0.0;
+    bool reaches_tail = false;
+    bool pearl = false;
+    int eaten = 0;
+};
+
+struct StrideRisk {
+    int reach = 0;
+    int unseen = 0;
+    int shut = 0;
 };
 
 struct Survey {
@@ -689,7 +705,9 @@ class Bot {
         Position const origin = head;
         int const origin_threat = threat_at(chosen_index);
         double stop_value = stride_value(chosen_index);
-        for (int k = 2; k <= free_steps; k++) {
+        // Body timers as they stand once the head has reached cells[count - 1].
+        auto place = [&](std::size_t count, int eaten_now) {
+            int const moved = static_cast<int>(count);
             for (auto it = saved_time.rbegin(); it != saved_time.rend(); ++it) {
                 enter_time[it->first] = it->second;
             }
@@ -697,18 +715,27 @@ class Bot {
             for (std::size_t offset = 0; offset < trail.size(); offset++) {
                 int const index = index_of(trail[offset]);
                 int const absolute = length - static_cast<int>(offset) + 1;
-                set_time(index, std::max(1, absolute + eaten - (k - 1)));
+                set_time(index, std::max(1, absolute + eaten_now - moved));
             }
-            for (std::size_t i = 0; i + 1 < cells.size(); i++) {
+            for (std::size_t i = 0; i + 1 < count; i++) {
                 int const absolute = static_cast<int>(i) + 2 + length;
-                set_time(cells[i], std::max(1, absolute + eaten - (k - 1)));
+                set_time(cells[i], std::max(1, absolute + eaten_now - moved));
             }
+            set_time(cells[count - 1], length + eaten_now + 1);
+        };
+        std::vector<StrideEnd> ends;
+        if (STRIDE_SAFE_END) {
+            ends.push_back(StrideEnd{last_room, last_reaches_tail, eaten > 0, eaten});
+        }
+        for (int k = 2; k <= free_steps; k++) {
+            place(cells.size(), eaten);
             int const here = cells.back();
-            set_time(here, length + eaten + 1);
             Position const position = position_of(here);
             int best_next = -1;
             Direction best_dir = best_dir_placeholder();
             double best_value = stop_value + STRIDE_MARGIN;
+            double best_room = 0.0;
+            bool best_tail = false;
             for (Direction const direction : Direction::get_direction_list()) {
                 std::uint8_t const edge = edge_at(position, direction);
                 if (edge == EDGE_KELP || edge == EDGE_PORTAL || edge == EDGE_UNKNOWN) {
@@ -736,6 +763,8 @@ class Bot {
                     best_value = value;
                     best_next = next;
                     best_dir = direction;
+                    best_room = last_room;
+                    best_tail = last_reaches_tail;
                 }
             }
             if (best_next < 0) {
@@ -744,11 +773,34 @@ class Bot {
             path.push_back(best_dir);
             cells.push_back(best_next);
             stop_value = best_value;
+            bool const pearl = pearl_here[best_next] != 0;
             if (pearl_here[best_next]) {
                 eaten++;
                 saved_pearl.emplace_back(best_next, pearl_here[best_next]);
                 pearl_here[best_next] = 0;
             }
+            if (STRIDE_SAFE_END) {
+                ends.push_back(StrideEnd{best_room, best_tail, pearl, eaten});
+            }
+        }
+        if (STRIDE_SAFE_END && cells.size() > 1) {
+            // Keep the longest stride whose end is no riskier than the plain single step.
+            int const caution = stride_caution();
+            if (caution == 2) {
+                stride_reach_map();
+            }
+            std::size_t keep = 1;
+            StrideRisk first{};
+            for (std::size_t j = 0; j < cells.size(); j++) {
+                place(j + 1, ends[j].eaten);
+                StrideRisk const risk = stride_risk(cells[j], ends[j], index_of(origin), caution);
+                if (j == 0) {
+                    first = risk;
+                } else if (risk.reach <= first.reach && risk.unseen <= first.unseen && risk.shut <= first.shut) {
+                    keep = j + 1;
+                }
+            }
+            path.erase(path.begin() + static_cast<std::ptrdiff_t>(keep), path.end());
         }
         for (auto it = saved_time.rbegin(); it != saved_time.rend(); ++it) {
             enter_time[it->first] = it->second;
@@ -760,6 +812,90 @@ class Bot {
 
     Direction best_dir_placeholder() const {
         return dir_of(Direction::NORTH);
+    }
+
+    // 0 = short, 1 = long, 2 = queen.
+    int stride_caution() const {
+        return real_queen() ? 2 : length >= LONG_SAFE_MIN_LENGTH ? 1 : 0;
+    }
+
+    // Queen only: every tile an enemy we know of can reach with free plus paid steps.
+    void stride_reach_map() {
+        ensure_queen_buffers();
+        qk_mark++;
+        auto full_reach = [](int parts) {
+            int const size = std::max(parts, static_cast<int>(unswbc::Constants::MIN_SIZE));
+            return (size + 3) / 4 + size - static_cast<int>(unswbc::Constants::MIN_SIZE);
+        };
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int parts = visible_parts(enemy_head_ids[k]);
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.id == enemy_head_ids[k]) {
+                    parts = std::max(parts, ghost.parts);
+                }
+            }
+            spread_kill(enemy_heads[k], full_reach(parts));
+        }
+        for (Ghost const& ghost : ghosts) {
+            if (ghost.round == round && !ghost.shared) {
+                continue;
+            }
+            spread_kill(ghost.pos, full_reach(ghost.parts) + round - ghost.round);
+        }
+    }
+
+    int stride_reach(int cell, int caution) const {
+        int const depth = threat_at(cell);
+        return caution == 2 ? std::max(depth, 1 - queen_margin(cell)) : depth;
+    }
+
+    int stride_unseen(int cell) const {
+        std::vector<std::pair<int, int>> reached(1, {cell, 0});
+        int unseen = 0;
+        for (std::size_t at = 0; at < reached.size(); at++) {
+            int const steps = reached[at].second;
+            if (steps >= STRIDE_SAFE_RADIUS) {
+                continue;
+            }
+            Position const position = position_of(reached[at].first);
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || enter_time[next] >= BLOCKED_FOREVER ||
+                    std::any_of(reached.begin(), reached.end(), [next](auto const& seen) { return seen.first == next; })) {
+                    continue;
+                }
+                reached.emplace_back(next, steps + 1);
+                unseen += seen_round[next] != round ? 1 : 0;
+            }
+        }
+        return unseen;
+    }
+
+    // Call with the body timers placed for a head resting on `cell`.
+    StrideRisk stride_risk(int cell, StrideEnd const& end, int origin, int caution) const {
+        StrideRisk risk;
+        risk.reach = stride_reach(cell, caution);
+        int const tolerated = caution == 2 ? 0 : std::max(0, STRIDE_SAFE_UNSEEN - length / 4);
+        risk.unseen = std::max(0, stride_unseen(cell) - tolerated);
+        bool exit = caution == 0;
+        Position const position = position_of(cell);
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (exit || edge_at(position, direction) != EDGE_OPEN) {
+                continue;
+            }
+            int const next = index_of(position.add_dir(direction));
+            if (next == origin || seen_round[next] != round || enter_time[next] > 1 || is_enemy_head(position_of(next)) ||
+                is_ally_head(position_of(next))) {
+                continue;
+            }
+            exit = stride_reach(next, caution) == 0 && !enemy_can_step_to(position_of(next));
+        }
+        risk.shut = (!end.reaches_tail && end.room < length + 2.0) || !exit ? 1 : 0;
+        if (caution == 0 && end.pearl) {
+            risk.unseen = 0;
+            risk.shut = 0;
+        }
+        return risk;
     }
 
     
