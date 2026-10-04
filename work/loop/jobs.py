@@ -1,5 +1,7 @@
 """Detached job supervisor and local harness adapters; no third-party imports."""
 import contextlib
+import datetime as dt
+import statistics
 import fcntl
 import importlib.util
 import json
@@ -29,6 +31,78 @@ def write(path, data):
     tmp = path.with_name(path.name + f'.{os.getpid()}.tmp')
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
     os.replace(tmp, path)
+
+
+ETA_DEFAULTS = {'clarify': 3, 'build': 20, 'task': 15, 'adopt': 5,
+                'mechanism': 30, 'look': 8, 'outcome': 150, 'verdict': 5, 'ladder': 20}
+
+
+def iso_time(stamp):
+    return dt.datetime.fromtimestamp(stamp, dt.timezone.utc).isoformat()
+
+
+def job_start(path, spec=None):
+    path = Path(path)
+    spec = spec if spec is not None else read(path / 'job.json', {})
+    running = read(path / 'running.json', {})
+    # Older jobs only recorded their start in running.json.
+    return spec.get('started') or running.get('started') or (path / 'job.json').stat().st_mtime
+
+
+def eta_minutes(root, step):
+    samples = []
+    for path in Path(root).glob(f'**/jobs/{step}/done.json'):
+        try:
+            done = read(path)
+            elapsed = (done['finished'] - job_start(path.parent)) / 60
+            if elapsed >= 0:
+                samples.append((done['finished'], elapsed))
+        except (OSError, ValueError, TypeError, KeyError):
+            continue
+    recent = sorted(samples)[-10:]
+    return statistics.median(x[1] for x in recent) if len(recent) >= 2 else ETA_DEFAULTS[step]
+
+
+def step_timing(root, step, path=None, wait=0, queue=None):
+    spec = read(Path(path) / 'job.json', {}) if path else {}
+    started = job_start(path, spec) if spec and not queue else time.time()
+    estimate = spec.get('eta_minutes', eta_minutes(root, step))
+    return {'step_kind': step, 'step_started': iso_time(started) if not queue else None,
+            'eta_minutes': estimate, 'eta_at': iso_time(started + (estimate + wait) * 60),
+            'queue': queue, 'wait_minutes': wait}
+
+
+def remaining_wait(root, resources, queued=()):
+    remaining = []
+    for path in Path(root).glob('**/jobs/*/job.json'):
+        try:
+            spec = read(path)
+            job = path.parent
+            if (job / 'done.json').exists() or not set(resources) & set(spec.get('resources', [])):
+                continue
+            if not busy(job / 'lease') and str(job) not in queued:
+                continue
+            estimate = spec.get('eta_minutes', eta_minutes(root, spec['step']))
+            remaining.append(max(0, (job_start(job, spec) + estimate * 60 - time.time()) / 60))
+        except (OSError, ValueError, TypeError, KeyError):
+            continue
+    return max(remaining, default=0)
+
+
+def append_event(path, spec, event, stamp, note='', minutes=None):
+    if spec.get('step') not in ETA_DEFAULTS or not all(key in spec for key in ('out', 'number', 'title')):
+        return
+    root = Path(spec['out']).parent.parent
+    record = {'time': iso_time(stamp), 'card': spec['number'], 'title': spec['title'],
+              'step': spec['step'], 'event': event,
+              'eta_minutes': spec.get('eta_minutes', eta_minutes(root, spec['step'])), 'note': note}
+    if minutes is not None:
+        record['minutes'] = minutes
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / 'events.jsonl').open('a') as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        stream.write(json.dumps(record, ensure_ascii=False) + '\n')
+        stream.flush()
 
 
 @contextlib.contextmanager
@@ -375,7 +449,13 @@ def worker(path):
             fds.append(fd)
         if (path / 'done.json').exists():
             return
-        write(path / 'running.json', {'pid': os.getpid(), 'started': time.time(), 'resources': spec['resources']})
+        started = time.time()
+        spec.setdefault('step', path.name)
+        if spec['step'] in ETA_DEFAULTS and spec.get('out'):
+            spec.update(started=started, eta_minutes=spec.get('eta_minutes', eta_minutes(Path(spec['out']).parent.parent, spec['step'])))
+        write(path / 'job.json', spec)
+        write(path / 'running.json', {'pid': os.getpid(), 'started': started, 'resources': spec['resources']})
+        append_event(path, spec, 'start', started)
         try:
             if spec['kind'] == 'ai':
                 ai(spec, fds)
@@ -387,4 +467,7 @@ def worker(path):
             result = {'ok': True}
         except Exception as exc:
             result = {'ok': False, 'error': str(exc)}
-        write(path / 'done.json', {**result, 'finished': time.time()})
+        finished = time.time()
+        write(path / 'done.json', {**result, 'finished': finished})
+        append_event(path, spec, 'done' if result['ok'] else 'failed', finished,
+                     note=result.get('error', ''), minutes=(finished - started) / 60)

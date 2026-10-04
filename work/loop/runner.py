@@ -12,7 +12,7 @@ import sys
 import time
 from string import Template
 
-from jobs import OLD_MAPS, busy, lock, read, stage, worker, write
+from jobs import OLD_MAPS, busy, lock, read, stage, worker, write, eta_minutes, step_timing, remaining_wait
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -154,7 +154,7 @@ class Loop:
 
     def notice(self, card, text, metadata=None):
         key = str(card['number'])
-        self.status[key] = {**(metadata or {}), 'state': state(card), 'step': text}
+        self.status[key] = {**self.status.get(key, {}), **(metadata or {}), 'state': state(card), 'step': text}
         print(f"#{key} [{state(card)}] {text}", flush=True)
 
     def board(self, *args, base=None):
@@ -282,6 +282,12 @@ class Loop:
         stage(self.repo, tree, out, base)
         return ctx
 
+    def job_notice(self, card, step, path, text, queue=None, resources=(), metadata=None):
+        queued = [info['job'] for info in self.status.values() if info.get('job')]
+        wait = remaining_wait(self.out, resources, queued) if queue else 0
+        timing = step_timing(self.out, step, path, wait=wait, queue=queue)
+        self.notice(card, text, {**timing, **(metadata or {})})
+
     def job(self, card, meta, step, light=False, output=None):
         ctx = self.context(card, meta)
         path = Path(ctx['out']) / 'jobs' / step
@@ -289,26 +295,27 @@ class Loop:
         if done:
             if not done['ok']:
                 raise RuntimeError(f"{step} failed: {done['error']} (remove this job's done.json after fixing the cause)")
-            self.notice(card, f'{step} done')
+            self.job_notice(card, step, path, f'{step} done')
             return True
         if busy(path / 'lease'):
-            self.notice(card, f'{step} running')
+            self.job_notice(card, step, path, f'{step} running')
             return False
         resources = ['batch'] if step in ('mechanism', 'outcome') else ['ai']
         if step in ('build', 'task', 'adopt'):
             resources.append('batch')
         if any(busy(self.locks / f'{r}.lock') for r in resources):
-            self.notice(card, f'{step} waiting for {" + ".join(resources)} lock')
+            self.job_notice(card, step, path, f'{step} waiting for {" + ".join(resources)} lock',
+                            queue=' + '.join(resources) + ' lock', resources=resources)
             return False
         if 'batch' in resources:
             import shutil
             if shutil.disk_usage(self.out).free < 21 * 1024**3:
-                self.notice(card, f'{step} waiting for 21 GB free disk space')
+                self.job_notice(card, step, path, f'{step} waiting for 21 GB free disk space', queue='21 GB free disk space')
                 return False
             processes = self.cmd(['ps', '-axo', 'command='])
             if any(re.search(r'(?:^|/|\s)(?:unswbc(?:-clean\.py)?\s+run|(?:ab3|ident)\.py\s)', line)
                    for line in processes.splitlines()):
-                self.notice(card, f'{step} waiting for an existing local game batch')
+                self.job_notice(card, step, path, f'{step} waiting for an existing local game batch', queue='existing local game batch', resources=['batch'])
                 return False
         path.mkdir(parents=True, exist_ok=True)
         if not (path / 'job.json').exists():
@@ -321,14 +328,18 @@ class Loop:
             write(path / 'job.json', {**ctx, 'step': step, 'kind': 'batch' if step in ('mechanism', 'outcome') else 'ai',
                                     'prompt': str(path / 'prompt.md'), 'log': str(self.out / f"card-{card['number']}" / f'{step}-{stamp}.jsonl'),
                                     'resources': resources, 'locks': str(self.locks), 'light': light, 'output': output,
+                                    'started': time.time(), 'eta_minutes': eta_minutes(self.out, step),
                                     'game_env': self.args.game_env, 'impl_commit': meta.get('impl_commit'), 'task': is_task(card)})
+        spec = read(path / 'job.json')
+        spec.update(started=time.time(), eta_minutes=eta_minutes(self.out, step))
+        write(path / 'job.json', spec)
         with (path / 'supervisor.log').open('a') as log_file:
             child = subprocess.Popen(['nice', '-n', '10', sys.executable, str(HERE / 'runner.py'), '--job', str(path)],
                                      stdin=subprocess.DEVNULL, stdout=log_file, stderr=log_file, start_new_session=True)
             self.children.append(child)
         # Reserve within this tick too: workers may not yet have acquired their locks.
         self.launched.update(resources)
-        self.notice(card, f'started {step}', metadata={
+        self.job_notice(card, step, path, f'started {step}', metadata={
             'attempt': meta.get('attempt', 0), 'base': meta['base'],
             'job': str(path), 'pid': child.pid})
         return False
@@ -339,7 +350,8 @@ class Loop:
         if step in ('build', 'task', 'adopt'):
             required.add('batch')
         if self.launched & required and not (path / 'done.json').exists():
-            self.notice(card, f'{step} queued behind this tick’s job')
+            self.job_notice(card, step, path, f'{step} queued behind this tick’s job',
+                            queue=' + '.join(sorted(self.launched & required)) + ' lock', resources=required)
             return False
         return self.job(card, meta, step, **kwargs)
 
