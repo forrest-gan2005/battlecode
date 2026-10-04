@@ -208,7 +208,7 @@ def batch(spec, fds):
     env = os.environ.copy()
     for key in ('KEEP', 'FAST', 'DIST', 'NOSANDBOX'):
         env.pop(key, None)
-    env.update(WORKERS='8', SEED0=str(spec['seed0']))
+    env.update(WORKERS='6', SEED0=str(spec['seed0']))
     env.update(spec.get('game_env', {}))
     sets = {'mechanism': (p['mechanism_maps'], p.get('mechanism_games_per_map', 4))}
     if spec['step'] == 'outcome':
@@ -231,7 +231,7 @@ def batch(spec, fds):
     else:
         env['KEEP'] = '1'
     write(out / (spec['step'] + '-plan.json'),
-          {'base': spec['base'], 'seed0': spec['seed0'], 'workers': 8, 'keep': spec['step'] == 'mechanism',
+          {'base': spec['base'], 'seed0': spec['seed0'], 'workers': 6, 'keep': spec['step'] == 'mechanism',
            'sets': {name: {'maps': maps, 'games_per_map_per_variant': n} for name, (maps, n) in sets.items()}})
     results = {}
     for name, (maps, n) in sets.items():
@@ -252,7 +252,7 @@ def batch(spec, fds):
     if spec['step'] == 'outcome':
         write(out / 'stats.json', results)
     if spec['step'] == 'mechanism':
-        run([sys.executable, tree / p['check'], '--replays', out / 'replays',
+        run([sys.executable, (sandbox if spec.get('impl_commit') else tree) / p['check'], '--replays', out / 'replays',
              '--base', 'base', '--candidate', 'candidate', '--output', out / 'check.json'],
             tree, env, fds=fds, log=out / 'check.log')
         check = read(out / 'check.json')
@@ -311,8 +311,8 @@ def ai(spec, fds):
             run(argv, spec['tree'], env, fds=fds, stdin=prompt, log=spec['log'])
         if not completed():
             raise ValueError('Claude did not finish successfully')
-    if step in ('build', 'task'):
-        if step == 'task':
+    if step in ('build', 'task', 'adopt'):
+        if step == 'task' or (step == 'adopt' and spec.get('task')):
             p = read(out / 'task.json')
             if not isinstance(p, dict) or not isinstance(p.get('needs_info'), bool):
                 raise ValueError('task.json must contain needs_info: bool')
@@ -324,7 +324,7 @@ def ai(spec, fds):
         else:
             p = plan(out / 'build.json')
         source = (Path(spec['tree']) / 'mybot2/main.cpp').read_text()
-        if step == 'build' and len(re.findall(rf"constexpr bool {p['toggle']} = false;", source)) != 1:
+        if step in ('build', 'adopt') and not spec.get('task') and len(re.findall(rf"constexpr bool {p['toggle']} = false;", source)) != 1:
             raise ValueError('new toggle must be default-off')
         run(['c++', '-std=c++20', '-O2', Path(spec['tree']) / 'mybot2/main.cpp', '-o', out / 'bot-off'],
             spec['tree'], env, fds=fds, log=out / 'compile.log')
@@ -338,7 +338,7 @@ def ai(spec, fds):
             raise ValueError('identity failed; this changes play; make it an idea card or fix it'
                              if step == 'task' else 'toggle-off identity failed; see ident.log')
         task_check = None
-        if step == 'task':
+        if step == 'task' or (step == 'adopt' and spec.get('task')):
             result_path = out / 'task-check.json'
             result_path.unlink(missing_ok=True)
             run(p['check'], spec['tree'], env, fds=fds, log=out / 'task-check.log')
@@ -346,15 +346,18 @@ def ai(spec, fds):
             if (not isinstance(task_check, dict) or task_check.get('passed') is not True
                     or not isinstance(task_check.get('note'), str) or not task_check['note'].strip()):
                 raise ValueError('task-specific check failed or missing evidence; see task-check.log')
-        run(['git', 'merge-base', '--is-ancestor', spec['base'], 'HEAD'], spec['tree'], fds=fds)
+        if not spec.get('impl_commit'):
+            run(['git', 'merge-base', '--is-ancestor', spec['base'], 'HEAD'], spec['tree'], fds=fds)
         head = run(['git', 'rev-parse', 'HEAD'], spec['tree'], fds=fds).strip()
         if run(['git', 'status', '--porcelain', '--untracked-files=no'], spec['tree'], fds=fds).strip():
             raise ValueError('build left tracked changes uncommitted')
-        if head == spec['base']:
+        if head == spec['base'] and not spec.get('impl_commit'):
             raise ValueError('build did not commit its implementation')
-        if run(['git', 'branch', '--show-current'], spec['tree'], fds=fds).strip() != f"card/{spec['number']}":
+        if not spec.get('impl_commit') and run(['git', 'branch', '--show-current'], spec['tree'], fds=fds).strip() != f"card/{spec['number']}":
             raise ValueError('build changed branch')
-        write(out / 'built.json', {'commit': head, 'task_check': task_check} if step == 'task'
+        if spec.get('impl_commit') and head != spec['impl_commit']:
+            raise ValueError('Read-only adoption changed the selected implementation commit')
+        write(out / 'built.json', {'commit': head, 'task_check': task_check} if step == 'task' or spec.get('task')
               else {'commit': head, 'toggle': p['toggle']})
 
 
@@ -374,6 +377,9 @@ def worker(path):
         try:
             if spec['kind'] == 'ai':
                 ai(spec, fds)
+            elif spec['kind'] == 'meow':
+                from meow_control import job
+                job(spec, fds)
             else:
                 batch(spec, fds)
             result = {'ok': True}

@@ -206,7 +206,8 @@ class Loop:
     def metadata(self, card):
         local = read(self.out / f"card-{card['number']}" / 'card.json', {})
         for r in records(card):
-            if 'attempt' in r and (not local or r['attempt'] >= local.get('attempt', 0)):
+            if 'attempt' in r and (not local or r['attempt'] > local.get('attempt', 0)
+                                   or (r['attempt'] == local.get('attempt', 0) and not local.get('meow_control'))):
                 local = {**local, **r}
         return local
 
@@ -218,7 +219,7 @@ class Loop:
         return {'number': card['number'], 'title': card['title'], 'body': card.get('body', ''),
                 'comments': json.dumps(card.get('comments', []), ensure_ascii=False),
                 'base': meta.get('base', 'not selected yet'), 'repo': str(self.repo),
-                'tree': str(self.cards / f"card-{card['number']}"), 'out': str(out),
+                'tree': meta.get('impl_tree', str(self.cards / f"card-{card['number']}")), 'out': str(out),
                 'card_out': str(self.out / f"card-{card['number']}"),
                 'sandbox': str(out / 'harness'), 'old_maps': OLD_MAPS,
                 'swarm': str(SWARM), 'seed0': 10000 + card['number'] * 100,
@@ -226,6 +227,13 @@ class Loop:
                 'revision_evidence': meta.get('revision_evidence', 'No automatic revision requested.')}
 
     def ensure_tree(self, card, meta):
+        if meta.get('impl_commit'):
+            tree = Path(meta['impl_tree'])
+            if self.cmd(['git', 'rev-parse', 'HEAD'], tree) != meta['impl_commit']:
+                raise ValueError('Selected implementation worktree changed.')
+            if self.cmd(['git', 'status', '--porcelain'], tree):
+                raise ValueError('Selected implementation worktree is dirty.')
+            return tree
         tree = self.cards / f"card-{card['number']}"
         branch = f"card/{card['number']}"
         if not tree.exists():
@@ -277,12 +285,16 @@ class Loop:
             self.notice(card, f'{step} running')
             return False
         resources = ['batch'] if step in ('mechanism', 'outcome') else ['ai']
-        if step in ('build', 'task'):
+        if step in ('build', 'task', 'adopt'):
             resources.append('batch')
         if any(busy(self.locks / f'{r}.lock') for r in resources):
             self.notice(card, f'{step} waiting for {" + ".join(resources)} lock')
             return False
         if 'batch' in resources:
+            import shutil
+            if shutil.disk_usage(self.out).free < 21 * 1024**3:
+                self.notice(card, f'{step} waiting for 21 GB free disk space')
+                return False
             processes = self.cmd(['ps', '-axo', 'command='])
             if any(re.search(r'(?:^|/|\s)(?:unswbc(?:-clean\.py)?\s+run|(?:ab3|ident)\.py\s)', line)
                    for line in processes.splitlines()):
@@ -299,9 +311,9 @@ class Loop:
             write(path / 'job.json', {**ctx, 'step': step, 'kind': 'batch' if step in ('mechanism', 'outcome') else 'ai',
                                     'prompt': str(path / 'prompt.md'), 'log': str(self.out / f"card-{card['number']}" / f'{step}-{stamp}.jsonl'),
                                     'resources': resources, 'locks': str(self.locks), 'light': light, 'output': output,
-                                    'game_env': self.args.game_env})
+                                    'game_env': self.args.game_env, 'impl_commit': meta.get('impl_commit'), 'task': is_task(card)})
         with (path / 'supervisor.log').open('a') as log_file:
-            child = subprocess.Popen([sys.executable, str(HERE / 'runner.py'), '--job', str(path)],
+            child = subprocess.Popen(['nice', '-n', '10', sys.executable, str(HERE / 'runner.py'), '--job', str(path)],
                                      stdin=subprocess.DEVNULL, stdout=log_file, stderr=log_file, start_new_session=True)
             self.children.append(child)
         # Reserve within this tick too: workers may not yet have acquired their locks.
@@ -314,7 +326,7 @@ class Loop:
     def available_job(self, card, meta, step, **kwargs):
         path = Path(self.context(card, meta)['out']) / 'jobs' / step
         required = {'batch'} if step in ('mechanism', 'outcome') else {'ai'}
-        if step in ('build', 'task'):
+        if step in ('build', 'task', 'adopt'):
             required.add('batch')
         if self.launched & required and not (path / 'done.json').exists():
             self.notice(card, f'{step} queued behind this tick’s job')
@@ -324,7 +336,7 @@ class Loop:
     def new_attempt(self, card, meta, reason, **updates):
         meta = {'attempt': meta.get('attempt', 0) + 1, 'base': self.latest_base(),
                 'reason': reason, 'seed0': 10000 + card['number'] * 100,
-                **{k: meta[k] for k in ('ai_revisions', 'revision_evidence') if k in meta}, **updates}
+                **{k: meta[k] for k in ('ai_revisions', 'revision_evidence', 'impl_commit', 'impl_tree') if k in meta}, **updates}
         self.save(card, meta)
         self.notice(card, f"Building against main `{meta['base']}`. {reason}", metadata=meta)
         return meta
@@ -374,7 +386,7 @@ class Loop:
         return {'identical_pairs': identical, 'total_pairs': total}
 
     def auto_decide(self, card, meta):
-        if 'by:ai' not in labels(card) or is_task(card):
+        if meta.get('force_override') or 'by:ai' not in labels(card) or is_task(card):
             return
         # Persist before posting so a crash cannot spend the revision twice.
         pending = meta.get('ai_pending')
@@ -501,7 +513,7 @@ class Loop:
             # A human may manually request a revision using the label alone.
             if meta.get('failed') or meta.get('phase') in ('look', 'tested'):
                 meta = self.new_attempt(card, meta, 'The card was returned to building for revision.')
-            build_step = 'task' if is_task(card) else 'build'
+            build_step = 'adopt' if meta.get('impl_commit') else 'task' if is_task(card) else 'build'
             if not (Path(self.context(card, meta)['out']) / f'jobs/{build_step}/job.json').exists():
                 if self.latest_base() != meta['base']:
                     meta = self.new_attempt(card, meta, 'Main changed while this card was waiting; use the current release.')
@@ -511,7 +523,7 @@ class Loop:
                 self.build_task(card, meta, ctx)
                 return
             try:
-                if not self.available_job(card, meta, 'build'):
+                if not self.available_job(card, meta, build_step):
                     return
             except RuntimeError as exc:
                 meta['failed'] = True
@@ -526,8 +538,8 @@ class Loop:
                 raise ValueError('missing verified build')
             meta.update(commit=built['commit'], toggle=built['toggle'])
             self.save(card, meta)
-            if not meta.get('pushed'):
-                self.cmd(['git', 'push', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])
+            if not meta.get('pushed') and not meta.get('impl_commit'):
+                self.cmd(['git', 'push', '--force', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])  # card/N is loop-owned; revisions rebuild it
                 meta['pushed'] = True
                 self.save(card, meta)
                 self.notice(card,
@@ -637,7 +649,7 @@ class Loop:
     def build_task(self, card, meta, ctx):
         out = Path(ctx['out'])
         try:
-            if not self.available_job(card, meta, 'task'):
+            if not self.available_job(card, meta, 'adopt' if meta.get('impl_commit') else 'task'):
                 return
         except RuntimeError as exc:
             meta['failed'] = True
@@ -666,8 +678,8 @@ class Loop:
         meta.update(commit=built['commit'], phase='tested', task=True,
                     old_base=self.latest_base() != meta['base'])
         self.save(card, meta)
-        if not meta.get('pushed'):
-            self.cmd(['git', 'push', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])
+        if not meta.get('pushed') and not meta.get('impl_commit'):
+            self.cmd(['git', 'push', '--force', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])  # card/N is loop-owned; revisions rebuild it
             meta['pushed'] = True
             self.save(card, meta)
         check = built['task_check']
@@ -685,13 +697,13 @@ class Loop:
         self.post(card, f"task-tested-{meta['attempt']}", text, target='tested', kind='check', metadata=meta)
 
     def candidate(self, card, meta):
-        if dt.datetime.now(KST) >= FREEZE:
+        if dt.datetime.now(KST) >= FREEZE and not meta.get('force_override'):
             self.notice(card, 'freeze: no candidate branch or PR creation')
             return
         if meta.get('phase') != 'tested' or not meta.get('commit'):
             self.notice(card, 'candidate needs recorded test evidence first')
             return
-        if self.latest_base() != meta['base'] or meta.get('old_base'):
+        if (self.latest_base() != meta['base'] or meta.get('old_base')) and not meta.get('force_override'):
             self.notice(card, 'old base: fresh tests are required before preparing a candidate')
             return
         version = f"card-{card['number']}-{meta['commit'][:10]}"
@@ -703,7 +715,7 @@ class Loop:
         out = Path(self.context(card, meta)['out'])
         source = ''
         count = 1
-        if not is_task(card):
+        if not is_task(card) and meta.get('toggle'):
             source = self.cmd(['git', 'show', f"{meta['commit']}:mybot2/main.cpp"])
             source, count = re.subn(rf"(constexpr bool {meta['toggle']} = )false;", r'\g<1>true;', source)
         if count != 1:
@@ -711,16 +723,19 @@ class Loop:
         manifest = {'version': version, 'workflow': 3 if 'by:ai' in labels(card) else 1 if 'by:zhe' in labels(card) else 2,
                     'changes': [card['title']], 'results': {'held': 'Not run for task cards.' if is_task(card) else 'See linked issue for paired results.',
                     'main': 'Old 10 maps ×2 seeds; replay-identical.' if is_task(card) else 'Old 10 maps ×8; see linked issue.',
-                    'mechanism': read(out / 'built.json')['task_check']['note'] if is_task(card) else read(out / 'look.json')['note'],
+                    'mechanism': (read(out / 'built.json', {}).get('task_check') or {}).get('note', 'Checks skipped by Force.') if is_task(card) else read(out / 'look.json', {}).get('note', 'Checks skipped by Force.'),
                     'cpu': 'Not separately measured; no release approval implied.'},
                     'bot_dir': 'mybot2', 'issues': [card['number']], 'pr': None,
                     'base_commit': meta['base'], 'candidate_commit': meta['commit']}
+        if meta.get('force_override'):
+            manifest['results'] = {k: 'Forced: checks may be skipped or use an old base; see issue audit.'
+                                   for k in ('held', 'main', 'mechanism', 'cpu')}
         # Git data API creates the candidate branch without a second git-push target.
         payload = {'base_tree': self.gh('api', f"repos/{GH_REPO}/git/commits/{meta['commit']}")['tree']['sha'],
                    'tree': [{'path': 'mybot2/main.cpp', 'mode': '100644', 'type': 'blob', 'content': source + '\n'},
                             {'path': f'candidates/{version}.json', 'mode': '100644', 'type': 'blob',
                              'content': json.dumps(manifest, indent=2) + '\n'}]}
-        if is_task(card):
+        if is_task(card) or not meta.get('toggle'):
             payload['tree'] = payload['tree'][1:]
         remote = self.gh('api', f'repos/{GH_REPO}/git/matching-refs/heads/{branch}')
         remote = [r for r in remote if r['ref'] == f'refs/heads/{branch}']
@@ -728,17 +743,18 @@ class Loop:
             tree = self.gh('api', f'repos/{GH_REPO}/git/trees', payload=payload)
             commit = self.gh('api', f'repos/{GH_REPO}/git/commits', payload={
                 'message': f'Prepare candidate {version}', 'tree': tree['sha'], 'parents': [meta['commit']]})
-            if dt.datetime.now(KST) >= FREEZE:
+            if dt.datetime.now(KST) >= FREEZE and not meta.get('force_override'):
                 self.notice(card, 'freeze reached; candidate publication stopped')
                 return
             self.gh('api', f'repos/{GH_REPO}/git/refs', payload={'ref': f'refs/heads/{branch}', 'sha': commit['sha']})
         body = out / 'candidate-pr.md'
         body.write_text(f'What we tried: {card["title"]}.\nDid it work: See the measured results in #{card["number"]}.\n'
                         f'Who decides now: The author and required teammate approvers review this revision.\n\n'
-                        + ('Task preserves play against the current base (latest main release). ' if is_task(card) else f'Enables `{meta["toggle"]}`. ')
+                        + ('Checks overridden by a member; see the audit below. ' if meta.get('force_override') else 'Task preserves play against the current base (latest main release). ' if is_task(card) else f'Enables `{meta.get("toggle", "selected implementation")}`. ')
                         + f'Base `{meta["base"]}`; implementation `{meta["commit"]}`.\n'
-                        f'Results and optional smoke request: #{card["number"]}. No upload is performed by this runner.\n')
-        if dt.datetime.now(KST) < FREEZE:
+                        f'Results and optional smoke request: #{card["number"]}. No upload is performed by this runner.\n'
+                        + ('\n' + meta['force_reason'] if meta.get('force_override') else ''))
+        if dt.datetime.now(KST) < FREEZE or meta.get('force_override'):
             url = self.cmd(['gh', 'pr', 'create', '--repo', GH_REPO, '--base', 'main', '--head', branch,
                             '--title', f'Candidate {version}', '--body-file', body])
             self.post(card, f'candidate-{version}', f'The candidate is ready for human review: {url}')
@@ -768,7 +784,7 @@ class Loop:
         elif s in ('rejected', 'inconclusive'):
             action = 'recover pending AI closure if needed'
         elif s == 'testing':
-            action = f'resume outcome ab3: held ×2, _T ×2, old10 ×8; WORKERS=8 KEEP off SEED0={10000 + card["number"] * 100} → verdict → tested'
+            action = f'resume outcome ab3: held ×2, _T ×2, old10 ×8; WORKERS=6 KEEP off SEED0={10000 + card["number"] * 100} → verdict → tested'
         else:
             action = 'freeze: block candidate' if dt.datetime.now(KST) >= FREEZE else 'verify current-base evidence → candidate branch and PR (author already selected candidate)'
         self.notice(card, action)
@@ -826,6 +842,11 @@ class Loop:
     def tick(self):
         self.launched = set()
         self.status = {}
+        from meow_control import controls
+        if controls(self):
+            write(self.out / 'status.json', {'updated': dt.datetime.now(KST).isoformat(), 'paused': True,
+                                           'message': 'Paused by a member; running jobs finish normally.'})
+            return
         for card in self.cards_on_board():
             try:
                 if self.args.dry_run:

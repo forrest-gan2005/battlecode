@@ -15,6 +15,13 @@ WRITE_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch'}
 def check(event):
     tool = event.get('tool_name', '')
     data = event.get('tool_input') or {}
+    if os.environ.get('LOOP_STEP') == 'adopt':
+        if tool == 'Bash':
+            return 'Adoption only reads the selected implementation and writes a test plan; the runner executes checks.'
+        if tool in WRITE_TOOLS:
+            name = data.get('file_path') or data.get('path')
+            if not name or not (Path(event.get('cwd', os.getcwd())) / name).resolve().is_relative_to(Path(os.environ['LOOP_OUT']).resolve()):
+                return 'The selected implementation is read-only; write test planning only under LOOP_OUT.'
     text = json.dumps(data, ensure_ascii=False)
     flat = text.replace('\\/', '/').replace('\\\\', '/')
     if re.search(r'docs[/\\]+(?:api|discord)\.txt', flat, re.I):

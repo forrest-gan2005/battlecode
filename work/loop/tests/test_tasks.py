@@ -81,7 +81,7 @@ class TaskTests(unittest.TestCase):
         job.assert_called_once()
         self.assertEqual(job.call_args.args[0], c)
         self.assertEqual(job.call_args.args[2], 'task')
-        cmd.assert_called_once_with(['git', 'push', 'origin', 'b' * 40 + ':refs/heads/card/1'], ctx['tree'])
+        cmd.assert_called_once_with(['git', 'push', '--force', 'origin', 'b' * 40 + ':refs/heads/card/1'], ctx['tree'])
         self.assertEqual(post.call_args.kwargs['target'], 'tested')
         self.assertEqual(post.call_args.kwargs['kind'], 'check')
         runner.summary_text(post.call_args.args[2])

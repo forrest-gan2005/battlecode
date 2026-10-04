@@ -75,7 +75,7 @@ else:
         self.assertLess(p.stdout.index('#5 '), p.stdout.index('#9 '))
         self.assertIn('human answer found → building', p.stdout)
         self.assertIn('wait/classify Zhe reply', p.stdout)
-        self.assertIn('WORKERS=8 KEEP off', p.stdout)
+        self.assertIn('WORKERS=6 KEEP off', p.stdout)
         self.assertNotIn('#15 ', p.stdout)
         self.assertNotIn('#16 ', p.stdout)
         self.assertFalse((self.root / 'out').exists())
