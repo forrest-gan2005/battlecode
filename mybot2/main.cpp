@@ -1715,12 +1715,45 @@ class Bot {
         if (fresh && !av_foe_in_view && manhattan(head, av_foe_pos) <= 1) {
             av_miss_round = std::max(av_miss_round, av_foe_round);
         }
-        bool const live = fresh && !foe_dead && av_foe_round > av_miss_round;
-        av_relay = phase && (live || (foe_dead && round - av_foe_dead_round <= LG_AVENGE_FRESH));
-        av_on = phase && live && known_leader_id != ct.get_id() &&
+        bool const live = phase && fresh && !foe_dead && av_foe_round > av_miss_round && avenge_reach(av_foe_pos);
+        av_relay = live || (phase && foe_dead && round - av_foe_dead_round <= LG_AVENGE_FRESH);
+        av_on = live && known_leader_id != ct.get_id() &&
                 (LG_AVENGE_MAX_LEN <= 0 || length <= LG_AVENGE_MAX_LEN) &&
                 manhattan(head, av_foe_pos) <= LG_AVENGE_RANGE;
         av_route = av_on ? index_of(av_foe_pos) : -1;
+    }
+
+    // False only when known walls seal her cell off from our head; unknown edges count as open.
+    bool avenge_reach(Position foe) {
+        if (av_stamp.empty()) {
+            av_stamp.assign(static_cast<std::size_t>(cells), 0);
+            av_queue.resize(static_cast<std::size_t>(cells));
+        }
+        av_mark++;
+        int const goal = index_of(head);
+        int tail = 0;
+        av_stamp[index_of(foe)] = av_mark;
+        av_queue[tail++] = index_of(foe);
+        for (int at = 0; at < tail; at++) {
+            if (av_queue[at] == goal) {
+                return true;
+            }
+            Position const cell = position_of(av_queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(cell, direction);
+                if (next < 0) {
+                    if (edge_at(cell, direction) == EDGE_PORTAL) {
+                        return true;
+                    }
+                    continue;
+                }
+                if (av_stamp[next] != av_mark) {
+                    av_stamp[next] = av_mark;
+                    av_queue[tail++] = next;
+                }
+            }
+        }
+        return false;
     }
 
     std::uint64_t pack_avenge() const {
@@ -4870,6 +4903,9 @@ class Bot {
     int av_route = -1;
     bool av_on = false;
     bool av_relay = false;
+    std::vector<int> av_stamp;
+    std::vector<int> av_queue;
+    int av_mark = 0;
     int eq_round = -1;
     Position eq_pos{};
     std::vector<int> zs_stamp;
