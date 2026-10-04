@@ -1,0 +1,20 @@
+{
+  "version": "card-15-5345887dfe",
+  "workflow": 1,
+  "changes": [
+    "[Task] Encrypt and sign our sonar messages"
+  ],
+  "results": {
+    "held": "Not run for task cards.",
+    "main": "Old 10 maps \u00d72 seeds; replay-identical.",
+    "mechanism": "our sonar messages decode back exactly for every kind (leader, mouth, sight, zone; 200000 random bodies each) and at least 99.59% of forgeries in every class (old XOR scheme, wrong key, flipped bits, random values) are rejected; in the 40 identity games all 99883 distinct messages the new bot sent decode to exactly what the previous version sent, and none of the 99883 distinct unkeyed messages from the other team are accepted",
+    "cpu": "Not separately measured; no release approval implied."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    15
+  ],
+  "pr": null,
+  "base_commit": "1d15046f37b1c268e9245eb8c6098d9e5640ee74",
+  "candidate_commit": "5345887dfe8283012e12282f0423210e215b7804"
+}
