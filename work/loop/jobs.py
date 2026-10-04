@@ -34,7 +34,8 @@ def write(path, data):
 
 
 ETA_DEFAULTS = {'clarify': 3, 'build': 20, 'task': 15, 'adopt': 5,
-                'mechanism': 30, 'look': 8, 'outcome': 150, 'verdict': 5, 'ladder': 20}
+                'mechanism': 30, 'look': 8, 'outcome': 150, 'verdict': 5, 'ladder': 20,
+                'decide': 2, 'reply': 2}
 
 
 def iso_time(stamp):
@@ -83,26 +84,41 @@ def remaining_wait(root, resources, queued=()):
             if not busy(job / 'lease') and str(job) not in queued:
                 continue
             estimate = spec.get('eta_minutes', eta_minutes(root, spec['step']))
-            remaining.append(max(0, (job_start(job, spec) + estimate * 60 - time.time()) / 60))
+            notice = read(job / 'late.json', {}).get('notice', {})
+            if notice.get('waiting') or notice.get('started') != iso_time(job_start(job, spec)):
+                notice = {}
+            deadline = (dt.datetime.fromisoformat(notice['new_eta_at']).timestamp() if notice.get('new_eta_at')
+                        else job_start(job, spec) + estimate * 60)
+            remaining.append(max(0, (deadline - time.time()) / 60))
         except (OSError, ValueError, TypeError, KeyError):
             continue
     return max(remaining, default=0)
 
 
-def append_event(path, spec, event, stamp, note='', minutes=None):
-    if spec.get('step') not in ETA_DEFAULTS or not all(key in spec for key in ('out', 'number', 'title')):
+def append_event(path, spec, event, stamp, note='', minutes=None, **details):
+    if not all(key in spec for key in ('out', 'number', 'title')):
         return
     root = Path(spec['out']).parent.parent
     record = {'time': iso_time(stamp), 'card': spec['number'], 'title': spec['title'], 'name': spec.get('name', ''),
               'step': spec['step'], 'event': event,
-              'eta_minutes': spec.get('eta_minutes', eta_minutes(root, spec['step'])), 'note': note}
+              'eta_minutes': spec.get('eta_minutes', eta_minutes(root, spec['step'])), 'note': note, **details}
     if minutes is not None:
         record['minutes'] = minutes
     root.mkdir(parents=True, exist_ok=True)
-    with (root / 'events.jsonl').open('a') as stream:
+    with (root / 'events.jsonl').open('a+') as stream:
         fcntl.flock(stream, fcntl.LOCK_EX)
+        if details.get('event_id'):
+            stream.seek(0)
+            for line in stream:
+                try:
+                    prior = json.loads(line)
+                except ValueError:
+                    continue
+                if prior.get('event_id') == details['event_id']:
+                    return prior
         stream.write(json.dumps(record, ensure_ascii=False) + '\n')
         stream.flush()
+        return record
 
 
 @contextlib.contextmanager

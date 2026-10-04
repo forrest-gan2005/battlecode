@@ -52,10 +52,15 @@ if __name__ == '__main__':
                 continue
             rows.append(dict(tag=job[0], map=job[3], seed=job[4], side=job[5], **r))
     else:
-        with cf.ProcessPoolExecutor(workers) as pool:
-            for job, (tag, m, r) in zip(jobs, pool.map(ab2.play, jobs)):
+        with cf.ProcessPoolExecutor(workers) as pool, open(os.path.splitext(out)[0] + '.rows.jsonl', 'w') as progress:
+            pending = {pool.submit(ab2.play, job): job for job in jobs}
+            for future in cf.as_completed(pending):
+                job = pending[future]
+                tag, m, r = future.result()
                 if r is None:
                     continue
                 rows.append(dict(tag=tag, map=m, seed=job[4], side=job[5], **r))
+                progress.write(json.dumps(rows[-1]) + '\n')
+                progress.flush()
     json.dump(rows, open(out, 'w'))
     summary(rows, [t for t, _ in configs])

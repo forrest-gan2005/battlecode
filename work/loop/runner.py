@@ -291,10 +291,24 @@ class Loop:
         return ctx
 
     def job_notice(self, card, step, path, text, queue=None, resources=(), metadata=None):
-        queued = [info['job'] for info in self.status.values() if info.get('job')]
+        from late import check_late
+        queued = [info['job'] for info in self.status.values()
+                  if info.get('job') and not info.get('queue')]
         wait = remaining_wait(self.out, resources, queued) if queue else 0
         timing = step_timing(self.out, step, path, wait=wait, queue=queue)
-        self.notice(card, text, {**timing, **(metadata or {})})
+        timing.update(check_late(self.out, self.locks, card, step, path,
+                                 {**timing, 'name': card_name(card)}, resources, queued))
+        self.notice(card, text, {**timing, 'job': str(path), **(metadata or {})})
+
+    def running_notices(self):
+        for file in self.out.glob('**/jobs/*/job.json'):
+            if not (file.parent / 'done.json').exists() and busy(file.parent / 'lease'):
+                spec = read(file)
+                if self.status.get(str(spec['number']), {}).get('job') == str(file.parent):
+                    continue
+                card = {'number': spec['number'], 'title': spec['title'],
+                        'labels': ['status:running'] + (['name:' + spec['name']] if spec.get('name') else [])}
+                self.job_notice(card, spec['step'], file.parent, f"{spec['step']} running")
 
     def job(self, card, meta, step, light=False, output=None):
         ctx = self.context(card, meta)
@@ -919,7 +933,9 @@ class Loop:
         self.status = {}
         from meow_control import controls
         if controls(self):
+            self.running_notices()
             write(self.out / 'status.json', {'updated': dt.datetime.now(KST).isoformat(), 'paused': True,
+                                           'cards': self.status,
                                            'message': 'Paused by a member; running jobs finish normally.'})
             return
         for card in self.cards_on_board():
@@ -936,6 +952,7 @@ class Loop:
             self.status['ladder'] = {'error': str(exc)}
             print(f'Track 3: {exc}', flush=True)
         if not self.args.dry_run:
+            self.running_notices()
             snapshot = {'updated': dt.datetime.now(KST).isoformat(), 'loop': 'card-loop', 'cards': self.status,
                         'batch_running': busy(self.locks / 'batch.lock'), 'ai_running': busy(self.locks / 'ai.lock')}
             write(self.out / 'status.json', snapshot)
