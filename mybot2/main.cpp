@@ -180,6 +180,7 @@ constexpr bool QUEEN_NO_TRAP = false;
 constexpr double QNT_VETO = 1e10;
 constexpr double QNT_ROOM_GAIN = 1e7;
 constexpr int QNT_SLACK = 2;
+constexpr int QNT_CAP = 64;
 constexpr int QUEEN_GIVE_WAY = 0;
 constexpr double QUEEN_GIVE_WAY_PENALTY = 3000.0;
 constexpr bool QUEEN_BRAIN = false;
@@ -796,9 +797,6 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
-        if (trap_queen() && !split_safe()) {
-            return 0;
-        }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
@@ -814,7 +812,10 @@ class Bot {
         if (!ct.can_split(child)) {
             return 0;
         }
-        
+        if (trap_queen() && !split_safe()) {
+            return 0;
+        }
+
         if (tail_index < 0) {
             return child;
         }
@@ -2401,7 +2402,7 @@ class Bot {
                 if (survey_ally_block && next_index >= 0 && ally_block_stamp[next_index] == round) {
                     continue;
                 }
-                if (survey_head_block && next_index >= 0 && head_block_stamp[next_index] == round) {
+                if (survey_race && next_index >= 0 && race_steps(next_index) <= steps + (survey_child ? 1 : 0)) {
                     continue;
                 }
                 if (next_index < 0) {
@@ -2417,7 +2418,7 @@ class Bot {
                     continue;
                 }
                 int const free_at = enter_time[next_index];
-                if (free_at >= BLOCKED_FOREVER || steps + 1 - eaten < free_at + (free_at > 0 ? survey_slack : 0)) {
+                if (free_at >= BLOCKED_FOREVER || steps + 1 - eaten < free_at + (free_at > 1 ? survey_slack : 0)) {
                     if (!next_beyond && result.dist_feed < 0 && next_index == feed_index) {
                         result.dist_feed = steps + 1;
                     }
@@ -2438,6 +2439,8 @@ class Bot {
             }
         }
         turn_cells += queue_tail;
+        survey_tail = queue_tail;
+        survey_left = queue_tail - queue_head;
         if (CROWD_MARGIN > 0.0) {
             for (std::size_t k = 0; k < ally_heads.size(); k++) {
                 for (Direction const direction : Direction::get_direction_list()) {
@@ -2702,41 +2705,75 @@ class Bot {
         return QUEEN_NO_TRAP && ct.get_id() <= 1;
     }
 
-    void mark_head_block() {
-        if (head_block_stamp.size() != static_cast<std::size_t>(width * height)) {
-            head_block_stamp.assign(static_cast<std::size_t>(width * height), -1);
+    // Steps another head needs to reach a cell; teammates count until feeding starts.
+    int race_steps(int index) const {
+        int steps = rival_steps(index);
+        if (!feeding_phase()) {
+            steps = std::min(steps, ally_race_steps(index));
         }
-        for (auto const* heads : {&ally_heads, &enemy_heads}) {
-            for (Position const& other : *heads) {
-                for (Direction const direction : Direction::get_direction_list()) {
-                    int const next = step_index(other, direction);
-                    if (next >= 0) {
-                        head_block_stamp[next] = round;
-                    }
+        if (survey_child && child_stamp[index] == child_mark) {
+            steps = std::min(steps, child_dist[index]);
+        }
+        return steps;
+    }
+
+    bool survey_loop() const {
+        int links = 0;
+        for (int k = 0; k < survey_tail; k++) {
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (survey_no_portal && edge_at(bfs_queue[k], direction) == EDGE_PORTAL) {
+                    continue;
+                }
+                int const next = step_index(bfs_queue[k], direction);
+                if (next >= 0 && visit_stamp[next] == visit_mark) {
+                    links++;
                 }
             }
         }
+        return links >= 2 * survey_tail;
     }
 
-    // Room from a cell if other heads take every cell they can reach this round.
-    bool trap_at(Position destination, bool frozen = false) {
-        mark_head_block();
-        survey_head_block = true;
+    // Trap: the cells she reaches before any other head neither loop back to her tail nor give room.
+    bool trap_at(Position destination, bool split = false) {
+        double const wanted = 3.0 * (split ? length - unswbc::Constants::MIN_SIZE : length) + 8.0;
+        int const cap = std::max(QNT_CAP, 2 * static_cast<int>(wanted));
+        survey_race = true;
+        survey_child = split;
         survey_slack = QNT_SLACK;
-        Survey const survey = survey_from(destination, frozen);
-        survey_head_block = false;
-        survey_slack = 0;
+        survey_no_portal = queen_portal_ban();
+        survey_cap_now = cap;
+        Survey const survey = survey_from(destination, split);
+        survey_cap_now = 0;
         trap_room = survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen;
-        return !survey.reaches_tail && trap_room < 3.0 * length + 8.0;
+        bool trapped = false;
+        if (survey_left == 0 && !survey.reaches_tail) {
+            bool const loop = survey_loop();
+            trapped = trap_room < wanted || (survey.area_unseen == 0 && !loop);
+            if (loop) {
+                trap_room += cap;
+            }
+        }
+        survey_race = false;
+        survey_child = false;
+        survey_slack = 0;
+        survey_no_portal = false;
+        return trapped;
     }
 
+    // The child is the tail reversed and moves this round; she needs a step it cannot close.
     bool split_safe() {
+        if (child_stamp.size() != static_cast<std::size_t>(cells)) {
+            child_dist.assign(cells, 0);
+            child_stamp.assign(cells, 0);
+        }
+        child_mark++;
+        flood_heads({trail.back()}, child_dist, child_stamp, child_mark);
         for (Direction const direction : Direction::get_direction_list()) {
             if (edge_at(head, direction) == EDGE_PORTAL) {
                 continue;
             }
             int const dest = step_index(head, direction);
-            if (dest < 0 || enter_time[dest] != 0) {
+            if (dest < 0 || enter_time[dest] != 0 || (child_stamp[dest] == child_mark && child_dist[dest] <= 1)) {
                 continue;
             }
             Position const cell = position_of(dest);
@@ -4554,14 +4591,20 @@ class Bot {
                 free_calm = free_calm || (!trap[k] && !hot[k]);
                 trap_calm = trap_calm || (trap[k] && !hot[k]);
             }
+            double most = 0.0;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (live[k] && trap[k] && (!hot[k] || !trap_calm)) {
+                    most = std::max(most, tight[k]);
+                }
+            }
             for (std::size_t k = 0; k < directions.size(); k++) {
                 if (!live[k] || !trap[k]) {
                     continue;
                 }
-                if (free_calm || (free_any && hot[k])) {
+                if (free_calm || ((free_any || trap_calm) && hot[k])) {
                     scores[k] -= QNT_VETO;
-                } else if (!free_any && (!hot[k] || !trap_calm)) {
-                    scores[k] += QNT_ROOM_GAIN * tight[k];
+                } else if (!free_any) {
+                    scores[k] -= QNT_ROOM_GAIN * (most - tight[k]);
                 }
             }
         }
@@ -4745,9 +4788,15 @@ class Bot {
     bool survey_pessimist = false;
     bool survey_no_portal = false;
     bool survey_ally_block = false;
-    bool survey_head_block = false;
+    bool survey_race = false;
+    bool survey_child = false;
     int survey_slack = 0;
+    int survey_tail = 0;
+    int survey_left = 0;
     double trap_room = 0.0;
+    std::vector<int> child_dist;
+    std::vector<int> child_stamp;
+    int child_mark = 0;
     std::vector<int> qk_margin;
     std::vector<std::tuple<Position, int, int>> danger_log;
     std::vector<int> qk_stamp;
@@ -4761,7 +4810,6 @@ class Bot {
     double qb_best_score = 0.0;
     int qb_evals = 0;
     std::vector<int> ally_block_stamp;
-    std::vector<int> head_block_stamp;
     int zp_mouth = -1;
     int zp_dir = 0;
     int zp_id = -1;
