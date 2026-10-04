@@ -354,6 +354,13 @@ constexpr int CENTER_SMALL_CELLS = 700;
 constexpr int CENTER_SMALL_ROUNDS = 30;
 constexpr int CENTER_OUTNUMBER_MARGIN = 0;
 constexpr bool TR_CENTER_ORIENT = false;
+constexpr bool QH_SCOUT = false;
+constexpr int QH_MAX_LEN = 4;
+constexpr int QH_REVENGE_ROUND = 100;
+constexpr int QH_QUIET = 20;
+constexpr int QH_FRESH = 20;
+constexpr int QH_SPAWN_SLACK = 2;
+constexpr std::uint64_t QH_PING_KIND = 0x2B5;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
@@ -550,6 +557,10 @@ class Bot {
         route_target = escape_target;
         if (INC_PERIOD > 0 && route_target < 0 && inc_target >= 0) {
             route_target = inc_target;
+        }
+        if (QH_SCOUT && qh_on) {
+            escape_through = -1;
+            route_target = qh_route;
         }
         if (QUEEN_MODE && route_target < 0 && !is_queen() && !is_feeder() && enemy_queen_round >= 0 &&
             round - enemy_queen_round <= QUEEN_CHASE_FRESH && manhattan(head, enemy_queen_pos) <= QUEEN_CHASE_DIST &&
@@ -938,6 +949,9 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
+        if (QH_SCOUT && qh_on && qh_in_view) {
+            return 0;
+        }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
             return 0;
         }
@@ -1320,7 +1334,8 @@ class Bot {
             queen_id = ct.get_id();
             enemy_queen_id = 1 - queen_id;
         }
-        
+        qh_in_view = false;
+
         hear_exact(ct.get_id(), length, round, head, ct.get_dir());
         mouths.erase(std::remove_if(mouths.begin(), mouths.end(),
                                     [this](std::pair<int, int> const& entry) { return round - entry.second > 1; }),
@@ -1373,6 +1388,18 @@ class Bot {
                 enemy_queen_pos = position;
                 enemy_queen_round = round;
             }
+            if (QH_SCOUT && part->get_id() <= 1) {
+                if (part->get_team() == ct.get_team()) {
+                    qh_queen_id = part->get_id();
+                } else {
+                    qh_foe_id = part->get_id();
+                    if (part->is_head()) {
+                        qh_pos = position;
+                        qh_round = round;
+                        qh_in_view = true;
+                    }
+                }
+            }
             if (part->is_head() && part->get_id() != ct.get_id()) {
                 if (part->get_team() == ct.get_team()) {
                     ally_heads.push_back(position);
@@ -1408,6 +1435,9 @@ class Bot {
         tail_index = static_cast<int>(trail.size()) == length ? index_of(trail.back()) : -1;
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
             hear_sighting(ally_head_ids[k], visible_parts(ally_head_ids[k]), ally_heads[k], ally_head_dirs[k]);
+        }
+        if (QH_SCOUT) {
+            qh_watch();
         }
         update_lifecycle();
         compute_drop_cells();
@@ -1574,8 +1604,10 @@ class Bot {
 
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
         int const tagged = QUEEN_QUIET_ROUND > 0 && queen_game && id == queen_id ? (id | 0x8000) : id;
+        // QH_SCOUT: the top two length bits carry the "our queen is dead" state.
+        int const sized = QH_SCOUT ? std::min(len, 0x3FF) | ((qh_state & 0x3) << 10) : len;
         std::uint64_t const body = (static_cast<std::uint64_t>(tagged) & 0xFFFF) |
-                                   ((static_cast<std::uint64_t>(len) & 0xFFF) << 16) |
+                                   ((static_cast<std::uint64_t>(sized) & 0xFFF) << 16) |
                                    ((static_cast<std::uint64_t>(when) & 0x1FF) << 28) |
                                    ((static_cast<std::uint64_t>(pos.x) & 0x7F) << 37) |
                                    ((static_cast<std::uint64_t>(pos.y) & 0x7F) << 44) |
@@ -1591,7 +1623,7 @@ class Bot {
             return false;
         }
         id = static_cast<int>(body & 0xFFFF);
-        len = static_cast<int>((body >> 16) & 0xFFF);
+        len = static_cast<int>((body >> 16) & (QH_SCOUT ? 0x3FF : 0xFFF));
         when = static_cast<int>((body >> 28) & 0x1FF);
         pos = Position{static_cast<int>((body >> 37) & 0x7F), static_cast<int>((body >> 44) & 0x7F)};
         int const face = static_cast<int>((body >> 51) & 0x3);
@@ -1690,6 +1722,9 @@ class Bot {
             Direction facing = dir_of(Direction::NORTH);
             
             if (unpack_leader(message, id, len, when, pos, facing)) {
+                if (QH_SCOUT) {
+                    qh_state = std::max(qh_state, static_cast<int>((message >> 26) & 0x3));
+                }
                 if ((id & 0x8000) != 0) {
                     id &= 0x7FFF;
                     queen_game = true;
@@ -1702,6 +1737,8 @@ class Bot {
             } else if (SHARE_SIGHT && (message >> 63) != 0 && learn_sight(message)) {
                 continue;
             } else if (QG_SAFEZONE && (message >> 63) != 0 && learn_zone(message)) {
+                continue;
+            } else if (QH_SCOUT && (message >> 63) != 0 && learn_queen_ping(message)) {
                 continue;
             }
         }
@@ -1742,12 +1779,173 @@ class Bot {
                 ct.send_sonar(directions[k], pack_mouth(index_of(post)));
             } else if (QG_SAFEZONE && zone_relay(k)) {
                 ct.send_sonar(directions[k], pack_zone());
+            } else if (QH_SCOUT && (qh_on || (qh_notice && (round + static_cast<int>(k)) % 4 == 1))) {
+                ct.send_sonar(directions[k], pack_queen_ping());
             } else if (has_sight && (known_leader_id < 0 || (round + static_cast<int>(k)) % 2 == 0)) {
                 ct.send_sonar(directions[k], sight);
             } else if (known_leader_id >= 0) {
                 ct.send_sonar(directions[k], message);
             }
         }
+    }
+
+    // Bits 0-3: the neighbour in direction k, bit 4: the cell itself. With pearl=false a bit means
+    // "in view, no pearl, none due to spawn"; with pearl=true it means "in view with a pearl".
+    int qh_ring(Position cell, bool pearl) const {
+        int mask = 0;
+        auto const directions = Direction::get_direction_list();
+        for (std::size_t k = 0; k <= directions.size(); k++) {
+            int const at = k < directions.size() ? step_index(cell, directions[k]) : index_of(cell);
+            if (at < 0 || seen_round[at] != round || (pearl_here[at] != 0) != pearl) {
+                continue;
+            }
+            if (pearl || pearl_timer[at] < 0 || pearl_timer[at] > QH_SPAWN_SLACK) {
+                mask |= 1 << k;
+            }
+        }
+        return mask;
+    }
+
+    // A corpse leaves a pearl on its head cell: a new pearl there that no spawn explains.
+    bool qh_corpse(Position cell, int quiet) const {
+        return seen_round[index_of(cell)] == round && (qh_ring(cell, true) & quiet) != 0;
+    }
+
+    bool qh_queen_dead() const {
+        return ct.get_id() > 1 && qh_alive_round != round && (qh_state & 1) != 0;
+    }
+
+    bool qh_foe_dead() const {
+        return qh_foe_dead_round >= 0 && qh_foe_dead_round >= qh_round;
+    }
+
+    void qh_watch() {
+        bool queen_head = false;
+        Position queen_at{};
+        for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
+            if (ally_head_ids[k] == qh_queen_id) {
+                queen_head = true;
+                queen_at = ally_heads[k];
+            }
+        }
+        // qh_state: 0 no claim, 1 dead, 2 seen alive after that, 3 dead again; sonar keeps the highest.
+        if (ct.get_id() <= 1 || (qh_queen_id >= 0 && visible_parts(qh_queen_id) > 0)) {
+            qh_alive_round = round;
+            if (qh_state == 1) {
+                qh_state = 2;
+            }
+        } else if (qh_seen_round == round - 1 && (qh_state & 1) == 0 && qh_corpse(qh_seen_pos, qh_seen_clear)) {
+            qh_state++;
+        }
+        qh_seen_round = queen_head ? round : -1;
+        qh_seen_pos = queen_at;
+        qh_seen_clear = queen_head ? qh_ring(queen_at, false) : 0;
+        if (!qh_in_view && qh_foe_seen_round == round - 1 && visible_parts(qh_foe_id) == 0 &&
+            qh_corpse(qh_foe_seen_pos, qh_foe_seen_clear)) {
+            qh_foe_dead_round = round;
+        }
+        qh_foe_seen_round = qh_in_view ? round : -1;
+        if (qh_in_view) {
+            qh_foe_seen_pos = qh_pos;
+            qh_foe_seen_clear = qh_ring(qh_pos, false);
+        }
+        bool const foe_dead = qh_foe_dead();
+        bool const small = ct.get_id() > 1 && !is_leader() && length <= QH_MAX_LEN;
+        bool const fresh = qh_round >= 0 && round - qh_round <= QH_FRESH;
+        // Reached her last cell and she is not in view: wait for a newer sighting.
+        if (fresh && !qh_in_view && manhattan(head, qh_pos) <= 1) {
+            qh_miss_round = std::max(qh_miss_round, qh_round);
+        }
+        bool const revenge = qh_queen_dead() && round >= QH_REVENGE_ROUND;
+        bool const target = small && fresh && !foe_dead && qh_round > qh_miss_round;
+        // First finder: sees her and has heard no other hunter for QH_QUIET rounds.
+        if (target && qh_in_view && round > QH_QUIET && round - qh_heard_round > QH_QUIET) {
+            qh_hunter = true;
+        }
+        // Before the revenge phase one hunter is enough: the lower id keeps the job.
+        if (!target || (!revenge && qh_rival_round == round)) {
+            qh_hunter = false;
+        }
+        qh_on = target && (qh_hunter || revenge) && qh_reach(qh_pos);
+        qh_hunter = qh_hunter && qh_on;
+        qh_notice = small && revenge && foe_dead && round - qh_foe_dead_round <= QH_FRESH;
+        qh_route = qh_on ? index_of(qh_pos) : -1;
+    }
+
+    // False only when known walls seal her cell off from our head; unknown edges count as open.
+    bool qh_reach(Position foe) {
+        if (qh_stamp.empty()) {
+            qh_stamp.assign(static_cast<std::size_t>(cells), 0);
+            qh_queue.resize(static_cast<std::size_t>(cells));
+        }
+        qh_mark++;
+        int const goal = index_of(head);
+        int tail = 0;
+        qh_stamp[index_of(foe)] = qh_mark;
+        qh_queue[tail++] = index_of(foe);
+        for (int at = 0; at < tail; at++) {
+            if (qh_queue[at] == goal) {
+                return true;
+            }
+            Position const cell = position_of(qh_queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(cell, direction);
+                if (next < 0) {
+                    if (edge_at(cell, direction) == EDGE_PORTAL) {
+                        return true;
+                    }
+                    continue;
+                }
+                if (qh_stamp[next] != qh_mark) {
+                    qh_stamp[next] = qh_mark;
+                    qh_queue[tail++] = next;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Hunter id with her cell and the round she was seen, or the round she died.
+    std::uint64_t pack_queen_ping() const {
+        bool const foe_dead = qh_foe_dead();
+        int const when = foe_dead ? qh_foe_dead_round : qh_round;
+        int const cell = foe_dead ? 0 : index_of(qh_pos);
+        std::uint64_t const body = (static_cast<std::uint64_t>(cell) & 0x3FFF) |
+                                   ((static_cast<std::uint64_t>(when) & 0x1FF) << 14) |
+                                   (static_cast<std::uint64_t>(foe_dead ? 1 : 0) << 23) |
+                                   (static_cast<std::uint64_t>(qh_state & 0x3) << 24) |
+                                   ((static_cast<std::uint64_t>(ct.get_id()) & 0xFFFF) << 26) |
+                                   (QH_PING_KIND << 42) | ((sonar_tag & 0x3) << 53);
+        return sonar_codec::seal(sonar_key, body | (1ULL << 63));
+    }
+
+    bool learn_queen_ping(std::uint64_t message) {
+        std::uint64_t const body = message & ((1ULL << 55) - 1);
+        if (((body >> 53) & 0x3) != sonar_tag || ((body >> 42) & 0x7FF) != QH_PING_KIND) {
+            return false;
+        }
+        int const cell = static_cast<int>(body & 0x3FFF);
+        int const when = static_cast<int>((body >> 14) & 0x1FF);
+        int const id = static_cast<int>((body >> 26) & 0xFFFF);
+        if (cell >= cells || when > round) {
+            return true;
+        }
+        qh_state = std::max(qh_state, static_cast<int>((body >> 24) & 0x3));
+        if (((body >> 23) & 1ULL) != 0) {
+            qh_foe_dead_round = std::max(qh_foe_dead_round, when);
+            return true;
+        }
+        if (id != (ct.get_id() & 0xFFFF)) {
+            qh_heard_round = round;
+            if (id < ct.get_id()) {
+                qh_rival_round = round;
+            }
+        }
+        if (when > qh_round) {
+            qh_round = when;
+            qh_pos = position_of(cell);
+        }
+        return true;
     }
 
     std::uint64_t pack_mouth(int cell) const {
@@ -1894,7 +2092,7 @@ class Bot {
     void pick_feed_target() {
         feed_index = -1;
         feed_id = -1;
-        if (is_assassin()) {
+        if (is_assassin() || (QH_SCOUT && qh_on)) {
             return;
         }
         bool const early = FEED_EARLY_ROUND > 0 && round > FEED_EARLY_ROUND && length <= FEED_EARLY_MAX;
@@ -2120,6 +2318,18 @@ class Bot {
         if (is_queen()) {
             hunt_queen = false;
             return;
+        }
+        if (QH_SCOUT && qh_on) {
+            for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+                if (enemy_head_ids[k] == qh_foe_id) {
+                    hunt_stamp[index_of(enemy_heads[k])] = round;
+                    hunt_targets++;
+                }
+            }
+            if (hunt_targets > 0) {
+                hunt_queen = true;
+                return;
+            }
         }
         if (QUEEN_MODE && QUEEN_HUNT && !is_queen() && (QUEEN_HUNT_MAX_LEN <= 0 || length <= QUEEN_HUNT_MAX_LEN)) {
             for (std::size_t k = 0; k < enemy_heads.size(); k++) {
@@ -2553,6 +2763,9 @@ class Bot {
                     }
                     if (!next_beyond && result.dist_trade < 0 && is_trade_target_cell(next_index)) {
                         result.dist_trade = steps + 1;
+                    }
+                    if (QH_SCOUT && !next_beyond && result.dist_route < 0 && next_index == qh_route) {
+                        result.dist_route = steps + 1;
                     }
                     continue;
                 }
@@ -4217,14 +4430,17 @@ class Bot {
         }
         std::array<bool, 4> safe{};
         int nearest = BLOCKED_FOREVER;
+        // With her in view the hunter closes in through threatened cells.
+        bool const charge = QH_SCOUT && qh_in_view && route_target == qh_route;
         for (std::size_t k = 0; k < 4; k++) {
             if (!scored[k] || dests[k] < 0 || scores[k] <= SCORE_REJECT * 0.5 ||
                 (closed[k] && !(STAFF_CELLS > 0 && dests[k] == route_target)) ||
-                (scores[k] < top - ROUTE_VETO && !(STAFF_CELLS > 0 && dests[k] == route_target)) || route_dist[k] < 0) {
+                (scores[k] < top - ROUTE_VETO && !(STAFF_CELLS > 0 && dests[k] == route_target) && !charge) ||
+                route_dist[k] < 0) {
                 continue;
             }
             Position const cell = position_of(dests[k]);
-            if (threat_at(dests[k]) > 0 || enemy_can_step_to(cell) || can_step_to(ally_heads, cell)) {
+            if (((threat_at(dests[k]) > 0 || enemy_can_step_to(cell)) && !charge) || can_step_to(ally_heads, cell)) {
                 continue;
             }
             safe[k] = true;
@@ -4242,7 +4458,7 @@ class Bot {
     }
 
     bool rally_ready() const {
-        if (!feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
+        if ((QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
@@ -4855,6 +5071,30 @@ class Bot {
     bool zone_checked = false;
     int zone_target = -1;
     bool enemy_queen_dead = false;
+    int qh_queen_id = -1;
+    int qh_foe_id = -1;
+    int qh_state = 0;
+    int qh_alive_round = -1;
+    int qh_seen_round = -1;
+    Position qh_seen_pos{};
+    int qh_seen_clear = 0;
+    Position qh_pos{};
+    int qh_round = -1;
+    bool qh_in_view = false;
+    int qh_foe_seen_round = -1;
+    Position qh_foe_seen_pos{};
+    int qh_foe_seen_clear = 0;
+    int qh_foe_dead_round = -1;
+    int qh_miss_round = -1;
+    int qh_heard_round = -1000;
+    int qh_rival_round = -1;
+    bool qh_hunter = false;
+    bool qh_on = false;
+    bool qh_notice = false;
+    int qh_route = -1;
+    std::vector<int> qh_stamp;
+    std::vector<int> qh_queue;
+    int qh_mark = 0;
     int eq_round = -1;
     Position eq_pos{};
     std::vector<int> zs_stamp;
