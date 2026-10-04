@@ -661,12 +661,45 @@ class Loop:
             self.post(card, f"tested-{meta['attempt']}", text, target='tested', kind='test', metadata=meta)
             self.auto_decide(card, meta)
         elif s == 'tested':
-            self.auto_decide(card, meta)
+            if not self.human_decision(card, meta, out):
+                self.auto_decide(card, meta)
         elif s in ('rejected', 'inconclusive'):
             if meta.get('ai_pending', {}).get('close'):
                 self.post(card, **meta['ai_pending'], metadata=meta)
         elif s == 'candidate':
             self.candidate(card, meta)
+
+    def human_decision(self, card, meta, out):
+        """A reply after the results (/answer or a GitHub comment) is the decision. True once a reply is being handled."""
+        results = [c for c in card['comments'] if any(r.get('phase') == 'tested' for r in records({'comments': [c]}))]
+        if not results:
+            return False
+        after = results[-1].get('created_at', results[-1].get('createdAt', ''))
+        replies = human_replies(card, after, zhe='by:zhe' in labels(card))
+        if not replies:
+            return False
+        response_id = digest(replies)
+        (out / 'decisions').mkdir(parents=True, exist_ok=True)
+        if read(out / 'decide-input.json') != response_id:
+            jobdir = out / 'jobs/decide'
+            if busy(jobdir / 'lease'):
+                return True
+            if jobdir.exists():
+                jobdir.rename(out / 'decisions' / f"job-{time.time_ns()}")
+            (out / 'decide.json').unlink(missing_ok=True)
+            write(out / 'decide-input.json', response_id)
+        if not self.available_job(card, dict(meta, replies=replies), 'decide', light=True, output='decide.json'):
+            return True
+        answer = (read(out / 'decide.json') or {}).get('decision')
+        if answer in ('candidate', 'rejected', 'inconclusive'):
+            self.transition(card, answer)
+        elif answer == 'revise':
+            self.new_attempt(card, meta, 'The author asked for a revision after the results; use the reply in the card comments.')
+            self.transition(card, 'building')
+        else:
+            self.notice(card, 'reply after the results is not a clear decision; waiting')
+            return False  # AI cards still decide themselves
+        return True
 
     def build_task(self, card, meta, ctx):
         out = Path(ctx['out'])

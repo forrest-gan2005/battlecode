@@ -247,3 +247,48 @@ else:
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DecisionTests(unittest.TestCase):
+    """A reply after the results is the decision (/answer or a GitHub comment)."""
+
+    def run_case(self, decision, by='junsing', who='someone'):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        loop = runner.Loop.__new__(runner.Loop)
+        loop.status, loop.launched = {}, set()
+        out = Path(tempfile.mkdtemp())
+        c = card(7, 'tested', by, comments=[
+            comment('Results <!-- card-loop {"phase": "tested", "attempt": 1} -->', '2026-10-04T10:00:00Z', 'juntegral'),
+            comment('ship it', '2026-10-04T11:00:00Z', who)])
+        def job(*args, **kwargs):  # the light job writes its classification
+            runner.write(out / 'decide.json', {'decision': decision})
+            return True
+        with patch.object(loop, 'available_job', side_effect=job), patch.object(loop, 'transition') as tr, \
+                patch.object(loop, 'new_attempt') as na, patch.object(loop, 'notice'):
+            handled = loop.human_decision(c, {'attempt': 1}, out)
+        return handled, tr, na
+
+    def test_candidate_rejected_inconclusive_move_the_card(self):
+        for d in ('candidate', 'rejected', 'inconclusive'):
+            handled, tr, na = self.run_case(d)
+            self.assertTrue(handled)
+            self.assertEqual(tr.call_args.args[1], d)
+
+    def test_revise_starts_a_new_attempt(self):
+        handled, tr, na = self.run_case('revise')
+        self.assertTrue(handled)
+        na.assert_called_once()
+        self.assertEqual(tr.call_args.args[1], 'building')
+
+    def test_unclear_does_nothing_and_lets_ai_cards_decide(self):
+        handled, tr, na = self.run_case('unclear')
+        self.assertFalse(handled)
+        tr.assert_not_called()
+
+    def test_zhe_card_ignores_other_people(self):
+        handled, tr, na = self.run_case('candidate', by='zhe', who='someone')
+        self.assertFalse(handled)
+        handled, tr, na = self.run_case('candidate', by='zhe', who='zhex0121')
+        self.assertTrue(handled)
