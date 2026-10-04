@@ -52,7 +52,7 @@ class TaskTests(unittest.TestCase):
 
     def test_board_next_picks_task_before_zhe(self):
         with patch.object(board, 'gh', side_effect=[[card(by='zhe'), task(2, 'ready', 'ai')], []]), \
-             patch('builtins.print') as output:
+             patch.object(board, 'read_fair', return_value={}), patch('builtins.print') as output:
             board.cmd_next(type('Args', (), {'state': None, 'wf': None})())
         self.assertTrue(output.call_args_list[0].args[0].startswith('#2 Refactor sonar'))
 

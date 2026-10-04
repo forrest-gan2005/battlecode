@@ -131,5 +131,6 @@ class FairTests(unittest.TestCase):
         self.assertEqual([c['number'] for c in order_cards([card(1, by='zhe'), card(2, by='ai'), card(3, by='ai')],
                                                            {COUNTER: 3})], [2, 1, 3])
 
-    def test_shared_history_path_with_custom_output(self):
-        self.assertEqual(runner.Loop(self.loop.args).fair_path, Path.home() / 'meow-loop-out/fair.json')
+    def test_history_lives_in_the_output_directory(self):
+        self.assertEqual(runner.Loop(self.loop.args).fair_path, (self.root / 'out').resolve() / 'fair.json')
+        self.assertNotIn(Path.home() / 'meow-loop-out', self.loop.fair_path.parents)

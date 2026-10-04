@@ -42,7 +42,7 @@ The ladder is the online competition and its game history. After each new batch 
 | 2 | Human ideas: least recently served author first (never served first), oldest card within that author |
 | 3 | `by:ai`: when no humans are ready, plus one slot after 3 human starts |
 
-Starts (`ready → building` or `ready → needs-info`) update `~/meow-loop-out/fair.json`; the same rotation orders AI and game-batch lock waiters. The AI slot is one turn: it is used up as soon as an AI card gets a lock for any step, and human cards are still offered the locks in the same poll when no AI card can use it. Zhe still always clarifies and checks replays. Waiting for a person does not block work on other cards.
+Starts (`ready → building` or `ready → needs-info`) update `fair.json` in the loop's output directory (`~/meow-loop-out`); the same rotation orders AI and game-batch lock waiters. The AI slot is one turn: it is used up as soon as an AI card gets a lock for any step, and human cards are still offered the locks in the same poll when no AI card can use it. Zhe still always clarifies and checks replays. Waiting for a person does not block work on other cards.
 The game slot runs one batch at a time. A long local outcome run waits when another card's short game step (the behaviour check, or a build's identity check) is queued for the slot, so a few-minute step never sits behind a 50-minute run.
 
 ## Task cards

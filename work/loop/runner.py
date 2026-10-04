@@ -115,7 +115,8 @@ class Loop:
         self.repo = Path(args.repo).resolve()
         self.out = Path(args.out).expanduser().resolve()
         self.cards = Path(args.cards).expanduser().resolve()
-        self.fair_path = Path.home() / "meow-loop-out/fair.json"
+        # Lives with the rest of the loop state, so a run with its own --out never touches the live history.
+        self.fair_path = self.out / 'fair.json'
         # Machine-global even with different --out directories or repository worktrees.
         self.locks = Path.home() / '.meow-card-loop-locks'
         self.status = {}

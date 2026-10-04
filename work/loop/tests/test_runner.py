@@ -36,7 +36,6 @@ class Tests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.loop = runner.Loop(argparse.Namespace(repo=str(runner.REPO), out=str(self.root / 'out'),
                            cards=str(self.root / 'cards'), dry_run=False, game_env={}))
-        self.loop.fair_path = self.root / 'fair.json'
         self.loop.locks = self.root / 'locks'
         self.loop.launched = set()
 

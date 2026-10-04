@@ -52,7 +52,7 @@ AI 按实际发布配置实现任务，并运行卡片指定的检查（单元�
 runner 独立检查旧 10 张地图 × 2 个种子、双方起始侧的回放，与当前基准（最新 main 发布版／上一版本）完全一致，并要求任务专属检查通过。
 通过后先写三行白话摘要，再发 `[check]`，设为 `tested`；作者选择 candidate、rejected 或 inconclusive。
 一致性失败退回 `ready`，注明 “this changes play; make it an idea card or fix it”；其他检查失败也带证据退回 ready。
-任务先；人类中最近最少被服务的作者先（从未服务者优先），同作者最早的卡先；每 3 张人类卡后给 AI 一次机会。`ready → building/needs-info` 时记录 `~/meow-loop-out/fair.json`，AI 和对局批次锁也按此顺序排队。AI 的机会只有一次：任何 AI 卡拿到锁（任意步骤）即用掉；没有 AI 卡能用时，同一轮里人类卡照常拿锁。Zhe 的提问和回放确认不变。
+任务先；人类中最近最少被服务的作者先（从未服务者优先），同作者最早的卡先；每 3 张人类卡后给 AI 一次机会。`ready → building/needs-info` 时记录到循环输出目录的 `fair.json`（`~/meow-loop-out`），AI 和对局批次锁也按此顺序排队。AI 的机会只有一次：任何 AI 卡拿到锁（任意步骤）即用掉；没有 AI 卡能用时，同一轮里人类卡照常拿锁。Zhe 的提问和回放确认不变。
 
 ## 每张卡片只有一个状态
 
