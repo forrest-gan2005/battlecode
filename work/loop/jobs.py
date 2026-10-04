@@ -292,7 +292,9 @@ def ai(spec, fds):
             write(out / spec['output'], json.loads(result))
             Path(spec['log']).write_text(json.dumps({'type': 'result', 'result': result}) + '\n')
     else:
-        argv = ['claude', '-p', '--model', 'opus', '--effort', 'high', '--permission-mode',
+        # Thinking steps get more effort; depth matters more than speed here.
+        effort = {'ladder': 'max', 'clarify': 'xhigh', 'build': 'xhigh', 'task': 'xhigh', 'verdict': 'xhigh'}.get(step, 'high')
+        argv = ['claude', '-p', '--model', 'opus', '--effort', effort, '--permission-mode',
                 'bypassPermissions', '--settings', str(HERE / 'settings.json'),
                 '--output-format', 'stream-json', '--verbose']
         def completed():
