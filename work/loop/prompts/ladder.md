@@ -1,4 +1,4 @@
-Track 3: new completed battle IDs are listed in the card body. Use only these read-only tools:
+Track 3: new completed battle IDs are listed in the card body. This is a quick skim, not a study: aim for about 10 minutes and 25 tool calls. Reuse the scripts earlier reviews left in the card output directory instead of building new analysis. The runner stops this step at 20 minutes and drops the review if ladder.json is missing, so write ladder.json as soon as one idea is supported (an empty array is fine) and stop there. Use only these read-only tools:
 node "$swarm/tools/online.js" battles --json
 node "$swarm/tools/online.js" download <comma-separated-new-battle-ids>
 These reads/downloads cost no tickets. Download has its own data/online output policy; do not request or activate anything. Inspect the new replays and existing board ideas (gh issue list/view are read-only). Avoid duplicate ideas.

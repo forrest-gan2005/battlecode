@@ -195,5 +195,5 @@ Held and fresh maps use two games per variant; their `_T` copies are generated l
 Incomplete batches are retained as incomplete files and never produce a verdict; result tables distinguish unmeasured lengths.
 Only `card/N` is git-pushed. Candidate branches/manifests use the GitHub Git data API, then `gh pr create` opens review.
 Candidate preparation stops at 2026-10-08 20:00 KST and requires current-base evidence. Approval, merging and uploads remain human actions.
-Track 3 checks for new completed ladder battles every four hours; the runner posts at most two AI ideas per review.
+Track 3 checks for new completed ranked ladder battles every four hours; the runner posts at most two AI ideas per review. It is a quick skim (medium effort, stopped at 20 minutes) and only starts when no card step is running or queued, so it never holds up a card. Our own online test battles are left to the pair reports. A review that fails or times out is dropped and the next one takes newer games.
 The hook checks shell commands and file tools; it is a policy guard, not an operating-system sandbox.

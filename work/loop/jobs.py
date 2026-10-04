@@ -36,6 +36,7 @@ def write(path, data):
 ETA_DEFAULTS = {'clarify': 3, 'build': 20, 'task': 15, 'adopt': 5,
                 'mechanism': 30, 'look': 8, 'outcome': 150, 'verdict': 5, 'ladder': 20,
                 'decide': 2, 'reply': 2}
+LADDER_TIMEOUT = 20 * 60
 
 
 def iso_time(stamp):
@@ -382,8 +383,8 @@ def ai(spec, fds):
             write(out / spec['output'], json.loads(result))
             Path(spec['log']).write_text(json.dumps({'type': 'result', 'result': result}) + '\n')
     else:
-        # Thinking steps get more effort; depth matters more than speed here.
-        effort = {'ladder': 'max', 'clarify': 'xhigh', 'build': 'xhigh', 'task': 'xhigh', 'verdict': 'xhigh'}.get(step, 'high')
+        # Thinking steps get more effort; the ladder review is a quick skim.
+        effort = {'ladder': 'medium', 'clarify': 'xhigh', 'build': 'xhigh', 'task': 'xhigh', 'verdict': 'xhigh'}.get(step, 'high')
         argv = ['claude', '-p', '--model', 'opus', '--effort', effort, '--permission-mode',
                 'bypassPermissions', '--settings', str(HERE / 'settings.json'),
                 '--output-format', 'stream-json', '--verbose']
@@ -400,7 +401,8 @@ def ai(spec, fds):
             return last is not None and not last.get('is_error')
         # A crash after Claude's result but before done.json must not spend another AI step.
         if not completed():
-            run(argv, spec['tree'], env, fds=fds, stdin=prompt, log=spec['log'])
+            run(argv, spec['tree'], env, timeout=LADDER_TIMEOUT if step == 'ladder' else 3600,
+                fds=fds, stdin=prompt, log=spec['log'])
         if not completed():
             raise ValueError('Claude did not finish successfully')
     if step in ('build', 'task', 'adopt'):

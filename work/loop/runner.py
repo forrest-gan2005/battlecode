@@ -867,6 +867,10 @@ class Loop:
             action = 'freeze: block candidate' if dt.datetime.now(KST) >= FREEZE else 'verify current-base evidence → candidate branch and PR (author already selected candidate)'
         self.notice(card, action)
 
+    def cards_busy(self):
+        return bool(self.launched or busy(self.locks / 'batch.lock')
+                    or any(info.get('queue') for info in self.status.values()))
+
     def ladder(self):
         cached = read(self.out / 'ladder.json', {})
         if time.time() - cached.get('checked', 0) < 4 * 3600:
@@ -877,16 +881,26 @@ class Loop:
         if 'ai' in self.launched or busy(self.locks / 'ai.lock'):
             return
         pending = cached.get('pending')
+        path = self.out / 'card-0' / f"attempt-{pending['batch']}" / 'jobs' / 'ladder' if pending else None
+        # Cards come first: a review only starts when nothing is running or queued.
+        if not (path and (path / 'job.json').exists()) and self.cards_busy():
+            return
         if not pending:
             battles = json.loads(self.cmd(['node', SWARM / 'tools/online.js', 'battles', '--json']))
-            ids = sorted(str(b['id']) for b in battles if b.get('at') and not b.get('wait'))
-            new = [i for i in ids if i not in cached.get('seen', [])]
+            # Ranked games only; our own test battles are reviewed by the pair reports.
+            ranked = [b for b in battles if b.get('at') and not b.get('wait') and b.get('ranked')]
+            new = sorted(str(b['id']) for b in ranked if str(b['id']) not in cached.get('seen', []))
             if not new:
                 write(self.out / 'ladder.json', {**cached, 'checked': time.time()})
                 return
-            pending = {'ids': new, 'batch': int(time.time()), 'battles': battles}
+            pending = {'ids': new, 'batch': int(time.time()), 'battles': [b for b in ranked if str(b['id']) in new]}
             cached['pending'] = pending
             write(self.out / 'ladder.json', cached)
+        elif not (read(path / 'done.json') or {'ok': True})['ok']:
+            # A failed or timed-out review is dropped; the next one takes newer games.
+            print(f"Track 3: review {pending['batch']} failed, skipping its games", flush=True)
+            write(self.out / 'ladder.json', {'checked': time.time(), 'seen': sorted(set(cached.get('seen', []) + pending['ids']))})
+            return
         card = {'number': 0, 'title': '[Idea] Ladder review', 'body': json.dumps(pending), 'comments': [],
                 'labels': [{'name': 'by:ai'}, {'name': 'status:ready'}]}
         meta = {'attempt': pending['batch'], 'base': self.latest_base()}

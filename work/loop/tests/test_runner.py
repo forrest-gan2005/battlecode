@@ -231,6 +231,59 @@ else:
             self.loop.ladder()
             ai.assert_not_called()
 
+    def test_ladder_waits_while_cards_are_running_or_queued(self):
+        jobs.write(self.loop.out / 'ladder.json', {'seen': [], 'checked': 0})
+        battles = '[{"id":42,"at":"2026-10-03","wait":null,"ranked":true}]'
+        for busy_state in ({'launched': {'batch'}}, {'status': {'27': {'queue': 'ai lock'}}}):
+            self.loop.launched = busy_state.get('launched', set())
+            self.loop.status = busy_state.get('status', {})
+            with patch.object(self.loop, 'cmd', return_value=battles) as cmd, \
+                 patch.object(self.loop, 'available_job') as ai:
+                self.loop.ladder()
+                cmd.assert_not_called()
+                ai.assert_not_called()
+
+    def test_ladder_reviews_ranked_battles_only(self):
+        jobs.write(self.loop.out / 'ladder.json', {'seen': [], 'checked': 0})
+        battles = json.dumps([{'id': 42, 'at': '2026-10-03', 'wait': None, 'ranked': False},
+                              {'id': 43, 'at': '2026-10-03', 'wait': None, 'ranked': True}])
+        with patch.object(self.loop, 'cmd', return_value=battles), \
+             patch.object(self.loop, 'latest_base', return_value='a' * 40), \
+             patch.object(self.loop, 'ensure_tree'), \
+             patch.object(self.loop, 'available_job', return_value=False):
+            self.loop.ladder()
+        pending = jobs.read(self.loop.out / 'ladder.json')['pending']
+        self.assertEqual(pending['ids'], ['43'])
+        self.assertEqual([b['id'] for b in pending['battles']], [43])
+
+    def test_failed_ladder_review_is_dropped(self):
+        jobs.write(self.loop.out / 'ladder.json', {'seen': ['1'], 'checked': 0,
+                                                 'pending': {'batch': 7, 'ids': ['42'], 'battles': []}})
+        jobs.write(self.loop.out / 'card-0/attempt-7/jobs/ladder/job.json', {})
+        jobs.write(self.loop.out / 'card-0/attempt-7/jobs/ladder/done.json', {'ok': False, 'error': 'Job timed out after 1200s'})
+        self.loop.status = {'27': {'queue': 'ai lock'}}
+        with contextlib.redirect_stdout(io.StringIO()), patch.object(self.loop, 'available_job') as ai:
+            self.loop.ladder()
+            ai.assert_not_called()
+        cached = jobs.read(self.loop.out / 'ladder.json')
+        self.assertEqual(cached['seen'], ['1', '42'])
+        self.assertNotIn('pending', cached)
+        self.assertGreater(cached['checked'], 0)
+
+    def test_ladder_is_a_short_medium_effort_step(self):
+        out = self.root / 'out/card-0/attempt-1'
+        spec = {'step': 'ladder', 'out': str(out), 'tree': str(self.root), 'prompt': str(self.root / 'prompt.md'),
+                'log': str(self.root / 'ladder.jsonl')}
+        (self.root / 'prompt.md').write_text('review')
+        def fake_run(argv, cwd, env=None, timeout=3600, **kwargs):
+            self.assertEqual(argv[argv.index('--effort') + 1], 'medium')
+            self.assertEqual(timeout, 20 * 60)
+            Path(spec['log']).write_text(json.dumps({'type': 'result', 'is_error': False}) + '\n')
+            return ''
+        with patch.object(jobs, 'run', side_effect=fake_run) as run:
+            jobs.ai(spec, ())
+            run.assert_called_once()
+
     def test_ambiguous_reply_never_approves(self):
         c = card(status='needs-look', by='zhe')
         meta = {'attempt': 1, 'base': 'a' * 40, 'phase': 'look'}
