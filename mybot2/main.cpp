@@ -175,8 +175,8 @@ constexpr int QG_CORNER_EVERY = 10;
 constexpr double QG_CORNER_PENALTY = 1000.0;
 constexpr bool QG_CORNER_LOG = false;
 constexpr bool QUEEN_TOPUP = false;
-constexpr int QT_ROUND = 300;
-constexpr int QT_QUIET = 30;
+constexpr int QT_CLEAR = 4;
+constexpr int QT_MARGIN = 2;
 constexpr int QT_REACH = 8;
 constexpr int QT_MAX_LENGTH = 8;
 constexpr double QT_PEARL_GAIN = 250.0;
@@ -383,6 +383,7 @@ struct Survey {
     int dist_route = -1;
     int dist_trade = -1;
     int dist_portal = -1;
+    int dist_top = -1;
     int pearls = 0;
     bool reaches_tail = false;
     double ally_load = 0.0;
@@ -488,9 +489,6 @@ class Bot {
             if (QUEEN_GAME_FEED_ROUND > 0 && queen_game) {
                 feed_round = std::min(feed_round, QUEEN_GAME_FEED_ROUND);
             }
-        }
-        if (QUEEN_TOPUP && (!enemy_heads.empty() || enemy_near(head, QT_REACH))) {
-            topup_contact = round;
         }
         if (QG_SAFEZONE) {
             zone_watch();
@@ -612,14 +610,14 @@ class Bot {
             return;
         }
 
-        if (cornered && (is_big() || is_queen()) && sprint_escape(path, true)) {
+        if (cornered && (is_big() || is_queen() || topup_queen()) && sprint_escape(path, true)) {
             ct.make_moves(path);
             act_dirs = path;
             remember_path(path);
             return;
         }
 
-        if (cornered && !is_queen() && tail_index >= 0 && threat_at(tail_index) == 0) {
+        if (cornered && !is_queen() && !topup_queen() && tail_index >= 0 && threat_at(tail_index) == 0) {
             int const tail_part = length - unswbc::Constants::MIN_SIZE;
             if (ct.can_split(tail_part) && tail_room() >= CHILD_MIN_ROOM) {
                 split_off(tail_part);
@@ -1973,7 +1971,7 @@ class Bot {
 
     void mark_hunt_targets() {
         hunt_targets = 0;
-        if (is_queen()) {
+        if (is_queen() || topup_queen()) {
             hunt_queen = false;
             return;
         }
@@ -2354,6 +2352,9 @@ class Bot {
                 if (share > 0.0 && pearl_here[index] && !in_leader_pearl_zone(index)) {
                     result.pearls++;
                 }
+                if (QUEEN_TOPUP && result.dist_top < 0 && pearl_here[index] && share >= 1.0 && steps + QT_MARGIN <= theirs) {
+                    result.dist_top = steps;
+                }
                 if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
                     !in_leader_pearl_zone(index)) {
                     int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
@@ -2681,11 +2682,11 @@ class Bot {
     }
 
     bool topup_queen() const {
-        return QUEEN_TOPUP && ct.get_id() <= 1 && (cells > QUEEN_MIN_CELLS || home_closed) && round >= QT_ROUND;
+        return QUEEN_TOPUP && ct.get_id() <= 1 && (round > grow_round || feeding_phase());
     }
 
     bool topping_up() const {
-        return topup_queen() && length < QT_MAX_LENGTH && round - topup_contact >= QT_QUIET;
+        return topup_queen() && length < QT_MAX_LENGTH && !enemy_near(head, QT_CLEAR);
     }
 
     bool queen_guard() const {
@@ -3033,7 +3034,8 @@ class Bot {
     }
 
     bool is_trader() const {
-        return length <= TRADE_MAX_LENGTH && !is_leader() && (!is_queen() || (QUEEN_TRADE_SMALL && aggressive)) && trade_targets > 0;
+        return length <= TRADE_MAX_LENGTH && !is_leader() && (!is_queen() || (QUEEN_TRADE_SMALL && aggressive)) && !topup_queen() &&
+               trade_targets > 0;
     }
 
     bool can_scout_portals() const {
@@ -4079,7 +4081,7 @@ class Bot {
     }
 
     bool rally_ready() const {
-        if (!feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
+        if (!feeding_phase() || is_feeder() || is_leader() || is_trader() || topup_queen() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
@@ -4201,8 +4203,8 @@ class Bot {
                                        (PORTAL_FAR_ROUNDS <= 0 || round <= PORTAL_FAR_ROUNDS)
                                    ? WEIGHT_PORTAL_SCOUT * std::max(0.0, TARGET_REWARD - PORTAL_FAR_DECAY * survey.dist_portal)
                                    : target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
-        if (topping_up() && survey.dist_pearl >= 0 && survey.dist_pearl <= QT_REACH) {
-            last_bonus = std::max(last_bonus, QT_PEARL_GAIN * (QT_REACH + 1 - survey.dist_pearl));
+        if (topping_up() && survey.dist_top >= 0 && survey.dist_top <= QT_REACH) {
+            last_bonus = std::max(last_bonus, QT_PEARL_GAIN * (QT_REACH + 1 - survey.dist_top));
         }
         score += last_bonus;
         if (EXPLORE_GAIN > 0.0 && round < EXPLORE_ROUNDS && survey.dist_unseen >= 0) {
@@ -4226,10 +4228,11 @@ class Bot {
         if (pocket_full) {
             score -= POCKET_PENALTY * (grown - pocket / POCKET_DIV);
         }
-        if (pearl_here[index_of(destination)] && !is_feeder() && !in_leader_pearl_zone(index_of(destination)) && !pocket_full) {
+        if (pearl_here[index_of(destination)] && !is_feeder() && (!in_leader_pearl_zone(index_of(destination)) || topup_queen()) &&
+            !pocket_full) {
             score += EAT_BONUS;
         }
-        if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
+        if (!is_leader() && !topup_queen() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
             score -= ZONE_PEARL_PENALTY;
         }
         if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
@@ -4246,7 +4249,7 @@ class Bot {
                 double penalty = PENALTY_HEAD_RACE * std::max(0.5, length / THREAT_LENGTH_SCALE) * (0.5 + 0.5 * depth);
                 if (is_queen()) {
                     penalty *= queen_guard() ? QG_THREAT_MULT : QUEEN_THREAT_MULT;
-                } else if (is_leader()) {
+                } else if (is_leader() || topup_queen()) {
                     penalty *= LEADER_HEAD_MULT;
                 }
                 if (SMALL_THREAT_MULT != 1.0 && length <= TRADE_MAX_LENGTH &&
@@ -4572,7 +4575,6 @@ class Bot {
     int enemy_big_seen = 0;
     int first_contact = -1;
     int last_contact = -1;
-    int topup_contact = -1;
     bool home_closed = false;
     bool queen_game = false;
     int big_enemy_round = -1;
