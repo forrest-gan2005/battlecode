@@ -349,8 +349,9 @@ constexpr bool LG_AVENGE = false;
 constexpr int LG_AVENGE_ROUND = 300;
 constexpr int LG_AVENGE_MAX_LEN = 8;
 constexpr int LG_AVENGE_NO_NEWS = 0;
-constexpr int LG_AVENGE_PATIENCE = 30;
-constexpr int LG_AVENGE_AGE_CAP = 60;
+constexpr int LG_AVENGE_FRESH = 20;
+constexpr int LG_AVENGE_RANGE = 20;
+constexpr int LG_AVENGE_SPAWN_SLACK = 2;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
@@ -535,7 +536,6 @@ class Bot {
             route_target = inc_target;
         }
         if (LG_AVENGE && av_on && route_target < 0) {
-            av_route = avenge_route();
             route_target = av_route;
         }
         if (QUEEN_MODE && route_target < 0 && !is_queen() && !is_feeder() && enemy_queen_round >= 0 &&
@@ -795,7 +795,7 @@ class Bot {
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
-        if (LG_AVENGE && av_on) {
+        if (LG_AVENGE && av_on && av_foe_in_view) {
             return 0;
         }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
@@ -1180,9 +1180,6 @@ class Bot {
             queen_id = ct.get_id();
             enemy_queen_id = 1 - queen_id;
         }
-        if (LG_AVENGE && ct.get_id() <= 1) {
-            avenge_ids(ct.get_id());
-        }
         av_foe_in_view = false;
 
         hear_exact(ct.get_id(), length, round, head, ct.get_dir());
@@ -1235,12 +1232,15 @@ class Bot {
                 enemy_queen_round = round;
             }
             if (LG_AVENGE && part->get_id() <= 1) {
-                bool const ours = part->get_team() == ct.get_team();
-                avenge_ids(ours ? part->get_id() : 1 - part->get_id());
-                if (!ours && part->is_head()) {
-                    av_foe_pos = position;
-                    av_foe_round = round;
-                    av_foe_in_view = true;
+                if (part->get_team() == ct.get_team()) {
+                    av_queen_id = part->get_id();
+                } else {
+                    av_foe_id = part->get_id();
+                    if (part->is_head()) {
+                        av_foe_pos = position;
+                        av_foe_round = round;
+                        av_foe_in_view = true;
+                    }
                 }
             }
             if (part->is_head() && part->get_id() != ct.get_id()) {
@@ -1446,7 +1446,10 @@ class Bot {
     }
 
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
-        int const tagged = QUEEN_QUIET_ROUND > 0 && queen_game && id == queen_id ? (id | 0x8000) : id;
+        int tagged = QUEEN_QUIET_ROUND > 0 && queen_game && id == queen_id ? (id | 0x8000) : id;
+        if (LG_AVENGE) {
+            tagged = (tagged & ~0x6000) | ((av_state & 0x3) << 13);
+        }
         std::uint64_t const body = (static_cast<std::uint64_t>(tagged) & 0xFFFF) |
                                    ((static_cast<std::uint64_t>(len) & 0xFFF) << 16) |
                                    ((static_cast<std::uint64_t>(when) & 0x1FF) << 28) |
@@ -1563,16 +1566,16 @@ class Bot {
             Direction facing = dir_of(Direction::NORTH);
             
             if (unpack_leader(message, id, len, when, pos, facing)) {
+                if (LG_AVENGE) {
+                    av_state = std::max(av_state, (id >> 13) & 0x3);
+                    id &= ~0x6000;
+                }
                 if ((id & 0x8000) != 0) {
                     id &= 0x7FFF;
                     queen_game = true;
                 }
                 if (id != ct.get_id()) {
                     hear_exact(id, len, when, pos, facing);
-                }
-                if (LG_AVENGE && id <= 1 && id != ct.get_id() && plausible_report(id, len, when, pos)) {
-                    avenge_ids(id);
-                    av_alive_round = std::max(av_alive_round, when);
                 }
             } else if ((message >> 63) != 0 && learn_mouth(message)) {
                 continue;
@@ -1621,8 +1624,7 @@ class Bot {
                 ct.send_sonar(directions[k], pack_mouth(index_of(post)));
             } else if (QG_SAFEZONE && zone_relay(k)) {
                 ct.send_sonar(directions[k], pack_zone());
-            } else if (LG_AVENGE && av_talk &&
-                       (known_leader_id < 0 || (round + static_cast<int>(k)) % (round < LG_AVENGE_ROUND ? 4 : 2) == 0)) {
+            } else if (LG_AVENGE && av_relay && (round + static_cast<int>(k)) % 4 == 1) {
                 ct.send_sonar(directions[k], pack_avenge());
             } else if (has_sight && (known_leader_id < 0 || (round + static_cast<int>(k)) % 2 == 0)) {
                 ct.send_sonar(directions[k], sight);
@@ -1632,38 +1634,33 @@ class Bot {
         }
     }
 
-    void avenge_ids(int ours) {
-        av_queen_id = ours;
-        av_foe_id = 1 - ours;
-    }
-
-    // Bit k: the cell next to `cell` in direction k is in view and has (or lacks) a pearl.
+    // Bits 0-3: the neighbour in direction k, bit 4: the cell itself. With pearl=false a bit means
+    // "in view, no pearl, none due to spawn"; with pearl=true it means "in view with a pearl".
     int avenge_ring(Position cell, bool pearl) const {
         int mask = 0;
         auto const directions = Direction::get_direction_list();
-        for (std::size_t k = 0; k < directions.size(); k++) {
-            int const next = step_index(cell, directions[k]);
-            if (next >= 0 && seen_round[next] == round && (pearl_here[next] != 0) == pearl) {
+        for (std::size_t k = 0; k <= directions.size(); k++) {
+            int const at = k < directions.size() ? step_index(cell, directions[k]) : index_of(cell);
+            if (at < 0 || seen_round[at] != round || (pearl_here[at] != 0) != pearl) {
+                continue;
+            }
+            if (pearl || pearl_timer[at] < 0 || pearl_timer[at] > LG_AVENGE_SPAWN_SLACK) {
                 mask |= 1 << k;
             }
         }
         return mask;
     }
 
-    // A corpse leaves a pearl on its head cell; a live dragon that moved leaves its neck.
-    bool avenge_gone(Position cell, int clear) const {
-        auto const* tile = ct.get_tile(cell);
-        if (!tile) {
-            return false;
-        }
-        return tile->has_pearl() || tile->get_dragon() || (avenge_ring(cell, true) & clear) != 0;
+    // A corpse leaves a pearl on its head cell: a new pearl there that no spawn explains.
+    bool avenge_corpse(Position cell, int quiet) const {
+        return seen_round[index_of(cell)] == round && (avenge_ring(cell, true) & quiet) != 0;
     }
 
     bool avenge_queen_dead() const {
-        if (av_queen_id < 0 || ct.get_id() == av_queen_id) {
+        if (ct.get_id() <= 1 || av_alive_round == round) {
             return false;
         }
-        if (av_dead_round >= 0 && av_dead_round >= av_alive_round) {
+        if ((av_state & 1) != 0) {
             return true;
         }
         return LG_AVENGE_NO_NEWS > 0 && round - std::max(av_alive_round, 0) >= LG_AVENGE_NO_NEWS;
@@ -1674,7 +1671,6 @@ class Bot {
     }
 
     void avenge_watch() {
-        int const units = ct.get_unit_count();
         bool queen_head = false;
         Position queen_at{};
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
@@ -1683,17 +1679,24 @@ class Bot {
                 queen_at = ally_heads[k];
             }
         }
-        if (av_queen_id >= 0 && (ct.get_id() == av_queen_id || visible_parts(av_queen_id) > 0)) {
+        // av_state: 0 no claim, 1 dead, 2 seen alive after that, 3 dead again; sonar keeps the highest.
+        if (ct.get_id() <= 1 || (av_queen_id >= 0 && visible_parts(av_queen_id) > 0)) {
             av_alive_round = round;
-        } else if (av_seen_round == round - 1 && units < av_units && avenge_gone(av_seen_pos, av_seen_clear)) {
-            av_dead_round = round;
+            av_witness = false;
+            if (av_state == 1) {
+                av_state = 2;
+            }
+        } else if (av_seen_round == round - 1 && avenge_corpse(av_seen_pos, av_seen_clear)) {
+            av_witness = true;
+        }
+        if (av_witness && (av_state & 1) == 0) {
+            av_state++;
         }
         av_seen_round = queen_head ? round : -1;
         av_seen_pos = queen_at;
         av_seen_clear = queen_head ? avenge_ring(queen_at, false) : 0;
-        av_units = units;
         if (!av_foe_in_view && av_foe_seen_round == round - 1 && visible_parts(av_foe_id) == 0 &&
-            avenge_gone(av_foe_seen_pos, av_foe_seen_clear)) {
+            avenge_corpse(av_foe_seen_pos, av_foe_seen_clear)) {
             av_foe_dead_round = round;
         }
         av_foe_seen_round = av_foe_in_view ? round : -1;
@@ -1701,84 +1704,48 @@ class Bot {
             av_foe_seen_pos = av_foe_pos;
             av_foe_seen_clear = avenge_ring(av_foe_pos, false);
         }
-        bool const dead = avenge_queen_dead();
-        av_talk = dead || (av_dead_round >= 0 && round - av_dead_round <= SONAR_STALE);
-        av_on = dead && !avenge_foe_dead() && round >= LG_AVENGE_ROUND && known_leader_id != ct.get_id() &&
-                (LG_AVENGE_MAX_LEN <= 0 || length <= LG_AVENGE_MAX_LEN);
-        av_route = -1;
-    }
-
-    // Her last report until we have looked there, then the stalest nearby cell.
-    int avenge_route() {
-        if (av_foe_round > av_miss_round) {
-            int const at = index_of(av_foe_pos);
-            if (av_foe_in_view || seen_round[at] != round) {
-                return at;
-            }
-            av_miss_round = av_foe_round;
+        bool const phase = avenge_queen_dead() && round >= LG_AVENGE_ROUND;
+        bool const fresh = av_foe_round >= 0 && round - av_foe_round <= LG_AVENGE_FRESH;
+        bool const foe_dead = avenge_foe_dead();
+        // Reached her last cell and she is not in view: wait for a newer sighting.
+        if (fresh && !av_foe_in_view && manhattan(head, av_foe_pos) <= 1) {
+            av_miss_round = std::max(av_miss_round, av_foe_round);
         }
-        if (av_search >= 0 && seen_round[av_search] != round && round - av_search_round <= LG_AVENGE_PATIENCE) {
-            return av_search;
-        }
-        int best = -1;
-        int best_score = -BLOCKED_FOREVER;
-        for (int cell = 0; cell < cells; cell++) {
-            if (seen_round[cell] == round) {
-                continue;
-            }
-            int const age = seen_round[cell] < 0 ? LG_AVENGE_AGE_CAP : std::min(round - seen_round[cell], LG_AVENGE_AGE_CAP);
-            int const score = 2 * age - manhattan(head, position_of(cell)) + (ct.get_id() * 31 + cell * 17 + round) % 5;
-            if (score > best_score) {
-                best_score = score;
-                best = cell;
-            }
-        }
-        av_search = best;
-        av_search_round = round;
-        return best;
+        bool const live = fresh && !foe_dead && av_foe_round > av_miss_round;
+        av_relay = phase && (live || (foe_dead && round - av_foe_dead_round <= LG_AVENGE_FRESH));
+        av_on = phase && live && known_leader_id != ct.get_id() &&
+                (LG_AVENGE_MAX_LEN <= 0 || length <= LG_AVENGE_MAX_LEN) &&
+                manhattan(head, av_foe_pos) <= LG_AVENGE_RANGE;
+        av_route = av_on ? index_of(av_foe_pos) : -1;
     }
 
     std::uint64_t pack_avenge() const {
         bool const foe_dead = avenge_foe_dead();
-        int const foe_when = foe_dead ? av_foe_dead_round : std::max(av_foe_round, 0);
-        int const foe_cell = foe_dead || av_foe_round < 0 ? 0 : index_of(av_foe_pos);
-        std::uint64_t const body = (static_cast<std::uint64_t>(foe_cell) & 0x3FFF) |
-                                   ((static_cast<std::uint64_t>(foe_when) & 0x1FF) << 14) |
-                                   ((static_cast<std::uint64_t>(std::max(av_dead_round, 0)) & 0x1FF) << 23) |
-                                   (static_cast<std::uint64_t>(foe_dead ? 1 : 0) << 32) |
-                                   (static_cast<std::uint64_t>(std::max(av_queen_id, 0) & 1) << 33) |
-                                   (static_cast<std::uint64_t>(0x15) << 38) |
-                                   ((static_cast<std::uint64_t>(std::max(av_alive_round, 0)) & 0x1FF) << 44) |
-                                   ((sonar_tag & 0x3) << 53);
-        return body | (static_cast<std::uint64_t>(sonar_checksum(body)) << 55) | (1ULL << 63);
+        int const when = foe_dead ? av_foe_dead_round : av_foe_round;
+        int const cell = foe_dead ? 0 : index_of(av_foe_pos);
+        std::uint64_t const body = (static_cast<std::uint64_t>(cell) & 0x3FFF) |
+                                   ((static_cast<std::uint64_t>(when) & 0x1FF) << 14) |
+                                   (static_cast<std::uint64_t>(foe_dead ? 1 : 0) << 23) |
+                                   (static_cast<std::uint64_t>(av_state & 0x3) << 24) |
+                                   (static_cast<std::uint64_t>(0x15) << 38) | ((sonar_tag & 0x3) << 53);
+        return sonar_codec::seal(sonar_key, body | (1ULL << 63));
     }
 
     bool learn_avenge(std::uint64_t message) {
         std::uint64_t const body = message & ((1ULL << 55) - 1);
-        if (((body >> 53) & 0x3) != sonar_tag || sonar_checksum(body) != static_cast<std::uint8_t>(message >> 55) ||
-            ((body >> 38) & 0x3F) != 0x15 || ((body >> 34) & 0xF) != 0) {
+        if (((body >> 53) & 0x3) != sonar_tag || ((body >> 38) & 0x7FFF) != 0x15 || ((body >> 26) & 0xFFF) != 0) {
             return false;
         }
         int const cell = static_cast<int>(body & 0x3FFF);
-        int const foe_when = static_cast<int>((body >> 14) & 0x1FF);
-        int const dead = static_cast<int>((body >> 23) & 0x1FF);
-        int const alive = static_cast<int>((body >> 44) & 0x1FF);
-        if (cell >= cells || foe_when > round || dead > round || alive > round) {
+        int const when = static_cast<int>((body >> 14) & 0x1FF);
+        if (cell >= cells || when > round) {
             return true;
         }
-        if (av_queen_id < 0) {
-            avenge_ids(static_cast<int>((body >> 33) & 1ULL));
-        }
-        if (dead > 0) {
-            av_dead_round = std::max(av_dead_round, dead);
-        }
-        if (alive > 0) {
-            av_alive_round = std::max(av_alive_round, alive);
-        }
-        if (((body >> 32) & 1ULL) != 0) {
-            av_foe_dead_round = std::max(av_foe_dead_round, foe_when);
-        } else if (foe_when > 0 && foe_when > av_foe_round) {
-            av_foe_round = foe_when;
+        av_state = std::max(av_state, static_cast<int>((body >> 24) & 0x3));
+        if (((body >> 23) & 1ULL) != 0) {
+            av_foe_dead_round = std::max(av_foe_dead_round, when);
+        } else if (when > av_foe_round) {
+            av_foe_round = when;
             av_foe_pos = position_of(cell);
         }
         return true;
@@ -4882,25 +4849,23 @@ class Bot {
     bool enemy_queen_dead = false;
     int av_queen_id = -1;
     int av_foe_id = -1;
+    int av_state = 0;
+    bool av_witness = false;
     int av_alive_round = -1;
-    int av_dead_round = -1;
     int av_seen_round = -1;
     Position av_seen_pos{};
     int av_seen_clear = 0;
-    int av_foe_seen_clear = 0;
-    int av_units = 0;
     Position av_foe_pos{};
     int av_foe_round = -1;
     bool av_foe_in_view = false;
     int av_foe_seen_round = -1;
     Position av_foe_seen_pos{};
+    int av_foe_seen_clear = 0;
     int av_foe_dead_round = -1;
     int av_miss_round = -1;
-    int av_search = -1;
-    int av_search_round = -1;
     int av_route = -1;
     bool av_on = false;
-    bool av_talk = false;
+    bool av_relay = false;
     int eq_round = -1;
     Position eq_pos{};
     std::vector<int> zs_stamp;
