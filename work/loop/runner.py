@@ -14,7 +14,7 @@ from string import Template
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from card_names import card_ref, card_name, unique_slug, valid_slug
-from fair_queue import priority, order_cards, read_fair, served
+from fair_queue import priority, order_cards, read_fair, served, lock_taken
 
 from jobs import OLD_MAPS, busy, lock, read, stage, worker, write, eta_minutes, step_timing, remaining_wait
 
@@ -374,6 +374,11 @@ class Loop:
             self.children.append(child)
         # Reserve within this tick too: workers may not yet have acquired their locks.
         self.launched.update(resources)
+        if card['number']:  # the ladder review is not a card
+            fair = read_fair(self.fair_path)
+            used = lock_taken(fair, card)
+            if used != fair:
+                write(self.fair_path, used)
         self.job_notice(card, step, path, f'started {step}', metadata={
             'attempt': meta.get('attempt', 0), 'base': meta['base'],
             'job': str(path), 'pid': child.pid})

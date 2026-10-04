@@ -47,6 +47,14 @@ def served(fair, card, when=None):
     return result
 
 
+def lock_taken(fair, card):
+    """An AI card that gets a lock for any step has used the AI turn."""
+    result = dict(fair)
+    if author(card) == 'by:ai' and 'type:task' not in names(card) and result.get(COUNTER):
+        result[COUNTER] = 0
+    return result
+
+
 def order_cards(cards, fair=None):
     pending, result, history = list(cards), [], dict(fair or {})
     # Virtual starts show a complete rotation without changing durable history.

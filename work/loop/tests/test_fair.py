@@ -1,11 +1,12 @@
 """Fair starts and shared lock ordering; all remote work is mocked."""
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import test_runner
 from test_runner import card
 import runner
-from fair_queue import COUNTER, order_cards, read_fair, served
+from fair_queue import COUNTER, lock_taken, order_cards, read_fair, served
 
 
 class FairTests(unittest.TestCase):
@@ -85,6 +86,50 @@ class FairTests(unittest.TestCase):
              patch.object(self.loop, 'running_notices'), patch.object(self.loop, 'board'):
             self.loop.tick()
         self.assertEqual(started, [1, 2, 3, 5, 4])
+
+    def test_ai_turn_is_used_up_by_one_ai_step(self):
+        meta = {'attempt': 1, 'base': 'a' * 40}
+        runner.write(self.loop.fair_path, {'by:zhe': '2026-10-05T01:00:00+00:00',
+                                           'by:junsing': '2026-10-05T02:00:00+00:00', COUNTER: 3})
+
+        def poll(starts=None):
+            cs = [card(31, 'building', by='zhe'), card(34, 'building', by='junsing'),
+                  card(23, 'testing', by='ai'), card(30, 'building', by='ai')]
+            offered = []
+
+            def offer(c):
+                offered.append(c['number'])
+                if c['number'] == starts:
+                    self.loop.job(c, meta, 'verdict')
+            with patch('meow_control.controls', return_value=False), patch.object(self.loop, 'cards_on_board', return_value=cs), \
+                 patch.object(self.loop, 'process', side_effect=offer), patch.object(self.loop, 'ladder'), \
+                 patch.object(self.loop, 'running_notices'), patch.object(self.loop, 'board'), \
+                 patch.object(runner.subprocess, 'Popen', return_value=SimpleNamespace(pid=1, poll=lambda: 0)):
+                self.loop.tick()
+            return offered, read_fair(self.loop.fair_path)[COUNTER]
+
+        # No AI card can use its turn: it stays due, and the human cards are still offered in the same poll.
+        self.assertEqual(poll(), ([23, 30, 31, 34], 3))
+        self.assertEqual(poll(), ([23, 30, 31, 34], 3))
+        # One AI card gets a lock for a step that is not a start from ready: the turn is spent at once.
+        self.assertEqual(poll(starts=23), ([23, 31, 34, 30], 0))
+        self.assertEqual(poll(), ([31, 34, 23, 30], 0))
+
+    def test_ai_turn_ignores_humans_tasks_and_the_ladder(self):
+        meta = {'attempt': 1, 'base': 'a' * 40}
+        task = card(8, 'building', by='ai'); task['labels'].append({'name': 'type:task'})
+        ladder = card(0, by='ai')
+        for c, step in ((card(31, 'building', by='zhe'), 'verdict'), (task, 'verdict'), (ladder, 'ladder')):
+            runner.write(self.loop.fair_path, {COUNTER: 3})
+            self.loop.launched = set()
+            with patch.object(runner.subprocess, 'Popen') as launch:
+                self.loop.job(c, meta, step)
+                launch.assert_called_once()
+            self.assertEqual(read_fair(self.loop.fair_path), {COUNTER: 3})
+        self.assertEqual(lock_taken({COUNTER: 2, 'by:ai': 'x'}, card(5, by='ai')), {COUNTER: 0, 'by:ai': 'x'})
+        self.assertEqual(order_cards([card(1, by='zhe'), card(2, by='ai'), card(3, by='ai')], {COUNTER: 3})[0]['number'], 2)
+        self.assertEqual([c['number'] for c in order_cards([card(1, by='zhe'), card(2, by='ai'), card(3, by='ai')],
+                                                           {COUNTER: 3})], [2, 1, 3])
 
     def test_shared_history_path_with_custom_output(self):
         self.assertEqual(runner.Loop(self.loop.args).fair_path, Path.home() / 'meow-loop-out/fair.json')
