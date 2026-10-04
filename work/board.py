@@ -17,6 +17,8 @@ Requires the GitHub CLI (gh) with write access to the repo.
 """
 import argparse, datetime, json, os, re, socket, subprocess, sys, tempfile
 
+from card_names import card_ref as format_card_ref
+
 REPO = "forrest-gan2005/battlecode"
 STATUS_TITLE = "Loop status"
 KST = datetime.timezone(datetime.timedelta(hours=9))
@@ -30,6 +32,13 @@ def gh(*args, parse=True):
     if r.returncode:
         sys.exit(f"gh {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
     return json.loads(r.stdout) if parse and r.stdout.strip() else r.stdout
+
+
+def card_ref(card):
+    if isinstance(card, dict):
+        return format_card_ref(card)
+    issue = gh("issue", "view", str(card), "--repo", REPO, "--json", "number,title,labels")
+    return format_card_ref({**issue, 'number': card})
 
 
 def now():
@@ -63,7 +72,7 @@ def render(loops):
     blob = "<!-- loops-json\n" + json.dumps({"loops": loops}, indent=1, ensure_ascii=False) + "\n-->\n\n"
     rows = ["| Loop | Workflow | Machine | State | Working on | Step | Since (KST) | Updated (KST) |", "|---|---|---|---|---|---|---|---|"]
     for name, l in sorted(loops.items()):
-        issue = f"#{l['issue']}" if l.get("issue") else "-"
+        issue = l.get("ref") or card_ref(l["issue"]) if l.get("issue") else "-"
         rows.append(f"| {name} | {WF.get(str(l.get('wf')), l.get('wf'))} | {l.get('machine', '-')} | {l.get('state', '-')} | {issue} | "
                     f"{l.get('step') or '-'} | {l.get('since', '-')} | {l.get('updated', '-')} |")
     if len(rows) == 2:
@@ -78,7 +87,7 @@ def heartbeat(loop, wf, state="running", issue=None, step=None, machine=None):
     t = now().strftime("%m-%d %H:%M")
     if cur.get("state") != state or cur.get("issue") != issue:
         cur["since"] = t
-    cur.update(wf=str(wf), state=state, issue=issue, step=step, machine=machine or cur.get("machine") or socket.gethostname().split(".")[0], updated=t)
+    cur.update(ref=card_ref(issue) if issue else None, wf=str(wf), state=state, issue=issue, step=step, machine=machine or cur.get("machine") or socket.gethostname().split(".")[0], updated=t)
     loops[loop] = cur
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
         f.write(render(loops))
@@ -114,7 +123,7 @@ def cmd_next(a):
         return
     for i in q if a.state else q[:1]:
         labels = ", ".join(l["name"] for l in i["labels"])
-        print(f"#{i['number']} {i['title']}\nlabels: {labels}\n\n{i['body']}")
+        print(f"{card_ref(i)}\nlabels: {labels}\n\n{i['body']}")
         pages = gh("api", f"repos/{REPO}/issues/{i['number']}/comments", "--paginate", "--slurp")
         for page in pages:
             for c in page:
@@ -147,7 +156,7 @@ def cmd_state(a):
             comment(a.n, f.read())
     set_state(a.n, a.state)
     heartbeat(a.loop, a.wf, a.state, a.n, f"status:{a.state}", a.machine)
-    print(f"#{a.n} status:{a.state}")
+    print(f"{card_ref(a.n)} status:{a.state}")
 
 
 def cmd_report(a):

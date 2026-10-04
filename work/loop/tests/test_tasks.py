@@ -54,7 +54,7 @@ class TaskTests(unittest.TestCase):
         with patch.object(board, 'gh', side_effect=[[card(by='zhe'), task(2, 'ready', 'ai')], []]), \
              patch('builtins.print') as output:
             board.cmd_next(type('Args', (), {'state': None, 'wf': None})())
-        self.assertTrue(output.call_args_list[0].args[0].startswith('#2 [Task]'))
+        self.assertTrue(output.call_args_list[0].args[0].startswith('#2 Refactor sonar'))
 
     def test_board_discovers_task_label_and_filters_inactive(self):
         c = task(status='ready')
@@ -189,6 +189,8 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(len(payload['tree']), 1)
         self.assertTrue(payload['tree'][0]['path'].startswith('candidates/'))
         self.assertEqual(cmd.call_args.args[0][:3], ['gh', 'pr', 'create'])
+        self.assertEqual(cmd.call_args.args[0][cmd.call_args.args[0].index('--title') + 1], 'Candidate #1 Refactor sonar')
+        self.assertTrue((out / 'candidate-pr.md').read_text().startswith('Card: [#1 Refactor sonar](https://github.com/'))
         self.assertIn('required teammate approvers', (out / 'candidate-pr.md').read_text())
 
 

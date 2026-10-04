@@ -1,5 +1,10 @@
 中文版: [LOOP.zh.md](LOOP.zh.md)
 
+Cards are shown as a card number plus short name, for example `#27 passage`.
+The short name lives in the card’s `name:<slug>` label.
+Candidate PR titles start with the card ref: `Candidate #27 passage`.
+PR numbers appear only inside links labeled `PR`; keep following the card number.
+
 The loop takes idea and task cards from the board, builds them, tests them, and brings decisions back to us.
 Task cards go first, then Zhe's ideas, other humans' ideas, and AI ideas last.
 One GitHub state label tells everyone what happens next, even after a restart.

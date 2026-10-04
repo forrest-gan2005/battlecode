@@ -41,7 +41,7 @@ class LoopFixTests(unittest.TestCase):
         jobs.write(self.loop.out / 'ladder.json', {'pending': pending})
         ladder_card = dict(self.card, number=0)
         out = Path(self.loop.context(ladder_card, self.meta)['out'])
-        proposal = {'title': '[Idea] [Task] Once our queen is dead',
+        proposal = {'slug': 'queen-growth', 'title': '[Idea] [Task] Once our queen is dead',
                     'summary': 'What we tried: Review game 42.\nDid it work: A supported idea.\n'
                                'Who decides now: Any teammate. One OK lets the loop build it.',
                     'Area': 'queen', 'Claim': 'Keep growing', 'Evidence': 'Replay 42',
@@ -151,7 +151,7 @@ class LoopFixTests(unittest.TestCase):
         snapshot = jobs.read(self.loop.out / 'status.json')
         self.assertEqual(snapshot['cards']['15']['step'], 'mechanism waiting for batch lock')
         self.assertEqual(board.call_args.args[0], 'heartbeat')
-        self.assertIn('#15: mechanism waiting for batch lock', board.call_args.args[-1])
+        self.assertIn('#15 Test: mechanism waiting for batch lock', board.call_args.args[-1])
 
 
 if __name__ == '__main__':

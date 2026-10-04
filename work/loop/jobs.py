@@ -93,7 +93,7 @@ def append_event(path, spec, event, stamp, note='', minutes=None):
     if spec.get('step') not in ETA_DEFAULTS or not all(key in spec for key in ('out', 'number', 'title')):
         return
     root = Path(spec['out']).parent.parent
-    record = {'time': iso_time(stamp), 'card': spec['number'], 'title': spec['title'],
+    record = {'time': iso_time(stamp), 'card': spec['number'], 'title': spec['title'], 'name': spec.get('name', ''),
               'step': spec['step'], 'event': event,
               'eta_minutes': spec.get('eta_minutes', eta_minutes(root, spec['step'])), 'note': note}
     if minutes is not None:

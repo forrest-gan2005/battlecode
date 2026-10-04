@@ -12,6 +12,9 @@ import sys
 import time
 from string import Template
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from card_names import card_ref, card_name, unique_slug, valid_slug
+
 from jobs import OLD_MAPS, busy, lock, read, stage, worker, write, eta_minutes, step_timing, remaining_wait
 
 HERE = Path(__file__).resolve().parent
@@ -157,8 +160,8 @@ class Loop:
 
     def notice(self, card, text, metadata=None):
         key = str(card['number'])
-        self.status[key] = {**self.status.get(key, {}), **(metadata or {}), 'state': state(card), 'step': text}
-        print(f"#{key} [{state(card)}] {text}", flush=True)
+        self.status[key] = {**self.status.get(key, {}), **(metadata or {}), 'state': state(card), 'step': text, 'title': card_ref(card), 'name': card_name(card)}
+        print(f"{card_ref(card)} [{state(card)}] {text}", flush=True)
 
     def board(self, *args, base=None):
         if self.args.dry_run:
@@ -177,10 +180,12 @@ class Loop:
         """A remote marker repairs a crash between comment creation and label replacement."""
         marker = {**(metadata or {}), 'key': key}
         if not ask and not key.startswith('ai-decision-') and not text.startswith(PREFIXES[0]):
-            text = ("What we tried: Move this card's next step forward.\n"
+            text = (f"What we tried: Move {card_ref(card)} to its next step.\n"
                     f"Did it work: {text}\nWho decides now: "
                     + ('The author and required teammate approvers review the PR.' if key.startswith('candidate-')
                        else 'The loop continues; people decide acceptance.'))
+        text = re.sub(r'(?<![\w/])#' + str(card['number']) + r'\b(?![\w-])' + (r'(?!' + re.escape(' ' + card_ref(card).split(' ', 1)[1]) + ')' if ' ' in card_ref(card) else ''), card_ref(card), text)
+        text += f'\n\nCard: [{card_ref(card)}](https://github.com/{GH_REPO}/issues/{card["number"]})'
         pending = self.out / f"card-{card['number']}" / 'pending-post.json'
         write(pending, {'key': key, 'text': text, 'target': target, 'kind': kind, 'ask': ask, 'metadata': metadata, 'close': close})
         if not any(r.get('key') == key for r in records(card)):
@@ -229,7 +234,7 @@ class Loop:
 
     def context(self, card, meta):
         out = self.out / f"card-{card['number']}" / f"attempt-{meta.get('attempt', 0)}"
-        return {'number': card['number'], 'title': card['title'], 'body': card.get('body', ''),
+        return {'number': card['number'], 'title': card_ref(card), 'name': card_name(card), 'full_title': card['title'], 'body': card.get('body', ''),
                 'comments': json.dumps(card.get('comments', []), ensure_ascii=False),
                 'base': meta.get('base', 'not selected yet'), 'repo': str(self.repo),
                 'tree': meta.get('impl_tree', str(self.cards / f"card-{card['number']}")), 'out': str(out),
@@ -715,7 +720,7 @@ class Loop:
             note = ('this changes play; make it an idea card or fix it'
                     if 'identity failed' in str(exc) else str(exc))
             self.post(card, f"task-failed-{meta['attempt']}",
-                      f"What we tried: {card['title']}.\nDid it work: No; {note}.\n"
+                      f"What we tried: {card_ref(card)}.\nDid it work: No; {note}.\n"
                       'Who decides now: The author can update the card; the loop retries from ready.',
                       target='ready', kind='check', metadata=meta)
             return
@@ -743,7 +748,7 @@ class Loop:
         check = built['task_check']
         comparison = ('the recorded old base' if meta.get('old_base')
                       else 'the current base (latest main release)')
-        text = (f"What we tried: {card['title']}.\n"
+        text = (f"What we tried: {card_ref(card)}.\n"
                 f"Did it work: Yes; play stayed replay-identical to {comparison} and {check['note']}.\n"
                 'Who decides now: The author chooses candidate, rejected, or inconclusive.\n\n'
                 + ('Old base: main changed during these checks; refresh before shipping.\n'
@@ -806,15 +811,16 @@ class Loop:
                 return
             self.gh('api', f'repos/{GH_REPO}/git/refs', payload={'ref': f'refs/heads/{branch}', 'sha': commit['sha']})
         body = out / 'candidate-pr.md'
-        body.write_text(f'What we tried: {card["title"]}.\nDid it work: See the measured results in #{card["number"]}.\n'
+        body.write_text(f'Card: [{card_ref(card)}](https://github.com/{GH_REPO}/issues/{card["number"]})\n\n'
+                        f'What we tried: {card_ref(card)}.\nDid it work: See the measured results in {card_ref(card)}.\n'
                         f'Who decides now: The author and required teammate approvers review this revision.\n\n'
                         + ('Checks overridden by a member; see the audit below. ' if meta.get('force_override') else 'Task preserves play against the current base (latest main release). ' if is_task(card) else f'Enables `{meta.get("toggle", "selected implementation")}`. ')
                         + f'Base `{meta["base"]}`; implementation `{meta["commit"]}`.\n'
-                        f'Results and optional smoke request: #{card["number"]}. No upload is performed by this runner.\n'
+                        f'Results and optional smoke request: {card_ref(card)}. No upload is performed by this runner.\n'
                         + ('\n' + meta['force_reason'] if meta.get('force_override') else ''))
         if dt.datetime.now(KST) < FREEZE or meta.get('force_override'):
             url = self.cmd(['gh', 'pr', 'create', '--repo', GH_REPO, '--base', 'main', '--head', branch,
-                            '--title', f'Candidate {version}', '--body-file', body])
+                            '--title', f'Candidate {card_ref(card)}', '--body-file', body])
             self.post(card, f'candidate-{version}', f'The candidate is ready for human review: {url}')
 
     def dry(self, card):
@@ -877,6 +883,9 @@ class Loop:
         proposals = read(out / 'ladder.json')
         if not isinstance(proposals, list) or len(proposals) > 2:
             raise ValueError('ladder must return at most two cards')
+        open_cards = self.gh('issue', 'list', '--repo', GH_REPO, '--state', 'open', '--limit', '1000',
+                             '--json', 'number,title,labels') or []
+        used = {card_name(c) for c in open_cards}
         for i, proposal in enumerate(proposals):
             key = f"ladder-{pending['batch']}-{i}"
             # Search all issues to avoid duplicates if killed just after issue creation.
@@ -886,6 +895,14 @@ class Loop:
             fields = ('Area', 'Claim', 'Evidence', 'Expected signal', "What would show it's wrong")
             if any(not proposal.get(f) for f in (*fields, 'title')):
                 raise ValueError('ladder card missing Idea template fields')
+            if not valid_slug(proposal.get('slug')):
+                raise ValueError('ladder card slug must be 1–2 lowercase words, at most 16 characters')
+            slug = unique_slug(proposal['title'], used, proposal['slug'])
+            used.add(slug)
+            label = 'name:' + slug
+            existing = self.gh('label', 'list', '--repo', GH_REPO, '--search', label, '--limit', '1000', '--json', 'name') or []
+            if not any(row['name'] == label for row in existing):
+                self.cmd(['gh', 'label', 'create', label, '--repo', GH_REPO, '--color', 'bfd4f2', '--description', 'Short card name'])
             lines = summary_text(proposal['summary']).splitlines()
             lines[2] = PREFIXES[2] + AI_DECISION
             text = '\n'.join(lines) + '\n\n### Idea by\nAI\n\n'
@@ -894,7 +911,7 @@ class Loop:
             path = out / f'idea-{i}.md'
             path.write_text(text)
             self.cmd(['gh', 'issue', 'create', '--repo', GH_REPO, '--title', idea_title(proposal['title']),
-                      '--body-file', path, '--label', 'by:ai', '--label', 'status:ready', '--label', 'wf:3'])
+                      '--body-file', path, '--label', 'by:ai', '--label', 'status:ready', '--label', 'wf:3', '--label', label])
         write(self.out / 'ladder.json', {'checked': time.time(), 'seen': sorted(set(cached.get('seen', []) + pending['ids']))})
 
     def tick(self):
@@ -925,7 +942,7 @@ class Loop:
             active = bool(snapshot['batch_running'] or snapshot['ai_running'] or self.launched)
             self.board('heartbeat', '--state', 'running' if active else 'idle', '--step',
                        f"{len(self.status)} active cards; batch={snapshot['batch_running']}, AI={snapshot['ai_running']}"
-                       + ''.join(f"; #{number}: {info.get('step', info.get('error', ''))}"
+                       + ''.join(f"; {info.get('title', number)}: {info.get('step', info.get('error', ''))}"
                                  for number, info in self.status.items()))
         self.children = [p for p in self.children if p.poll() is None]
 
