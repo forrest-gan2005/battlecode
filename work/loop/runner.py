@@ -203,6 +203,16 @@ class Loop:
         self.cmd(['git', 'fetch', 'origin', 'main'])
         return self.cmd(['git', 'rev-parse', 'origin/main'])
 
+    def base_moved(self, base):
+        # Only bot code counts: docs/work/tools commits on main must not restart or stale a card.
+        latest = self.latest_base()
+        if latest == base:
+            return False
+        try:
+            return bool(self.cmd(['git', 'diff', '--name-only', base, latest, '--', 'mybot2']).strip())
+        except RuntimeError:
+            return True  # unknown base: be safe and treat it as moved
+
     def metadata(self, card):
         local = read(self.out / f"card-{card['number']}" / 'card.json', {})
         for r in records(card):
@@ -515,7 +525,7 @@ class Loop:
                 meta = self.new_attempt(card, meta, 'The card was returned to building for revision.')
             build_step = 'adopt' if meta.get('impl_commit') else 'task' if is_task(card) else 'build'
             if not (Path(self.context(card, meta)['out']) / f'jobs/{build_step}/job.json').exists():
-                if self.latest_base() != meta['base']:
+                if self.base_moved(meta['base']):
                     meta = self.new_attempt(card, meta, 'Main changed while this card was waiting; use the current release.')
             ctx = self.prepare(card, meta)
             out = Path(ctx['out'])
@@ -613,7 +623,7 @@ class Loop:
                 return
             job_started = (out / 'jobs/outcome/job.json').exists()
             latest = self.latest_base()
-            if latest != meta['base']:
+            if self.base_moved(meta['base']):
                 if not job_started:
                     self.new_attempt(card, meta, 'Main changed before testing; rebuild and check identity against the new release.')
                     self.transition(card, 'building')
@@ -676,7 +686,7 @@ class Loop:
         if not built or built.get('task_check', {}).get('passed') is not True:
             raise ValueError('missing verified task build and task-specific check')
         meta.update(commit=built['commit'], phase='tested', task=True,
-                    old_base=self.latest_base() != meta['base'])
+                    old_base=self.base_moved(meta['base']))
         self.save(card, meta)
         if not meta.get('pushed') and not meta.get('impl_commit'):
             self.cmd(['git', 'push', '--force', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])  # card/N is loop-owned; revisions rebuild it
@@ -703,7 +713,7 @@ class Loop:
         if meta.get('phase') != 'tested' or not meta.get('commit'):
             self.notice(card, 'candidate needs recorded test evidence first')
             return
-        if (self.latest_base() != meta['base'] or meta.get('old_base')) and not meta.get('force_override'):
+        if (self.base_moved(meta['base']) or meta.get('old_base')) and not meta.get('force_override'):
             self.notice(card, 'old base: fresh tests are required before preparing a candidate')
             return
         version = f"card-{card['number']}-{meta['commit'][:10]}"
