@@ -253,6 +253,7 @@ constexpr int FEED_LOCAL_MIN = 4;
 constexpr int FEED_EARLY_ROUND = 0;
 constexpr int FEED_EARLY_MAX = 2;
 constexpr bool TRADE_EVEN = false;
+constexpr bool TRADE_CONTACT = false;
 constexpr int INC_PERIOD = 0;
 constexpr int INC_RADIUS = 30;
 constexpr double INC_HOT_RATE = 1.0;
@@ -2056,12 +2057,13 @@ class Bot {
     void mark_trade_targets() {
         trade_targets = 0;
         bool const at_cap = ct.get_unit_count() >= std::min(gm.get_unit_limit(), SPLIT_SOFT_LIMIT) - 1;
+        bool const even = aggressive || TRADE_CONTACT;
         bool const normal_ok = round <= feed_round &&
-                               ct.get_unit_count() >= (aggressive ? AGGRESSIVE_TRADE_MIN_UNITS : TRADE_MIN_UNITS) &&
+                               ct.get_unit_count() >= (even ? AGGRESSIVE_TRADE_MIN_UNITS : TRADE_MIN_UNITS) &&
                                static_cast<int>(ally_heads.size()) + 1 - static_cast<int>(enemy_heads.size()) >= TRADE_LOCAL_EDGE;
         for (std::size_t k = 0; k < enemy_heads.size(); k++) {
             int const parts = visible_parts(enemy_head_ids[k]);
-            bool const worth = at_cap || aggressive || TRADE_EVEN ? parts >= length : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
+            bool const worth = at_cap || even || TRADE_EVEN ? parts >= length : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
             if ((normal_ok && worth) || guards_big_ally(enemy_heads[k])) {
                 trade_target_stamp[index_of(enemy_heads[k])] = round;
                 trade_targets++;
