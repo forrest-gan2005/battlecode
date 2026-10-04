@@ -60,7 +60,7 @@ def eta_minutes(root, step):
         except (OSError, ValueError, TypeError, KeyError):
             continue
     recent = sorted(samples)[-10:]
-    return statistics.median(x[1] for x in recent) if len(recent) >= 2 else ETA_DEFAULTS[step]
+    return statistics.median(x[1] for x in recent) if len(recent) >= 2 else ETA_DEFAULTS.get(step, 2)  # light steps: ~2 min
 
 
 def step_timing(root, step, path=None, wait=0, queue=None):

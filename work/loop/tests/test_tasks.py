@@ -58,7 +58,7 @@ class TaskTests(unittest.TestCase):
 
     def test_board_discovers_task_label_and_filters_inactive(self):
         c = task(status='ready')
-        with patch.object(self.loop, 'gh', side_effect=[[card(2), c, task(3, 'tested')], [], []]):
+        with patch.object(self.loop, 'gh', side_effect=[[card(2), c, task(3, 'tested')], [], [], []]):
             self.assertEqual([x['number'] for x in self.loop.cards_on_board()], [1, 2])
             self.assertTrue(runner.is_task(c))
 

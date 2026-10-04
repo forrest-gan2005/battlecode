@@ -117,7 +117,7 @@ class AutoDecisionTests(unittest.TestCase):
     def test_board_includes_existing_tested_ai_only(self):
         human = dict(self.card, number=19, labels=['by:zhe', 'status:tested'])
         task = dict(self.card, number=20, labels=['by:ai', 'type:task', 'status:tested'])
-        with patch.object(self.loop, 'gh', side_effect=[[self.card, human, task], [[]]]):
+        with patch.object(self.loop, 'gh', side_effect=[[self.card, human, task], [[]], [[]], [[]]]):  # tested human/task cards are fetched, then skipped without loop results
             self.assertEqual([c['number'] for c in self.loop.cards_on_board()], [18])
 
     def test_legacy_396_of_400_revises_next_poll(self):
