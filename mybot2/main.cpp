@@ -174,6 +174,12 @@ constexpr int QG_CORNER_DANGER = 4;
 constexpr int QG_CORNER_EVERY = 10;
 constexpr double QG_CORNER_PENALTY = 1000.0;
 constexpr bool QG_CORNER_LOG = false;
+constexpr bool QUEEN_TOPUP = false;
+constexpr int QT_ROUND = 300;
+constexpr int QT_QUIET = 30;
+constexpr int QT_REACH = 8;
+constexpr int QT_MAX_LENGTH = 8;
+constexpr double QT_PEARL_GAIN = 250.0;
 constexpr int QUEEN_GIVE_WAY = 0;
 constexpr double QUEEN_GIVE_WAY_PENALTY = 3000.0;
 constexpr bool QUEEN_BRAIN = false;
@@ -483,6 +489,9 @@ class Bot {
                 feed_round = std::min(feed_round, QUEEN_GAME_FEED_ROUND);
             }
         }
+        if (QUEEN_TOPUP && (!enemy_heads.empty() || enemy_near(head, QT_REACH))) {
+            topup_contact = round;
+        }
         if (QG_SAFEZONE) {
             zone_watch();
             zone_probe();
@@ -778,6 +787,9 @@ class Bot {
         if (QG_SAFEZONE && zone_mode == 2) {
             return 0;
         }
+        if (topup_queen()) {
+            return 0;
+        }
         if (is_queen() && (round > QUEEN_SPLIT_ROUND || enemy_near(head, queen_guard() ? QG_SPLIT_CLEAR : QUEEN_SPLIT_CLEAR) ||
                            length - unswbc::Constants::MIN_SIZE < (queen_guard() ? QG_KEEP : QUEEN_KEEP))) {
             return 0;
@@ -870,7 +882,7 @@ class Bot {
         if (!no_move && !boxed) {
             return 0;
         }
-        if (is_queen() && !no_move) {
+        if ((is_queen() || topup_queen()) && !no_move) {
             return 0;
         }
         int const child = length - 2;
@@ -898,7 +910,7 @@ class Bot {
     
     bool harvestable(int pocket_pearls, double pocket_room, bool inside) {
         int const min_size = unswbc::Constants::MIN_SIZE;
-        if (is_feeder() || is_leader() || is_queen() || tail_index < 0) {
+        if (is_feeder() || is_leader() || is_queen() || topup_queen() || tail_index < 0) {
             return false;
         }
         
@@ -1742,7 +1754,7 @@ class Bot {
             return;
         }
         bool const early = FEED_EARLY_ROUND > 0 && round > FEED_EARLY_ROUND && length <= FEED_EARLY_MAX;
-        if ((!feeding_phase() && !early) || is_queen() || known_leader_id < 0 ||
+        if ((!feeding_phase() && !early) || is_queen() || topup_queen() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_len < 2 ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return;
@@ -2666,6 +2678,14 @@ class Bot {
 
     bool is_queen() const {
         return QUEEN_MODE && ct.get_id() == queen_id && (cells > QUEEN_MIN_CELLS || home_closed);
+    }
+
+    bool topup_queen() const {
+        return QUEEN_TOPUP && ct.get_id() <= 1 && (cells > QUEEN_MIN_CELLS || home_closed) && round >= QT_ROUND;
+    }
+
+    bool topping_up() const {
+        return topup_queen() && length < QT_MAX_LENGTH && round - topup_contact >= QT_QUIET;
     }
 
     bool queen_guard() const {
@@ -4093,7 +4113,7 @@ class Bot {
     }
 
     bool local_die() const {
-        if (!feeding_phase() || is_leader() || is_queen() || is_feeder() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+        if (!feeding_phase() || is_leader() || is_queen() || topup_queen() || is_feeder() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
         for (Position const& enemy : enemy_heads) {
@@ -4181,6 +4201,9 @@ class Bot {
                                        (PORTAL_FAR_ROUNDS <= 0 || round <= PORTAL_FAR_ROUNDS)
                                    ? WEIGHT_PORTAL_SCOUT * std::max(0.0, TARGET_REWARD - PORTAL_FAR_DECAY * survey.dist_portal)
                                    : target_bonus(survey.dist_portal, WEIGHT_PORTAL_SCOUT)});
+        if (topping_up() && survey.dist_pearl >= 0 && survey.dist_pearl <= QT_REACH) {
+            last_bonus = std::max(last_bonus, QT_PEARL_GAIN * (QT_REACH + 1 - survey.dist_pearl));
+        }
         score += last_bonus;
         if (EXPLORE_GAIN > 0.0 && round < EXPLORE_ROUNDS && survey.dist_unseen >= 0) {
             score += EXPLORE_GAIN * std::max(0, EXPLORE_RANGE - survey.dist_unseen);
@@ -4549,6 +4572,7 @@ class Bot {
     int enemy_big_seen = 0;
     int first_contact = -1;
     int last_contact = -1;
+    int topup_contact = -1;
     bool home_closed = false;
     bool queen_game = false;
     int big_enemy_round = -1;
