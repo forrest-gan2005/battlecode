@@ -7,6 +7,15 @@ People answer questions, check the intended behaviour, and approve releases.
 The loop never uploads by itself or requests ranked games.
 Proposed by 준싱 on 2026-10-04 — shout in Discord if anything looks off.
 
+## AI cards decide themselves
+
+Only `by:ai` idea cards decide automatically after a verdict, including existing tested cards on the next poll; human authors still decide their cards.
+Verdicts record identical/total pairs, net wins per set, mechanism_shown and target_seen in `verdict.json` and the hidden result marker. Identity compares recorded outcomes, not unkept replay events.
+≥95% identical pairs or a target never seen gets one automatic revision with verdict evidence; a second such result closes as inconclusive.
+Held-out or combined unseen net ≤−9 closes as rejected; held-out net ≥+9, mechanism shown and old-map net ≥−9 advances to the usual candidate PR, still needing one human OK to merge.
+Otherwise the card stays tested: "coin flip locally; a 30:30 online pair test would settle it (tools/smoke.py pair)". meowbot pings as usual; the loop does not start online tests.
+Each decision posts one short reason and next step; the automatic revision limit survives restarts.
+
 ## How the loop runs
 
 A card is a GitHub issue made with the Idea template: the claim, evidence, area, expected change, and what would show it is wrong. A toggle is an on/off switch for a change; new toggles start off.

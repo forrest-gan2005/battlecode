@@ -7,3 +7,7 @@ Write $out/build.json:
 Run the existing identity check, with the toggle OFF:
 REF=base IDENT_MAPS=$old_maps IDENT_SEEDS=2 python3 $sandbox/work/ident.py candidate
 Run from $sandbox. It must print 40 OK comparisons and end with identical; a zero exit alone is insufficient. Save its output to $out/ident-ai.log. Do not run any other batch. Commit the default-off implementation and checker on card/$number. Never push. The runner independently repeats identity before pushing.
+
+Automatic revision evidence (if any):
+$revision_evidence
+If an automatic revision was requested, use the preceding verdict's measurements and failure reason to make the intended behaviour actually trigger. Address the blocking gates and check that the mechanism run shows the intended behaviour; preserve the default-off identity requirement. Do not tune on held-out results or named maps.

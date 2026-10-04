@@ -24,6 +24,11 @@ FREEZE = dt.datetime(2026, 10, 8, 20, tzinfo=KST)
 ACTIVE = {'ready', 'needs-info', 'building', 'needs-look', 'testing', 'candidate'}
 MARK = re.compile(r'<!-- card-loop (\{.*?\}) -->', re.S)
 PREFIXES = ('What we tried: ', 'Did it work: ', 'Who decides now: ')
+AI_IDENTICAL_RATIO = 0.95
+AI_NET_THRESHOLD = 9
+AI_MAX_REVISIONS = 1
+AI_COIN_FLIP = 'coin flip locally; a 30:30 online pair test would settle it (tools/smoke.py pair)'
+
 AI_DECISION = "The loop builds and tests it now; one teammate's OK is needed only before it ships."
 
 
@@ -138,7 +143,9 @@ class Loop:
         for card in rows:
             if not (card['title'].lower().startswith('[idea]') or is_task(card)):
                 continue
-            if state(card) not in ACTIVE:
+            if state(card) not in ACTIVE and not (
+                    'by:ai' in labels(card) and not is_task(card)
+                    and state(card) in {'tested', 'rejected', 'inconclusive'}):
                 continue
             pages = self.gh('api', f"repos/{GH_REPO}/issues/{card['number']}/comments", '--paginate', '--slurp')
             card['comments'] = [c for page in pages for c in page]
@@ -163,16 +170,16 @@ class Loop:
     def transition(self, card, target):
         self.board('state', str(card['number']), target)
 
-    def post(self, card, key, text, target=None, kind=None, ask=False, metadata=None):
+    def post(self, card, key, text, target=None, kind=None, ask=False, metadata=None, close=False):
         """A remote marker repairs a crash between comment creation and label replacement."""
-        marker = {'key': key, **(metadata or {})}
-        if not ask and not text.startswith(PREFIXES[0]):
+        marker = {**(metadata or {}), 'key': key}
+        if not ask and not key.startswith('ai-decision-') and not text.startswith(PREFIXES[0]):
             text = ("What we tried: Move this card's next step forward.\n"
                     f"Did it work: {text}\nWho decides now: "
                     + ('The author and required teammate approvers review the PR.' if key.startswith('candidate-')
                        else 'The loop continues; people decide acceptance.'))
         pending = self.out / f"card-{card['number']}" / 'pending-post.json'
-        write(pending, {'key': key, 'text': text, 'target': target, 'kind': kind, 'ask': ask, 'metadata': metadata})
+        write(pending, {'key': key, 'text': text, 'target': target, 'kind': kind, 'ask': ask, 'metadata': metadata, 'close': close})
         if not any(r.get('key') == key for r in records(card)):
             dest = self.out / f"card-{card['number']}" / f'post-{digest(key)}.md'
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +195,8 @@ class Loop:
                                      'user': {'login': 'card-loop', 'type': 'Bot'}})
         if target:
             self.transition(card, target)
+        if close:
+            self.cmd(['gh', 'issue', 'close', str(card['number']), '--repo', GH_REPO])
         pending.unlink(missing_ok=True)
 
     def latest_base(self):
@@ -213,7 +222,8 @@ class Loop:
                 'card_out': str(self.out / f"card-{card['number']}"),
                 'sandbox': str(out / 'harness'), 'old_maps': OLD_MAPS,
                 'swarm': str(SWARM), 'seed0': 10000 + card['number'] * 100,
-                'metadata': json.dumps(meta, ensure_ascii=False)}
+                'metadata': json.dumps(meta, ensure_ascii=False),
+                'revision_evidence': meta.get('revision_evidence', 'No automatic revision requested.')}
 
     def ensure_tree(self, card, meta):
         tree = self.cards / f"card-{card['number']}"
@@ -311,12 +321,124 @@ class Loop:
             return False
         return self.job(card, meta, step, **kwargs)
 
-    def new_attempt(self, card, meta, reason):
+    def new_attempt(self, card, meta, reason, **updates):
         meta = {'attempt': meta.get('attempt', 0) + 1, 'base': self.latest_base(),
-                'reason': reason, 'seed0': 10000 + card['number'] * 100}
+                'reason': reason, 'seed0': 10000 + card['number'] * 100,
+                **{k: meta[k] for k in ('ai_revisions', 'revision_evidence') if k in meta}, **updates}
         self.save(card, meta)
         self.notice(card, f"Building against main `{meta['base']}`. {reason}", metadata=meta)
         return meta
+
+    def verdict_fields(self, card, meta, out):
+        result = read(out / 'verdict.json') or meta.get('verdict')
+        if result is None:
+            for record in reversed(records(card)):
+                if record.get('attempt') == meta.get('attempt') and record.get('verdict'):
+                    result = record['verdict']
+                    break
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise ValueError('verdict.json must contain an object')
+        for key in ('identical_pairs', 'total_pairs'):
+            if type(result.get(key)) is not int:
+                raise ValueError(f'verdict.json needs integer {key}')
+        if not 0 <= result['identical_pairs'] <= result['total_pairs'] or result['total_pairs'] <= 0:
+            raise ValueError('verdict.json has invalid pair counts')
+        if any(type(result.get(k)) is not bool for k in ('mechanism_shown', 'target_seen')):
+            raise ValueError('verdict.json needs mechanism_shown and target_seen booleans')
+        net = result.get('net', {})
+        if (not isinstance(net, dict) or not {'held', 'old10'} <= net.keys()
+                or any(type(n) is not int for n in net.values())):
+            raise ValueError('verdict.json needs integer net per set, including held and old10')
+        return result
+
+    def legacy_pair_counts(self, out):
+        """Recover old recorded-outcome identity without reading verdict prose."""
+        identical = total = 0
+        for name in ('held', 'transposed', 'old10'):
+            rows = read(out / f'{name}.json')
+            if not rows:
+                return None
+            paired = {}
+            for row in rows:
+                key = (row['map'], row['seed'], row['side'])
+                tag = row['tag']
+                if tag not in ('base', 'candidate') or tag in paired.setdefault(key, {}):
+                    raise ValueError('duplicate or unknown legacy result row')
+                paired[key][tag] = {k: v for k, v in row.items() if k != 'tag'}
+            if any(set(pair) != {'base', 'candidate'} for pair in paired.values()):
+                raise ValueError('incomplete legacy A/B pairs')
+            total += len(paired)
+            identical += sum(pair['base'] == pair['candidate'] for pair in paired.values())
+        return {'identical_pairs': identical, 'total_pairs': total}
+
+    def auto_decide(self, card, meta):
+        if 'by:ai' not in labels(card) or is_task(card):
+            return
+        # Persist before posting so a crash cannot spend the revision twice.
+        pending = meta.get('ai_pending')
+        if pending:
+            if pending['target'] is None and any(r.get('key') == pending['key'] for r in records(card)):
+                self.notice(card, 'coin flip locally; waiting for a human')
+            else:
+                self.post(card, **pending, metadata=meta)
+            return
+        out = Path(self.context(card, meta)['out'])
+        attempt = meta.get('attempt', 0)
+        key = f'ai-decision-{attempt}'
+        if any(r.get('key') == key for r in records(card)):
+            self.notice(card, 'AI decision already posted; waiting for a human')
+            return
+        result = self.verdict_fields(card, meta, out)
+        if result is None:
+            # Legacy cards with overwhelmingly unchanged outcomes can revise now.
+            counts = self.legacy_pair_counts(out)
+            if counts and counts['identical_pairs'] / counts['total_pairs'] >= AI_IDENTICAL_RATIO:
+                result = counts
+            else:
+                if not self.available_job(card, meta, 'verdict-fields'):
+                    return
+                result = self.verdict_fields(card, meta, out)
+                if result is None:
+                    raise ValueError('missing verdict.json after evidence recovery')
+        barely = result['identical_pairs'] / result['total_pairs'] >= AI_IDENTICAL_RATIO
+        if barely or result.get('target_seen') is False:
+            reason = (f"{result['identical_pairs']}/{result['total_pairs']} pairs identical"
+                      if barely else 'the target behaviour never appeared')
+            if meta.get('ai_revisions', 0) < AI_MAX_REVISIONS:
+                evidence = (out / 'verdict.md').read_text() if (out / 'verdict.md').exists() else ''
+                if not evidence:
+                    evidence = '\n'.join(c.get('body', '') for c in card.get('comments', [])
+                                         if any(r.get('key') == f'tested-{attempt}'
+                                                for r in records({'comments': [c]})))
+                revised = dict(meta, ai_revisions=meta.get('ai_revisions', 0) + 1,
+                               revision_evidence=json.dumps(result) + '\n' + evidence)
+                target, close = 'building', False
+                text = f"didn't fire: {reason}; revising once"
+                meta = self.new_attempt(card, revised, text, phase='building',
+                                        ai_pending={'key': key, 'text': text, 'target': target, 'close': close})
+            else:
+                target, close = 'inconclusive', True
+                text = f"didn't fire again: {reason}; closing as inconclusive."
+        else:
+            net = result['net']
+            unseen = sum(net.get(n, 0) for n in ('held', 'fresh', 'transposed'))
+            if net['held'] <= -AI_NET_THRESHOLD or unseen <= -AI_NET_THRESHOLD:
+                target, close = 'rejected', True
+                text = f"Clearly worse: held-out net {net['held']:+d}, combined unseen {unseen:+d}; closing as rejected."
+            elif (net['held'] >= AI_NET_THRESHOLD and result['mechanism_shown']
+                  and net['old10'] >= -AI_NET_THRESHOLD):
+                target, close = 'candidate', False
+                text = (f"Clearly better: held-out net {net['held']:+d}, mechanism shown, old maps {net['old10']:+d}; "
+                        'the loop prepares the candidate PR. One teammate OK is still needed to merge.')
+            else:
+                target, close = None, False
+                text = AI_COIN_FLIP
+        pending = {'key': key, 'text': text, 'target': target, 'close': close}
+        meta['ai_pending'] = pending
+        self.save(card, meta)
+        self.post(card, **pending, metadata=meta)
 
     def process(self, card):
         pending = read(self.out / f"card-{card['number']}" / 'pending-post.json')
@@ -371,6 +493,9 @@ class Loop:
             else:
                 self.notice(card, 'waiting for a human answer')
         elif s == 'building':
+            if meta.get('ai_pending', {}).get('target') == 'building':
+                meta.pop('ai_pending')
+                self.save(card, meta)
             if not meta.get('base'):
                 meta = self.new_attempt(card, meta, 'Resuming from the building label.')
             # A human may manually request a revision using the label alone.
@@ -493,9 +618,19 @@ class Loop:
             if meta.get('old_base'):
                 text += f"\n\n**old base**: tested `{meta['base']}`, current main `{latest}`. Refresh before shipping."
             text += f"\n\nTested base: `{meta['base']}`; candidate: `{meta['commit']}`; switch: `{meta['toggle']}=true`; SEED0={ctx['seed0']}."
+            if 'by:ai' in labels(card):
+                result = self.verdict_fields(card, meta, out)
+                if result is not None:
+                    meta['verdict'] = result
             meta['phase'] = 'tested'
             self.save(card, meta)
             self.post(card, f"tested-{meta['attempt']}", text, target='tested', kind='test', metadata=meta)
+            self.auto_decide(card, meta)
+        elif s == 'tested':
+            self.auto_decide(card, meta)
+        elif s in ('rejected', 'inconclusive'):
+            if meta.get('ai_pending', {}).get('close'):
+                self.post(card, **meta['ai_pending'], metadata=meta)
         elif s == 'candidate':
             self.candidate(card, meta)
 
@@ -628,6 +763,10 @@ class Loop:
             action = 'resume build + identity → push card/N → mechanism batch (KEEP=1) → look → needs-look'
         elif s == 'needs-look':
             action = 'wait/classify Zhe reply (ok / revise)' if 'by:zhe' in labels(card) else 'auto-pass → testing'
+        elif s == 'tested':
+            action = 'apply AI verdict thresholds; revise once, close, candidate, or wait for online pair test'
+        elif s in ('rejected', 'inconclusive'):
+            action = 'recover pending AI closure if needed'
         elif s == 'testing':
             action = f'resume outcome ab3: held ×2, _T ×2, old10 ×8; WORKERS=8 KEEP off SEED0={10000 + card["number"] * 100} → verdict → tested'
         else:

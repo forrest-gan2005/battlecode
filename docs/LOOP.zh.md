@@ -5,6 +5,15 @@
 循环不会自行上传，也不会请求排位赛。
 由 준싱 于 2026-10-04 提出，有问题直接在 Discord 说。
 
+## AI 卡片自行决策
+
+只有 `by:ai` 想法卡在结论发布后自动决策，已有 tested 卡也在下次轮询处理；人的卡仍由作者决策。
+`verdict.json` 和隐藏结果标记保存相同／总配对数、每组净胜场、mechanism_shown 和 target_seen；相同指记录的结果字段一致，并非未保留的回放事件一致。
+≥95% 配对相同或目标行为从未出现时，带结论证据自动修改一次；再次如此则关闭为 inconclusive。
+留出组或合并未见组净胜 ≤−9 则关闭为 rejected；留出组 ≥+9、机制已展示且旧图 ≥−9 则进入通常的候选 PR，合并仍需一位队员 OK。
+其他情况留在 tested，并注明 "coin flip locally; a 30:30 online pair test would settle it (tools/smoke.py pair)"；meowbot 照常提醒，循环不自行启动线上测试。
+每次决策只发一条简短原因与下一步；自动修改次数在重启后保留。
+
 ## 循环如何运行
 
 卡片是用 Idea 模板创建的 GitHub issue，包含主张、证据、领域、预期变化，以及什么结果能证伪。toggle 是改动的开关；新开关默认关闭。
