@@ -1,0 +1,20 @@
+{
+  "version": "card-29-82407e034c",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Safer stride: only finish a stride where the end tile is safe"
+  ],
+  "results": {
+    "held": "See linked issue for paired results.",
+    "main": "Old 10 maps \u00d78; see linked issue.",
+    "mechanism": "Zhe confirms, not the loop. Tiles are (x, y) as stored in the replay; queen = dragon 0 (team A) or dragon 1 (team B). 1) candidate_sq_open_large_10032_12901_0 (switch on = team A): rounds 180-299 our queen (length 9-19, 3-5 free steps, no enemy near) makes 69 single steps and 38 two-step zig-zags out of 120 moves, and none of its 117 multi-step moves in the game ends at the edge of its view; in the same game the base queen (team B) sprints 3-4 tiles straight at rounds 77-96 and 28 of its 53 multi-step moves end there. Also watch the cost: our queen stays at length 8 from round 81 to about 170, and it still dies at round 300 at (20,36) on a single step into a body. 2) base_sq_open_large_10032_12900_0 (switch off both sides, the 'before' case): round 205 team A's queen (length 18) sprints 4 from (28,39) to (31,38) toward a length-6 enemy at (32,40) that was outside its 7x7 view; the enemy sprints 3 into its head and the queen dies. 3) candidate_sq_open_large_10032_12900_1 (same map and seed as 2, switch on = team B), the counterexample: round 212 our queen splits from 14 to 2, regrows, and at round 228 takes one step (36,39)->(36,38); a length-16 enemy at (38,36) uses its 4 free steps and kills it head-on. No stride involved, so the switch does not cover it. Whole run (16 games each, not evidence of an outcome): stride ends next to too many unseen tiles 46.8% -> 0.2%, but the queen died in 16/16 games both ways and length-8+ dragons were killed head-on by an enemy move 645 -> 676 times (after a stride 427 -> 292, after a single step 198 -> 363); pearls per game 5704 -> 5085. Missing: CPU (replays carry no counter), the queen full-reach rule and the way-out rule (no bot logs), enemies outside view / shared sight (not built), held-out maps and ladder opponents (4 dev maps against our own bot), and why the queen dies in every local game.",
+    "cpu": "Not separately measured; no release approval implied."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    29
+  ],
+  "pr": null,
+  "base_commit": "9a4f3fc440d768b237ee9bc9b78665a03f53c39b",
+  "candidate_commit": "82407e034cc4adb516c6a96a719110af8f02e20a"
+}
