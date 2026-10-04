@@ -65,7 +65,7 @@ class LateTests(unittest.TestCase):
         jobs.write(other / 'done.json', {'finished': 100 + 80 * 60})
         self.assertEqual(self.check(13)['new_eta_minutes'], 67)
 
-    def test_ai_log_counts_descriptions_and_limit(self):
+    def test_ai_log_latest_description_deduplicated_and_limited(self):
         blocks = [{'type': 'tool_use', 'id': str(i), 'name': name, 'input': args}
                   for i, (name, args) in enumerate([
                       ('Read', {'file_path': 'mybot2/main.cpp'}),
@@ -78,9 +78,44 @@ class LateTests(unittest.TestCase):
         record = {'type': 'assistant', 'message': {'content': blocks}}
         Path(self.spec['log']).write_text(json.dumps(record) + '\ninvalid\n' + json.dumps(record) + '\n')
         reason = self.check(26)['reason']
-        for text in ('7 tool calls', '2 reads', '1 edits', '1 identity checks', '1 builds', '1 game/replay runs', 'Read bot', 'Last description'):
-            self.assertIn(text, reason)
-        self.assertLessEqual(len(reason), 300)
+        self.assertTrue(reason.startswith('last description'))
+        self.assertLessEqual(len(reason), 90)
+        self.assertNotIn('tool calls', reason)
+
+    def test_activity_dominant_checks_and_generic(self):
+        for description, expected in [('Run identity check', 're-checking that it plays the same when off'),
+                                      ('Run games', 'running games and checking how it plays')]:
+            Path(self.spec['log']).write_text(json.dumps({'message': {'content': [
+                {'type': 'tool_use', 'name': 'Bash', 'input': {'description': description}}]}}))
+            self.assertEqual(late.ai_reason(self.spec), expected)
+        Path(self.spec['log']).write_text('')
+        self.assertEqual(late.ai_reason(self.spec), 'still editing and checking the change')
+
+    def test_late_holder_covers_waiters_before_its_notice(self):
+        holder = self.root / 'ladder/attempt-1/jobs/ladder'
+        jobs.write(holder / 'job.json', {'number': 0, 'title': 'Ladder review', 'step': 'ladder',
+                                        'out': str(holder.parent.parent), 'started': 1000,
+                                        'eta_minutes': 17, 'resources': ['ai', 'batch']})
+        self.timing['queue'] = 'ai lock'
+        with jobs.lock(holder / 'lease'):
+            self.check(0, resources=['ai'])
+            result = self.check(22, resources=['ai'])
+            self.assertEqual(result['covered_by'], [str(holder)])
+            self.assertEqual(self.events(), [])
+            other = self.root / 'card-30/attempt-1/jobs/build'
+            late.check_late(self.root, self.root / 'locks', {'number': 30, 'name': 'big-map-trades'},
+                            'build', other, {'queue': 'batch lock', 'eta_minutes': 20},
+                            resources=['batch'], now=2320)
+            late.check_late(self.root, self.root / 'locks', {'number': 0, 'title': 'Ladder review'},
+                            'ladder', holder, {'queue': None, 'eta_minutes': 17}, now=2320)
+            event = self.events()[0]
+            self.assertEqual(len(self.events()), 1)
+            self.assertEqual({c['number'] for c in event['waiters']}, {30, 31})
+            self.assertEqual(result['holders'][0]['step'], 'ladder')
+        jobs.write(holder / 'done.json', {'ok': True})
+        result = self.check(23, resources=['ai'])
+        self.assertNotIn('covered_by', result)
+        self.assertEqual(len(self.events()), 2)
 
     def test_batch_rows_replays_deduplicated_and_unrelated_ignored(self):
         self.spec['step'] = 'mechanism'
@@ -97,7 +132,7 @@ class LateTests(unittest.TestCase):
         (replays / 'base_tiny_102_0.replay').write_text('done')
         (replays / 'base_unrelated_100_0.replay').write_text('done')
         result = self.check(30)
-        self.assertIn('9 of 20 done, 0.3/min', result['reason'])
+        self.assertIn('9 of 20 done', result['reason'])
         self.assertAlmostEqual(result['new_eta_minutes'], 11 / .3)
 
     def test_batch_unknown_not_infinite_or_zero(self):
@@ -106,7 +141,7 @@ class LateTests(unittest.TestCase):
         result = self.check(30)
         self.assertFalse(result['eta_known'])
         self.assertEqual(result['new_eta_minutes'], 15)
-        self.assertIn('unknown', result['reason'])
+        self.assertEqual(result['reason'], 'checking game progress')
 
     def test_waiting_card_remaining_plus_own_and_then_running(self):
         holder = self.root / 'card-9/attempt-1/jobs/outcome'
@@ -117,7 +152,7 @@ class LateTests(unittest.TestCase):
             self.assertFalse(self.check(0, resources=['batch'])['late'])
             self.assertFalse(self.check(14.9, resources=['batch'])['late'])
             result = self.check(15, resources=['batch'])
-            self.assertIn('#9 pool-check outcome (about 45m remaining)', result['reason'])
+            self.assertIn('#9 pool-check', result['reason'])
             self.assertEqual(result['new_eta_minutes'], 65)
             self.assertEqual(result['new_start_at'], jobs.iso_time(1000 + 60 * 60))
             self.check(30, resources=['batch'])
@@ -138,8 +173,8 @@ class LateTests(unittest.TestCase):
         with jobs.lock(self.root / 'locks/batch.lock'), patch('late.subprocess.run', side_effect=replies) as run:
             self.check(0, resources=['batch'])
             result = self.check(18, resources=['batch'])
-            self.assertIn('pool validation (work/pool.py) (pid 42)', result['reason'])
-            self.assertIn('unknown, checking again in 15 min', result['reason'])
+            self.assertIn('pool validation', result['reason'])
+            self.assertNotIn('unknown', result['reason'])
             self.assertEqual(run.call_args_list[0].args[0][0], 'lsof')
             self.check(32, resources=['batch'])
             self.assertEqual(len(self.events()), 1)
