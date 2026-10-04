@@ -24,6 +24,18 @@ FREEZE = dt.datetime(2026, 10, 8, 20, tzinfo=KST)
 ACTIVE = {'ready', 'needs-info', 'building', 'needs-look', 'testing', 'candidate'}
 MARK = re.compile(r'<!-- card-loop (\{.*?\}) -->', re.S)
 PREFIXES = ('What we tried: ', 'Did it work: ', 'Who decides now: ')
+AI_DECISION = "The loop builds and tests it now; one teammate's OK is needed only before it ships."
+
+
+def idea_title(title):
+    title = re.sub(r'^(?:\s*\[(?:Idea|Task)\]\s*)+', '', title.strip(), flags=re.I).strip()
+    if not title:
+        raise ValueError('ladder card title is empty after removing prefixes')
+    return '[Idea] ' + title
+
+
+def routine_post(key):
+    return bool(re.fullmatch(r'(?:attempt-\d+|built-\d+|batch-\d+-[\w-]+)', key))
 
 
 def digest(value):
@@ -133,9 +145,9 @@ class Loop:
             cards.append(card)
         return sorted(cards, key=priority)
 
-    def notice(self, card, text):
+    def notice(self, card, text, metadata=None):
         key = str(card['number'])
-        self.status[key] = {'state': state(card), 'step': text}
+        self.status[key] = {**(metadata or {}), 'state': state(card), 'step': text}
         print(f"#{key} [{state(card)}] {text}", flush=True)
 
     def board(self, *args, base=None):
@@ -249,6 +261,7 @@ class Loop:
         if done:
             if not done['ok']:
                 raise RuntimeError(f"{step} failed: {done['error']} (remove this job's done.json after fixing the cause)")
+            self.notice(card, f'{step} done')
             return True
         if busy(path / 'lease'):
             self.notice(card, f'{step} running')
@@ -283,12 +296,9 @@ class Loop:
             self.children.append(child)
         # Reserve within this tick too: workers may not yet have acquired their locks.
         self.launched.update(resources)
-        self.notice(card, f'started {step}')
-        if 'batch' in resources:
-            self.post(card, f"batch-{meta.get('attempt', 0)}-{step}",
-                      f"Started {step} against base `{meta['base']}`. Local job record: `{path}` (supervisor PID {child.pid}).",
-                      metadata={'attempt': meta.get('attempt', 0), 'base': meta['base'],
-                                'batch': {'step': step, 'job': str(path), 'pid': child.pid}})
+        self.notice(card, f'started {step}', metadata={
+            'attempt': meta.get('attempt', 0), 'base': meta['base'],
+            'job': str(path), 'pid': child.pid})
         return False
 
     def available_job(self, card, meta, step, **kwargs):
@@ -305,15 +315,18 @@ class Loop:
         meta = {'attempt': meta.get('attempt', 0) + 1, 'base': self.latest_base(),
                 'reason': reason, 'seed0': 10000 + card['number'] * 100}
         self.save(card, meta)
-        self.post(card, f"attempt-{meta['attempt']}",
-                  f"I'm building this against main `{meta['base']}`. {reason}", metadata=meta)
+        self.notice(card, f"Building against main `{meta['base']}`. {reason}", metadata=meta)
         return meta
 
     def process(self, card):
         pending = read(self.out / f"card-{card['number']}" / 'pending-post.json')
         if pending:
-            self.post(card, **pending)
-            return
+            if routine_post(pending['key']):
+                self.notice(card, pending['text'], metadata=pending.get('metadata'))
+                (self.out / f"card-{card['number']}" / 'pending-post.json').unlink()
+            else:
+                self.post(card, **pending)
+                return
         s = state(card)
         meta = self.metadata(card)
         ctx = self.context(card, meta)
@@ -353,7 +366,7 @@ class Loop:
                     text = (Path(self.context(card, meta)['out']) / 'questions.md').read_text()
                     self.post(card, f"questions-{meta['attempt']}", text, target='needs-info', ask=True,
                               metadata={'attempt': meta['attempt'], 'phase': 'questions'})
-            elif human_replies(card, questions[-1].get('created_at', questions[-1].get('createdAt', ''))):
+            elif human_replies(card, questions[-1].get('created_at', questions[-1].get('createdAt', '')), zhe='by:zhe' in labels(card)):
                 self.transition(card, 'building')
             else:
                 self.notice(card, 'waiting for a human answer')
@@ -392,8 +405,9 @@ class Loop:
                 self.cmd(['git', 'push', 'origin', f"{meta['commit']}:refs/heads/card/{card['number']}"], ctx['tree'])
                 meta['pushed'] = True
                 self.save(card, meta)
-                self.post(card, f"built-{meta['attempt']}",
-                          f"The toggle-off check passed against `{meta['base']}`. Code: `{meta['commit']}`. Small replay check is next.", metadata=meta)
+                self.notice(card,
+                            f"The toggle-off check passed against `{meta['base']}`. Code: `{meta['commit']}`. Small replay check is next.",
+                            metadata=meta)
             if not self.available_job(card, meta, 'mechanism'):
                 return
             if not self.available_job(card, meta, 'look'):
@@ -608,7 +622,7 @@ class Loop:
             action = 'wait for human answer after questions'
             if not q:
                 action = 'clarify and ask missing questions'
-            elif human_replies(card, q[-1].get('created_at', q[-1].get('createdAt', ''))):
+            elif human_replies(card, q[-1].get('created_at', q[-1].get('createdAt', '')), zhe='by:zhe' in labels(card)):
                 action = 'human answer found → building'
         elif s == 'building':
             action = 'resume build + identity → push card/N → mechanism batch (KEEP=1) → look → needs-look'
@@ -659,12 +673,14 @@ class Loop:
             fields = ('Area', 'Claim', 'Evidence', 'Expected signal', "What would show it's wrong")
             if any(not proposal.get(f) for f in (*fields, 'title')):
                 raise ValueError('ladder card missing Idea template fields')
-            text = summary_text(proposal['summary']) + '\n\n### Idea by\nAI\n\n'
+            lines = summary_text(proposal['summary']).splitlines()
+            lines[2] = PREFIXES[2] + AI_DECISION
+            text = '\n'.join(lines) + '\n\n### Idea by\nAI\n\n'
             text += '\n\n'.join(f'### {f}\n{proposal[f]}' for f in fields)
             text += f'\n\n<!-- {key} -->\n'
             path = out / f'idea-{i}.md'
             path.write_text(text)
-            self.cmd(['gh', 'issue', 'create', '--repo', GH_REPO, '--title', '[Idea] ' + proposal['title'],
+            self.cmd(['gh', 'issue', 'create', '--repo', GH_REPO, '--title', idea_title(proposal['title']),
                       '--body-file', path, '--label', 'by:ai', '--label', 'status:ready', '--label', 'wf:3'])
         write(self.out / 'ladder.json', {'checked': time.time(), 'seen': sorted(set(cached.get('seen', []) + pending['ids']))})
 
@@ -690,7 +706,9 @@ class Loop:
             write(self.out / 'status.json', snapshot)
             active = bool(snapshot['batch_running'] or snapshot['ai_running'] or self.launched)
             self.board('heartbeat', '--state', 'running' if active else 'idle', '--step',
-                       f"{len(self.status)} active cards; batch={snapshot['batch_running']}, AI={snapshot['ai_running']}")
+                       f"{len(self.status)} active cards; batch={snapshot['batch_running']}, AI={snapshot['ai_running']}"
+                       + ''.join(f"; #{number}: {info.get('step', info.get('error', ''))}"
+                                 for number, info in self.status.items()))
         self.children = [p for p in self.children if p.poll() is None]
 
 
