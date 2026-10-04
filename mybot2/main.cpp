@@ -150,6 +150,9 @@ constexpr int POCKET_CAP = 48;
 constexpr int POCKET_DIV = 2;
 constexpr double POCKET_PENALTY = 1000.0;
 constexpr int NO_TAIL_ROOM = 0;
+constexpr bool TERRAIN_PASSAGE = false;
+constexpr int TP_MAX_LENGTH = 4;
+constexpr int TP_ROOM = 6;
 constexpr bool CENTER_PATH = false;
 constexpr int QUEEN_GUARD_CELLS = 0;
 constexpr bool POCKET_PORTAL_BAN = false;
@@ -4146,9 +4149,11 @@ class Bot {
         if (avail < length + 2.0) {
             cramped += PENALTY_TRAPPED * (length + 2.0 - avail);
         }
-        if (tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0)) {
+        last_no_tail = tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0);
+        if (last_no_tail) {
             cramped += PENALTY_NO_TAIL;
         }
+        last_avail = avail;
         last_space = space;
         last_cramped = cramped;
         last_dist_route = survey.dist_route;
@@ -4360,6 +4365,11 @@ class Bot {
         std::array<bool, 4> closed{};
         std::array<bool, 4> imminent{};
         double best_base = SCORE_REJECT;
+        // TERRAIN_PASSAGE: no-loop steps with room beyond, and the best looping step's space.
+        std::array<bool, 4> passage{};
+        std::array<double, 4> passage_lift{};
+        double loop_space = SCORE_REJECT;
+        bool const passable = TERRAIN_PASSAGE && length <= TP_MAX_LENGTH && tail_index >= 0;
         bool const scouting = can_scout_portals();
 
         for (std::size_t k = 0; k < directions.size(); k++) {
@@ -4402,6 +4412,12 @@ class Bot {
                     if (!last_dead_end) {
                         best_open_space = std::max(best_open_space, last_space);
                     }
+                    if (passable && last_reaches_tail) {
+                        loop_space = std::max(loop_space, last_space);
+                    } else if (passable && last_avail >= TP_ROOM * length + 8.0) {
+                        passage[k] = true;
+                        passage_lift[k] = last_no_tail ? PENALTY_NO_TAIL : 0.0;
+                    }
                 } else if (is_enemy_head(destination)) {
                     score = is_trader() && is_trade_target_cell(index_of(destination)) ? TRADE_REWARD
                                                                                       : SCORE_REJECT * 0.5;
@@ -4416,8 +4432,12 @@ class Bot {
             route_dist[k] = scored[k] ? last_dist_route : -1;
         }
 
-        
-        
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            if (passage[k] && scores[k] > SCORE_REJECT * 0.5) {
+                scores[k] += passage_lift[k] + std::max(0.0, loop_space - spaces[k]);
+            }
+        }
+
         for (std::size_t k = 0; k < directions.size(); k++) {
             if (dead[k] && scores[k] > SCORE_REJECT * 0.5 &&
                 harvestable(pearls[k], rooms[k], best_open_space <= SCORE_REJECT * 0.5)) {
@@ -4478,7 +4498,9 @@ class Bot {
             if (DEBUG_LOG) {
                 ct.output_log("r", round, "len", length, "trail", static_cast<int>(trail.size()), "dir",
                               direction, "edge", static_cast<int>(edge_at(head, direction)), "enter",
-                              enter_time[index_of(head.add_dir(direction))], "score", score);
+                              enter_time[index_of(head.add_dir(direction))], "score", score, "space", spaces[k],
+                              "room", rooms[k], "tail", static_cast<int>(reaches[k]), "pass",
+                              static_cast<int>(passage[k]), "lift", passage_lift[k]);
             }
 
             if (score > best_score) {
@@ -4631,6 +4653,8 @@ class Bot {
     double behind_room = 0.0;
     double last_seen_room = 0.0;
     bool last_reaches_tail = false;
+    bool last_no_tail = false;
+    double last_avail = 0.0;
 
     std::vector<int> look_cells;
     int queen_id = -1;
