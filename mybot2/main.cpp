@@ -115,6 +115,8 @@ constexpr int QUEEN_CHASE_FRESH = 8;
 constexpr int SPRINT_FREE_DIV = 0;
 constexpr bool STRIDE = false;
 constexpr double STRIDE_MARGIN = 0.0;
+constexpr int STRIDE_BUDGET = 0;
+constexpr int STRIDE_CAP = 0;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool TURN_DIST = false;
@@ -661,7 +663,9 @@ class Bot {
     }
 
     double stride_value(int cell) {
+        survey_cap_now = STRIDE_CAP;
         double value = score_step(position_of(cell));
+        survey_cap_now = 0;
         if (LOOK_DEPTH > 0 && !is_feeder()) {
             value += look_gain(cell);
         }
@@ -724,7 +728,7 @@ class Bot {
                 if (SHARE_SIGHT && enemy_near(position_of(next), 2)) {
                     continue;
                 }
-                if (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET) {
+                if (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET) {
                     break;
                 }
                 double const value = stride_value(next);
@@ -2293,7 +2297,7 @@ class Bot {
         bool const scouting = can_scout_portals();
         bool const guard = portal_guarded();
         while (queue_head < queue_tail) {
-            if (SURVEY_CAP > 0 && queue_head >= SURVEY_CAP) {
+            if ((SURVEY_CAP > 0 && queue_head >= SURVEY_CAP) || (survey_cap_now > 0 && queue_head >= survey_cap_now)) {
                 break;
             }
             bool const beyond = bfs_beyond[queue_head] != 0;
@@ -4687,6 +4691,7 @@ class Bot {
     bool corner_hold = false;
     std::vector<int> corner_bad;
     int turn_cells = 0;
+    int survey_cap_now = 0;
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
     std::vector<int> eaten_count;

@@ -4,6 +4,7 @@ ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, 'ab2')
 MAP_DIRS = ['tune_runs/official127', 'tune_runs/newmaps', 'tune_runs/official123', 'maps', 'tune_maps', 'tune_runs/variants', 'tune_runs/variants_sq', 'tune_runs/community', 'tune_runs/genmaps',
             'tune_runs/genmaps_sq', 'tune_runs/sprintmaps', 'tune_runs/genheld', 'tune_runs/genheld_sq', 'tune_runs/huge', 'tune_runs/genfresh']
+SOURCE_EXT = ('.toml', '.hpp', '.h', '.hh', '.cpp', '.cc', '.c')
 RESULT = re.compile(r'team ([AB]) wins after (\d+) rounds \(([^)]*)\)')
 
 
@@ -20,8 +21,9 @@ def build(tag, sets, src='mybot'):
     src = src if os.path.isabs(src) else os.path.join(ROOT, src)
     shutil.rmtree(dst, ignore_errors=True)
     os.makedirs(dst)
-    for n in ('bot.toml', 'helper.hpp'):
-        shutil.copy(os.path.join(src, n), dst)
+    for n in sorted(os.listdir(src)):
+        if n != 'main.cpp' and os.path.isfile(os.path.join(src, n)) and n.endswith(SOURCE_EXT):
+            shutil.copy(os.path.join(src, n), dst)
     t = open(os.path.join(src, 'main.cpp')).read()
     for name, value in sets:
         t, n = re.subn(rf'(constexpr [\w:]+ {name} = )[^;]+;', rf'\g<1>{value};', t)
