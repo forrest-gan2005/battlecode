@@ -179,6 +179,7 @@ constexpr bool QG_CORNER_LOG = false;
 constexpr bool QUEEN_NO_TRAP = false;
 constexpr double QNT_VETO = 1e10;
 constexpr double QNT_ROOM_GAIN = 1e7;
+constexpr int QNT_SLACK = 2;
 constexpr int QUEEN_GIVE_WAY = 0;
 constexpr double QUEEN_GIVE_WAY_PENALTY = 3000.0;
 constexpr bool QUEEN_BRAIN = false;
@@ -735,7 +736,7 @@ class Bot {
                     break;
                 }
                 double const value = stride_value(next);
-                if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                if (value > best_value && trap_queen() && trap_at(position_of(next))) {
                     continue;
                 }
                 if (value > best_value) {
@@ -793,6 +794,9 @@ class Bot {
             return 0;
         }
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
+            return 0;
+        }
+        if (trap_queen() && !split_safe()) {
             return 0;
         }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
@@ -2188,7 +2192,7 @@ class Bot {
                 break;
             }
             double const score = score_step(position_of(nodes[k].cell));
-            if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+            if (score > best && trap_queen() && trap_at(position_of(nodes[k].cell))) {
                 continue;
             }
             if (score > best) {
@@ -2249,7 +2253,7 @@ class Bot {
                             return found;
                         }
                         double const score = score_step(position_of(c2)) - (sprint_free() >= 2 ? 0.0 : SPRINT_ESCAPE_COST);
-                        if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                        if (score > best && trap_queen() && trap_at(position_of(c2))) {
                             continue;
                         }
                         if (score > best) {
@@ -2279,7 +2283,7 @@ class Bot {
                             return found;
                         }
                         double const score = score_step(position_of(c3)) - std::max(0, 3 - sprint_free()) * SPRINT_ESCAPE_COST;
-                        if (trap_queen() && trap_step(last_room, last_reaches_tail)) {
+                        if (score > best && trap_queen() && trap_at(position_of(c3))) {
                             continue;
                         }
                         if (score > best) {
@@ -2397,6 +2401,9 @@ class Bot {
                 if (survey_ally_block && next_index >= 0 && ally_block_stamp[next_index] == round) {
                     continue;
                 }
+                if (survey_head_block && next_index >= 0 && head_block_stamp[next_index] == round) {
+                    continue;
+                }
                 if (next_index < 0) {
                     if (scouting && result.dist_portal < 0 && leads_to_unknown(position, direction) &&
                         !(QG_SAFEZONE && zone_blocked(position, direction))) {
@@ -2410,7 +2417,7 @@ class Bot {
                     continue;
                 }
                 int const free_at = enter_time[next_index];
-                if (free_at >= BLOCKED_FOREVER || steps + 1 - eaten < free_at) {
+                if (free_at >= BLOCKED_FOREVER || steps + 1 - eaten < free_at + (free_at > 0 ? survey_slack : 0)) {
                     if (!next_beyond && result.dist_feed < 0 && next_index == feed_index) {
                         result.dist_feed = steps + 1;
                     }
@@ -2695,8 +2702,49 @@ class Bot {
         return QUEEN_NO_TRAP && ct.get_id() <= 1;
     }
 
-    bool trap_step(double room, bool reaches) const {
-        return !reaches && room < 3.0 * length + 8.0;
+    void mark_head_block() {
+        if (head_block_stamp.size() != static_cast<std::size_t>(width * height)) {
+            head_block_stamp.assign(static_cast<std::size_t>(width * height), -1);
+        }
+        for (auto const* heads : {&ally_heads, &enemy_heads}) {
+            for (Position const& other : *heads) {
+                for (Direction const direction : Direction::get_direction_list()) {
+                    int const next = step_index(other, direction);
+                    if (next >= 0) {
+                        head_block_stamp[next] = round;
+                    }
+                }
+            }
+        }
+    }
+
+    // Room from a cell if other heads take every cell they can reach this round.
+    bool trap_at(Position destination, bool frozen = false) {
+        mark_head_block();
+        survey_head_block = true;
+        survey_slack = QNT_SLACK;
+        Survey const survey = survey_from(destination, frozen);
+        survey_head_block = false;
+        survey_slack = 0;
+        trap_room = survey.area_seen + UNSEEN_DISCOUNT * survey.area_unseen;
+        return !survey.reaches_tail && trap_room < 3.0 * length + 8.0;
+    }
+
+    bool split_safe() {
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(head, direction) == EDGE_PORTAL) {
+                continue;
+            }
+            int const dest = step_index(head, direction);
+            if (dest < 0 || enter_time[dest] != 0) {
+                continue;
+            }
+            Position const cell = position_of(dest);
+            if (!can_step_to(ally_heads, cell) && !enemy_can_step_to(cell) && !trap_at(cell, true)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void ensure_queen_buffers() {
@@ -4490,6 +4538,7 @@ class Bot {
             std::array<bool, 4> live{};
             std::array<bool, 4> trap{};
             std::array<bool, 4> hot{};
+            std::array<double, 4> tight{};
             bool free_any = false;
             bool free_calm = false;
             bool trap_calm = false;
@@ -4498,7 +4547,8 @@ class Bot {
                 if (!live[k]) {
                     continue;
                 }
-                trap[k] = trap_step(rooms[k], reaches[k]);
+                trap[k] = trap_at(position_of(dests[k]));
+                tight[k] = trap_room;
                 hot[k] = enemy_can_step_to(position_of(dests[k]));
                 free_any = free_any || !trap[k];
                 free_calm = free_calm || (!trap[k] && !hot[k]);
@@ -4511,7 +4561,7 @@ class Bot {
                 if (free_calm || (free_any && hot[k])) {
                     scores[k] -= QNT_VETO;
                 } else if (!free_any && (!hot[k] || !trap_calm)) {
-                    scores[k] += QNT_ROOM_GAIN * rooms[k];
+                    scores[k] += QNT_ROOM_GAIN * tight[k];
                 }
             }
         }
@@ -4695,6 +4745,9 @@ class Bot {
     bool survey_pessimist = false;
     bool survey_no_portal = false;
     bool survey_ally_block = false;
+    bool survey_head_block = false;
+    int survey_slack = 0;
+    double trap_room = 0.0;
     std::vector<int> qk_margin;
     std::vector<std::tuple<Position, int, int>> danger_log;
     std::vector<int> qk_stamp;
@@ -4708,6 +4761,7 @@ class Bot {
     double qb_best_score = 0.0;
     int qb_evals = 0;
     std::vector<int> ally_block_stamp;
+    std::vector<int> head_block_stamp;
     int zp_mouth = -1;
     int zp_dir = 0;
     int zp_id = -1;

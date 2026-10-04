@@ -156,16 +156,18 @@ def main():
         ks = [k for k in keys if k[0] == m]
         per_map[m] = {'base': tally([base[k] for k in ks]), 'candidate': tally([cand[k] for k in ks])}
     failed = [name for name, ok in checks.items() if not ok]
+    same_fate = sum(1 for k in keys if (base[k]['death_round'], base[k]['death_reason'])
+                    == (cand[k]['death_round'], cand[k]['death_reason']))
     note = (f"{len(keys)} pairs. Queen deaths by her own move (wall, own body, another body, no move): base {b['self']}, "
             f"candidate {c['self']}; of those right after a queen split: base {b['self_after_split']}, candidate "
             f"{c['self_after_split']}. Head-on deaths: base {b['head_on']}, candidate {c['head_on']}; feeding suicides: "
             f"base {b['feed']}, candidate {c['feed']}; queen alive at the end: base {b['alive_end']}, candidate "
             f"{c['alive_end']}; queen pearls per 100 rounds alive: base {b['pearls_per_100_rounds_alive']}, candidate "
-            f"{c['pearls_per_100_rounds_alive']}. "
+            f"{c['pearls_per_100_rounds_alive']}. Pairs where the queen met the same fate (round and cause) in both: "
+            f"{same_fate} of {len(keys)}. "
             + ('All four pre-registered checks held.' if passed else 'Failed checks: ' + ', '.join(failed) + '.'))
     result = {'passed': passed, 'note': note, 'expectation': EXPECTATION, 'checks': checks, 'pairs': len(keys),
-              'identical_queen_fate_pairs': sum(1 for k in keys if (base[k]['death_round'], base[k]['death_reason'])
-                                                == (cand[k]['death_round'], cand[k]['death_reason'])),
+              'identical_queen_fate_pairs': same_fate,
               'base': b, 'candidate': c, 'per_map': per_map,
               'games': [{'map': k[0], 'seed': k[1], 'side': k[2], 'base': base[k], 'candidate': cand[k]} for k in keys]}
     with open(a.output, 'w') as f:
