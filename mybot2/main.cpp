@@ -364,6 +364,7 @@ constexpr int QH_QUIET = 20;
 constexpr int QH_FRESH = 20;
 constexpr int QH_SPAWN_SLACK = 2;
 constexpr std::uint64_t QH_PING_KIND = 0x2B5;
+constexpr bool SN_TAIL_MOUTH = true;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
@@ -472,11 +473,13 @@ class Bot {
     }
 
     void split_off(int child) {
+        turn_split = child;
         ct.do_split(child);
     }
 
     void take_turn() {
         act_dirs.clear();
+        turn_split = 0;
         act();
         if (QG_SAFEZONE) {
             zone_after_move();
@@ -1758,6 +1761,7 @@ class Bot {
         auto const directions = Direction::get_direction_list();
         int mouth_dir = -1;
         Position post = head;
+        Position neck = trail.size() > 1 ? trail[1] : head;
         bool ok = true;
         for (Direction const direction : act_dirs) {
             int const next = step_index(post, direction);
@@ -1765,12 +1769,19 @@ class Bot {
                 ok = false;
                 break;
             }
+            neck = post;
             post = position_of(next);
         }
         for (std::size_t k = 0; ok && k < directions.size() && mouth_dir < 0; k++) {
             if (edge_at(post, directions[k]) == EDGE_PORTAL) {
                 mouth_dir = static_cast<int>(k);
             }
+        }
+        int const tail_cell = ok ? tail_mouth() : -1;
+        // The head's ping gives way only where it would land on our own neck.
+        if (tail_cell >= 0 && mouth_dir >= 0 &&
+            step_index(post, directions[static_cast<std::size_t>(mouth_dir)]) == index_of(neck)) {
+            mouth_dir = -1;
         }
         std::uint64_t sight = 0;
         bool const has_sight = SHARE_SIGHT && pack_sight(sight);
@@ -1780,6 +1791,8 @@ class Bot {
             }
             if (static_cast<int>(k) == mouth_dir) {
                 ct.send_sonar(directions[k], pack_mouth(index_of(post)));
+            } else if (tail_cell >= 0) {
+                ct.send_sonar(directions[k], pack_mouth(tail_cell));
             } else if (QG_SAFEZONE && zone_relay(k)) {
                 ct.send_sonar(directions[k], pack_zone());
             } else if (QH_SCOUT && (qh_on || (qh_notice && (round + static_cast<int>(k)) % 4 == 1))) {
@@ -1790,6 +1803,47 @@ class Bot {
                 ct.send_sonar(directions[k], message);
             }
         }
+    }
+
+    // SN_TAIL_MOUTH: our tail cell once this turn's action is done, when a teammate could land on it
+    // through a portal (a portal whose far tile is our own next segment does not count); else -1.
+    int tail_mouth() const {
+        if (!SN_TAIL_MOUTH || tail_index < 0 || (act_dirs.empty() && turn_split == 0)) {
+            return -1;
+        }
+        std::vector<int> walked;
+        Position cell = head;
+        int eaten = 0;
+        for (Direction const direction : act_dirs) {
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                return -1;
+            }
+            cell = position_of(next);
+            walked.push_back(next);
+            eaten += pearl_here[next] ? 1 : 0;
+        }
+        int const moved = static_cast<int>(walked.size());
+        int const last = length - turn_split - std::max(0, moved - sprint_free()) + eaten - 1;
+        if (last < 0 || last - moved >= static_cast<int>(trail.size())) {
+            return -1;
+        }
+        auto part = [&](int k) {
+            return k < moved ? walked[static_cast<std::size_t>(moved - 1 - k)]
+                             : index_of(trail[static_cast<std::size_t>(k - moved)]);
+        };
+        int const tail = part(last);
+        int const before = last > 0 ? part(last - 1) : -1;
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(position_of(tail), direction) != EDGE_PORTAL) {
+                continue;
+            }
+            int const far = portal_exit(position_of(tail), direction);
+            if (far < 0 || far != before) {
+                return tail;
+            }
+        }
+        return -1;
     }
 
     // Bits 0-3: the neighbour in direction k, bit 4: the cell itself. With pearl=false a bit means
@@ -5096,6 +5150,7 @@ class Bot {
     std::vector<int> hunt_stamp;
     int hunt_targets = 0;
     std::vector<Direction> act_dirs;
+    int turn_split = 0;
     std::vector<int> threat_stamp;
     std::vector<Ghost> ghosts;
     std::vector<int> threat_depth;
