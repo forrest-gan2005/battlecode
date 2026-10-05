@@ -22,6 +22,10 @@ reasons (escapes, hunts, rams) need an enemy nearby, so the gate looks at calm t
 Pre-registered before any game was played (see PASS RULE below). Real dead-end entries (counted on the true map,
 no fog), queen deaths, queen length, wins and CPU are reported as raw numbers and are NOT part of the pass rule:
 16 games per side cannot settle them, the A/B does.
+
+Queen deaths are also split the way the online check split them (raw, not gated): by cause, and "boxed in" = at her
+last turn fewer than length + 2 free tiles could be reached from her head on the true map (every body and wall
+blocks, portals are not walked).
 """
 import argparse, glob, json, os, sys, concurrent.futures as cf
 from collections import Counter, deque
@@ -108,6 +112,7 @@ def one(job):
     mark = 0
     pending = None
     boxed_before = False
+    boxed_last = False
     rnd = 0
     examples = []
 
@@ -205,6 +210,24 @@ def one(job):
                 queue.append(nxt)
         return min(len(queue), need)
 
+    def open_room(head, need, blocked):
+        """Free tiles reachable from her head on the true map, counted up to `need`: every body and wall blocks."""
+        nonlocal mark
+        mark += 1
+        stamp[head] = mark
+        queue = [head]
+        at = 0
+        while at < len(queue) and len(queue) <= need:
+            cell = queue[at]
+            at += 1
+            for d in range(4):
+                nxt = nb[cell][d]
+                if side[cell][d] or stamp[nxt] == mark or nxt in blocked:
+                    continue
+                stamp[nxt] = mark
+                queue.append(nxt)
+        return min(len(queue) - 1, need)
+
     def decide(body):
         head = body[0]
         length = len(body)
@@ -280,6 +303,8 @@ def one(job):
             if usage:
                 c['cpu_max'] = max(c['cpu_max'], usage.u64(0))
             look(bodies[queen][0])
+            need = len(bodies[queen]) + 2
+            boxed_last = open_room(bodies[queen][0], need, {cell for b in bodies.values() for cell in b}) < need
             a = pl.pointer(0)
             if a is None:
                 continue
@@ -322,6 +347,7 @@ def one(job):
             if did == queen:
                 c['queen_deaths'] += 1
                 c[f"queen_deaths_{CAUSE[r] if r < 5 else 'other'}"] += 1
+                c['queen_deaths_boxed_in'] += boxed_last
     close()
     c['queen_len_end'] = len(bodies.get(queen, ()))
     c['rival_queen_len_end'] = len(bodies.get(rival, ()))
@@ -389,6 +415,7 @@ def main():
                     'real_boxed_turns': s['real_boxed_turns'],
                     'queen_deaths': s['queen_deaths'],
                     'queen_deaths_by_cause': {k: s[f'queen_deaths_{k}'] for k in CAUSE + ['other'] if s[f'queen_deaths_{k}']},
+                    'queen_deaths_boxed_in': s['queen_deaths_boxed_in'],
                     'queen_splits': s['queen_splits'], 'queen_splits_after_r200': s['queen_splits_after_r200'],
                     'queen_pearls_per_game': round(share(s['queen_pearls'], s['games']), 1),
                     'queen_length_r300_per_game': round(share(s['queen_len_r300'], s['games']), 1),
@@ -425,7 +452,9 @@ def main():
             f"{bv['all']['turns_where_nothing_surely_fits']} -> {cv['all']['turns_where_nothing_surely_fits']} of "
             f"{bv['queen_moves']} -> {cv['queen_moves']} queen moves; "
             f"not gated, {len(keys)} games each: real dead-end entries (true map) {bv['real_dead_end_entries']} -> "
-            f"{cv['real_dead_end_entries']}, queen deaths {bv['queen_deaths']} -> {cv['queen_deaths']}, queen length at "
+            f"{cv['real_dead_end_entries']}, queen deaths {bv['queen_deaths']} -> {cv['queen_deaths']} (boxed in at her "
+            f"last turn {bv['queen_deaths_boxed_in']} -> {cv['queen_deaths_boxed_in']}, into a wall "
+            f"{b['queen_deaths_wall']} -> {c['queen_deaths_wall']}), queen length at "
             f"the end {bv['queen_length_end_per_game']} -> {cv['queen_length_end_per_game']}, queen pearls/game "
             f"{bv['queen_pearls_per_game']} -> {cv['queen_pearls_per_game']}, wins {bv['wins']} -> {cv['wins']}, "
             + (f"peak queen CPU {bv['cpu_max_points']} -> {cv['cpu_max_points']}" if bv['cpu_max_points'] or cv['cpu_max_points']
@@ -441,7 +470,9 @@ def main():
                       'check assumes she knows where her tail is and ignores how pearls delay her tail, so single turns can '
                       'be judged differently from the bot; portals are not walked (the queen does not use them); calm = no '
                       'enemy head within 6 tiles, so escapes, hunts and rams are left out of the gate; the tail-out-of-sight '
-                      'rule and the length + 8 margin are not measured separately (no bot logs); real dead-end entries, '
+                      'rule and the length + 8 margin are not measured separately (no bot logs); "boxed in" deaths use this '
+                      'check\'s own count (under length + 2 free tiles reachable from her head at her last turn, every body '
+                      'and wall blocks), close to the online check\'s but not the same script; real dead-end entries, '
                       'deaths, length, pearls, wins and CPU are raw counts from a small sample, not evidence of an outcome')}
     with open(a.output, 'w') as f:
         json.dump(out, f, indent=2)
