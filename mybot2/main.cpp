@@ -152,6 +152,9 @@ constexpr int QSP_RADIUS = 1;
 constexpr double QSP_PENALTY = 2000.0;
 constexpr int QSP_UNTIL = 400;
 constexpr int QSP_FLEE_RADIUS = 4;
+constexpr bool QUEEN_MARGIN = false;
+constexpr int QM_MARGIN = 2;
+constexpr double QM_PENALTY = 1500.0;
 constexpr bool QUEEN_DEFEND_LATE = false;
 constexpr bool QUEEN_NO_PORTAL = true;
 constexpr int QUEEN_PORTAL_ROUND = 0;
@@ -2390,6 +2393,56 @@ class Bot {
         }
         std::reverse(path.begin(), path.end());
         return true;
+    }
+
+    int qm_margin(int cell) {
+        if (qm_round != round) {
+            qm_round = round;
+            if (qm_gap.size() != static_cast<std::size_t>(cells)) {
+                qm_gap.assign(cells, 0);
+                qm_seen.assign(cells, 0);
+            }
+            qm_mark++;
+            auto spread = [&](Position from, int reach) {
+                std::vector<std::pair<int, int>> queue(1, {index_of(from), 0});
+                std::vector<int> local(1, index_of(from));
+                visit_mark++;
+                visit_stamp[index_of(from)] = visit_mark;
+                for (std::size_t at = 0; at < queue.size(); at++) {
+                    auto const [index, steps] = queue[at];
+                    if (steps >= reach + QM_MARGIN) {
+                        continue;
+                    }
+                    Position const position = position_of(index);
+                    for (Direction const direction : Direction::get_direction_list()) {
+                        int const next = step_index(position, direction);
+                        if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2 && next != index_of(head))) {
+                            continue;
+                        }
+                        visit_stamp[next] = visit_mark;
+                        int const gap = steps + 1 - reach;
+                        if (qm_seen[next] != qm_mark || gap < qm_gap[next]) {
+                            qm_seen[next] = qm_mark;
+                            qm_gap[next] = gap;
+                        }
+                        queue.emplace_back(next, steps + 1);
+                    }
+                }
+            };
+            auto full_reach = [](int parts) {
+                int const size = std::max(parts, static_cast<int>(unswbc::Constants::MIN_SIZE));
+                return (size + 3) / 4 + size - static_cast<int>(unswbc::Constants::MIN_SIZE);
+            };
+            for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+                spread(enemy_heads[k], full_reach(visible_parts(enemy_head_ids[k])));
+            }
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.round != round || ghost.shared) {
+                    spread(ghost.pos, full_reach(ghost.parts) + round - ghost.round);
+                }
+            }
+        }
+        return qm_seen[cell] == qm_mark ? qm_gap[cell] : QM_MARGIN;
     }
 
     int qs_keep() const {
@@ -4670,6 +4723,12 @@ class Bot {
                 score -= (queen_guard() ? QG_DEAD_PENALTY : QUEEN_DEAD_PENALTY);
             }
         }
+        if (QUEEN_MARGIN && real_queen()) {
+            int const margin = qm_margin(index_of(destination));
+            if (margin < QM_MARGIN) {
+                score -= QM_PENALTY * (QM_MARGIN - margin);
+            }
+        }
         if (QUEEN_SPIN && is_queen() && cells > QSP_CELLS && queen_home.x >= 0 && round < QSP_UNTIL &&
             qs_gap(head) > QSP_FLEE_RADIUS) {
             int const spread = std::max(torus_gap(destination.x, queen_home.x, width), torus_gap(destination.y, queen_home.y, height));
@@ -5054,6 +5113,10 @@ class Bot {
     std::vector<int> look_cells;
     int queen_id = -1;
     Position queen_home{-1, -1};
+    std::vector<int> qm_gap;
+    std::vector<int> qm_seen;
+    int qm_mark = 0;
+    int qm_round = -1;
     int enemy_queen_id = -1;
     Position enemy_queen_pos{};
     int enemy_queen_round = -1;
