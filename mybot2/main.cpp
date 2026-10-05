@@ -131,6 +131,16 @@ constexpr bool SHARE_SIGHT = false;
 constexpr int CELL_BUDGET = 12000;
 constexpr bool QUEEN_HUNT = false;
 constexpr int QUEEN_KEEP = 0;
+constexpr bool QUEEN_STRIDE = false;
+constexpr int QS_KEEP = 5;
+constexpr double QS_KEEP_DIV = 6.0;
+constexpr int QS_KEEP_MAX = 12;
+constexpr int QS_OPEN_UNITS = 0;
+constexpr int QS_OPEN_ROUNDS = 2;
+constexpr int QS_FLEE_RADIUS = 4;
+constexpr double QS_FLEE_GAIN = 300.0;
+constexpr double QS_FLEE_UNSAFE = 5000.0;
+constexpr int QS_FLEE_EVALS = 8;
 constexpr bool QUEEN_DEFEND_LATE = false;
 constexpr bool QUEEN_NO_PORTAL = true;
 constexpr int QUEEN_PORTAL_ROUND = 0;
@@ -627,6 +637,13 @@ class Bot {
             }
         }
 
+        if (qs_flee(path)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
+            return;
+        }
+
         if (long_escape(path)) {
             ct.make_moves(path);
             act_dirs = path;
@@ -933,6 +950,10 @@ class Bot {
         }
         if (is_queen() && (round > QUEEN_SPLIT_ROUND || enemy_near(head, queen_guard() ? QG_SPLIT_CLEAR : QUEEN_SPLIT_CLEAR) ||
                            length - unswbc::Constants::MIN_SIZE < (queen_guard() ? QG_KEEP : QUEEN_KEEP))) {
+            return 0;
+        }
+        if (QUEEN_STRIDE && is_queen() &&
+            (length - unswbc::Constants::MIN_SIZE < qs_keep() || (QS_FLEE_RADIUS > 0 && qs_gap(head) <= QS_FLEE_RADIUS))) {
             return 0;
         }
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
@@ -2350,6 +2371,103 @@ class Bot {
         return true;
     }
 
+    int qs_keep() const {
+        if (!QUEEN_STRIDE || !is_queen() ||
+            (QS_OPEN_UNITS > 0 && round <= QS_OPEN_ROUNDS && ct.get_unit_count() <= QS_OPEN_UNITS)) {
+            return 0;
+        }
+        if (QS_KEEP_DIV <= 0.0) {
+            return QS_KEEP;
+        }
+        int const scaled = static_cast<int>(std::lround(std::sqrt(static_cast<double>(cells)) / QS_KEEP_DIV));
+        return std::clamp(scaled, QS_KEEP, std::max(QS_KEEP, QS_KEEP_MAX));
+    }
+
+    int qs_gap(Position cell) const {
+        int gap = BLOCKED_FOREVER;
+        for (Position const& enemy : enemy_heads) {
+            gap = std::min(gap, manhattan(enemy, cell));
+        }
+        for (Ghost const& ghost : ghosts) {
+            if (ghost.round != round || ghost.shared) {
+                gap = std::min(gap, manhattan(ghost.pos, cell) - (round - ghost.round));
+            }
+        }
+        return gap;
+    }
+
+    bool qs_flee(std::vector<Direction>& path) {
+        if (!QUEEN_STRIDE || QS_FLEE_RADIUS <= 0 || !is_queen() || !any_enterable || sprint_free() < 2 ||
+            qs_gap(head) > QS_FLEE_RADIUS) {
+            return false;
+        }
+        int const limit = std::min(sprint_free(), STRIDE_MAX);
+        struct Node {
+            int cell;
+            int parent;
+            int depth;
+            Direction dir;
+        };
+        std::vector<Node> nodes;
+        visit_mark++;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        nodes.push_back({start, -1, 0, dir_of(Direction::NORTH)});
+        for (std::size_t q = 0; q < nodes.size(); q++) {
+            Node const node = nodes[q];
+            if (node.depth >= limit) {
+                continue;
+            }
+            Position const position = position_of(node.cell);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_KELP || edge == EDGE_PORTAL || edge == EDGE_UNKNOWN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark || seen_round[next] != round) {
+                    continue;
+                }
+                if (enter_time[next] > (node.depth == 0 ? 1 : 0) || is_enemy_head(position_of(next)) ||
+                    is_ally_head(position_of(next))) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
+            }
+        }
+        std::vector<std::tuple<int, int, int>> order;
+        for (std::size_t k = 1; k < nodes.size(); k++) {
+            Position const position = position_of(nodes[k].cell);
+            int const unsafe = threat_at(nodes[k].cell) > 0 || enemy_can_step_to(position) ? 1 : 0;
+            order.emplace_back(unsafe, -qs_gap(position), static_cast<int>(k));
+        }
+        std::sort(order.begin(), order.end());
+        double best = SCORE_REJECT * 0.5;
+        int best_node = -1;
+        int evals = 0;
+        for (auto const& [unsafe, far, k] : order) {
+            if (evals++ >= QS_FLEE_EVALS || (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET)) {
+                break;
+            }
+            double const value = stride_value(nodes[k].cell) + QS_FLEE_GAIN * std::min(-far, QS_FLEE_RADIUS + 2) -
+                                 (unsafe ? QS_FLEE_UNSAFE : 0.0);
+            if (value > best) {
+                best = value;
+                best_node = k;
+            }
+        }
+        if (best_node < 0) {
+            return false;
+        }
+        path.clear();
+        for (int k = best_node; nodes[k].parent >= 0; k = nodes[k].parent) {
+            path.push_back(nodes[k].dir);
+        }
+        std::reverse(path.begin(), path.end());
+        return true;
+    }
+
     bool sprint_escape(std::vector<Direction>& path, bool force) {
         if ((length < SPRINT_ESCAPE_MIN_LENGTH && !(is_queen() && sprint_reach() >= 2)) || !chosen_scored || chosen_index < 0 || threat_at(chosen_index) == 0) {
             return false;
@@ -3188,6 +3306,9 @@ class Bot {
         }
         bool const stuck = !any_enterable || (chosen_scored && !chosen_reaches_tail && chosen_room < length + 2.0);
         if (!stuck) {
+            return false;
+        }
+        if (QUEEN_STRIDE && any_enterable && length - unswbc::Constants::MIN_SIZE < qs_keep()) {
             return false;
         }
         bool ally_block = false;
