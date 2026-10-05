@@ -1872,30 +1872,68 @@ class Bot {
         qh_route = qh_on ? index_of(qh_pos) : -1;
     }
 
-    // False only when known walls seal her cell off from our head; unknown edges count as open.
+    // Steps to her last cell without portals. qh_walk takes unknown edges as open, qh_sure only seen-open ones.
+    void qh_flood(std::vector<int>& dist, int from, bool sure) {
+        dist.assign(static_cast<std::size_t>(cells), -1);
+        int tail = 0;
+        dist[from] = 0;
+        qh_queue[tail++] = from;
+        for (int at = 0; at < tail; at++) {
+            Position const cell = position_of(qh_queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(cell, direction);
+                if (edge != EDGE_OPEN && (sure || edge != EDGE_UNKNOWN)) {
+                    continue;
+                }
+                int const next = index_of(cell.add_dir(direction));
+                if (dist[next] < 0) {
+                    dist[next] = dist[qh_queue[at]] + 1;
+                    qh_queue[tail++] = next;
+                }
+            }
+        }
+    }
+
+    // A hunter takes a portal only when the far tile is surely closer to her last cell.
+    bool qh_portal_ok(Position cell, Direction direction) const {
+        int const exit = portal_exit(cell, direction);
+        if (exit < 0 || qh_sure[exit] < 0) {
+            return false;
+        }
+        int const stay = qh_walk[index_of(cell)];
+        return stay < 0 || qh_sure[exit] < stay;
+    }
+
+    bool qh_shut(Position cell, Direction direction) const {
+        return QH_SCOUT && qh_on && edge_at(cell, direction) == EDGE_PORTAL && !qh_portal_ok(cell, direction);
+    }
+
+    // True when her cell can be walked to, or a portal on our side surely leads closer.
     bool qh_reach(Position foe) {
         if (qh_stamp.empty()) {
             qh_stamp.assign(static_cast<std::size_t>(cells), 0);
             qh_queue.resize(static_cast<std::size_t>(cells));
         }
+        qh_flood(qh_walk, index_of(foe), false);
+        qh_flood(qh_sure, index_of(foe), true);
+        if (qh_walk[index_of(head)] >= 0) {
+            return true;
+        }
         qh_mark++;
-        int const goal = index_of(head);
         int tail = 0;
-        qh_stamp[index_of(foe)] = qh_mark;
-        qh_queue[tail++] = index_of(foe);
+        qh_stamp[index_of(head)] = qh_mark;
+        qh_queue[tail++] = index_of(head);
         for (int at = 0; at < tail; at++) {
-            if (qh_queue[at] == goal) {
-                return true;
-            }
             Position const cell = position_of(qh_queue[at]);
             for (Direction const direction : Direction::get_direction_list()) {
-                int const next = step_index(cell, direction);
-                if (next < 0) {
-                    if (edge_at(cell, direction) == EDGE_PORTAL) {
-                        return true;
-                    }
+                std::uint8_t const edge = edge_at(cell, direction);
+                if (edge == EDGE_PORTAL && qh_portal_ok(cell, direction)) {
+                    return true;
+                }
+                if (edge != EDGE_OPEN && edge != EDGE_UNKNOWN) {
                     continue;
                 }
+                int const next = index_of(cell.add_dir(direction));
                 if (qh_stamp[next] != qh_mark) {
                     qh_stamp[next] = qh_mark;
                     qh_queue[tail++] = next;
@@ -2391,7 +2429,7 @@ class Bot {
             }
             for (Direction const direction : Direction::get_direction_list()) {
                 int const next = step_index(position, direction);
-                if (next < 0 || visit_stamp[next] == visit_mark) {
+                if (next < 0 || visit_stamp[next] == visit_mark || qh_shut(position, direction)) {
                     continue;
                 }
                 if (hunt_stamp[next] == round) {
@@ -2466,7 +2504,7 @@ class Bot {
             }
             for (Direction const direction : Direction::get_direction_list()) {
                 int const next = step_index(position, direction);
-                if (next < 0 || visit_stamp[next] == visit_mark) {
+                if (next < 0 || visit_stamp[next] == visit_mark || qh_shut(position, direction)) {
                     continue;
                 }
                 if (is_trade_target_cell(next)) {
@@ -2735,6 +2773,9 @@ class Bot {
                     continue;
                 }
                 if (survey_no_portal && edge_at(position, direction) == EDGE_PORTAL) {
+                    continue;
+                }
+                if (qh_shut(position, direction)) {
                     continue;
                 }
                 int const next_index = step_index(position, direction);
@@ -4698,7 +4739,7 @@ class Bot {
         if (QG_SAFEZONE && zone_blocked(head, direction)) {
             return SCORE_REJECT;
         }
-        if (queen_portal_ban() || (QG_SAFEZONE && (zone_mode == 2 || zone_mode == 3))) {
+        if (queen_portal_ban() || (QG_SAFEZONE && (zone_mode == 2 || zone_mode == 3)) || qh_shut(head, direction)) {
             return SCORE_PORTAL;
         }
         int const exit = portal_exit(head, direction);
@@ -4772,7 +4813,7 @@ class Bot {
                 scored[k] = usable;
                 any_enterable = any_enterable || usable;
                 blind[k] = scouting && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1) &&
-                           !(QG_SAFEZONE && zone_blocked(head, direction));
+                           !(QG_SAFEZONE && zone_blocked(head, direction)) && !(QH_SCOUT && qh_on);
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
                 dests[k] = index_of(destination);
@@ -5094,6 +5135,8 @@ class Bot {
     int qh_route = -1;
     std::vector<int> qh_stamp;
     std::vector<int> qh_queue;
+    std::vector<int> qh_walk;
+    std::vector<int> qh_sure;
     int qh_mark = 0;
     int eq_round = -1;
     Position eq_pos{};

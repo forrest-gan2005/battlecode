@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Card #31 unit test: drives a QH_SCOUT=true build one turn at a time on a wall-less board.
+"""Card #31 unit test: drives a QH_SCOUT=true build one turn at a time on a small scripted board.
 
 usage: python3 work/card_31_unit.py --out DIR [--source mybot2]
 No engine and no games: the script writes the turn input a dragon would get and reads its MOVE/SONAR lines.
 It builds DIR/qh-on (the source with the switch on) and checks who sends queen pings, what they say, and
-where a hunter steps. Exit code 0 when every case holds.
+where a hunter steps, including whether it takes a portal. Exit code 0 when every case holds.
 """
 import argparse, os, re, shutil, subprocess, sys
 
@@ -34,9 +34,29 @@ def line(head, direction, length):
     return [((head[0] - k * dx) % W, (head[1] - k * dy) % H) for k in range(length)]
 
 
+class Board:
+    """Tile sides: '.' open, 'w' kelp, or a portal id. north[(x, y)] / west[(x, y)] are that tile's north / west side."""
+
+    def __init__(self, north=None, west=None):
+        self.north, self.west = dict(north or {}), dict(west or {})
+
+    def step(self, cell, ch):
+        """Cell reached by one step; a portal keeps the direction and continues from its twin side."""
+        x, y = cell
+        table, at = {'N': (self.north, (x, y)), 'S': (self.north, (x, (y + 1) % H)),
+                     'W': (self.west, (x, y)), 'E': (self.west, ((x + 1) % W, y))}[ch]
+        token = table.get(at, '.')
+        if token == 'w':
+            raise RuntimeError(f'stepped into kelp at {cell} {ch}')
+        if token == '.':
+            return ((x + STEP[ch][0]) % W, (y + STEP[ch][1]) % H)
+        twin = next(c for c, v in table.items() if v == token and c != at)
+        return {'N': (twin[0], (twin[1] - 1) % H), 'S': twin, 'W': ((twin[0] - 1) % W, twin[1]), 'E': twin}[ch]
+
+
 class Dragon:
-    def __init__(self, binary, did, body, units=6):
-        self.id, self.body, self.units = did, list(body), units
+    def __init__(self, binary, did, body, units=6, board=None):
+        self.id, self.body, self.units, self.board = did, list(body), units, board or Board()
         self.proc = subprocess.Popen([binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         self.proc.stdin.write(f'ID {did}\nTEAM A\nMAP {W} {H}\nUNIT_LIMIT 100\n')
 
@@ -54,7 +74,11 @@ class Dragon:
                 if cell in window:
                     face = facing(cell, body[k - 1]) if k else (facing(body[1], body[0]) if len(body) > 1 else 'N')
                     parts.append(f'{team} {did} {cell[0]} {cell[1]} {face} {int(k == 0)}')
-        out += [f'DRAGON_BODIES {len(parts)}'] + parts + ['. . . . . . .'] * 8 + ['. . . . . . . .'] * 7
+        out += [f'DRAGON_BODIES {len(parts)}'] + parts
+        out += [' '.join(str(self.board.north.get(((hx + lx - 3) % W, (hy + ly - 3) % H), '.')) for lx in range(7))
+                for ly in range(8)]
+        out += [' '.join(str(self.board.west.get(((hx + lx - 3) % W, (hy + ly - 3) % H), '.')) for lx in range(8))
+                for ly in range(7)]
         self.proc.stdin.write('\n'.join(out) + '\n')
         self.proc.stdin.flush()
         move, sonar = '', []
@@ -72,8 +96,7 @@ class Dragon:
                 sonar.append(codec.parse(plain) if plain is not None else {'kind': 'unreadable'})
         free = (len(self.body) + 3) // 4
         for ch in move:
-            dx, dy = STEP[ch]
-            self.body.insert(0, ((self.body[0][0] + dx) % W, (self.body[0][1] + dy) % H))
+            self.body.insert(0, self.board.step(self.body[0], ch))
             self.body.pop()
         del self.body[max(2, len(self.body) - max(0, len(move) - free)):]
         return {'round': rnd, 'move': move, 'head': self.body[0],
@@ -215,6 +238,49 @@ def cases(binary):
     log = [me.turn(rnd, {}) for rnd in range(31, 36)]
     check('lost her: stops pinging once at her last cell', len(a['pings']) >= 3 and not log[-1]['pings'],
           [len(t['pings']) for t in log])
+    me.close()
+
+    # 10. Portals: a hunter takes one only when the far tile is surely closer to her last cell.
+    # Kelp between columns 11 and 12 over the whole view; the portal by our head comes out at (12, 8).
+    fence = {(12, y): 'w' for y in range(7, 14)}
+    me = Dragon(binary, 7, line((10, 10), 'E', 3), board=Board(north={(10, 10): 0, (12, 9): 0}, west=fence))
+    t = me.turn(30, {1: ('B', line((13, 10), 'W', 4))})
+    check('portal: far tile surely closer, the hunter takes it', t['move'][:1] == 'N' and len(t['pings']) >= 3, t)
+    me.close()
+
+    # The same portal with its other side never seen: the hunter goes round the kelp instead.
+    me = Dragon(binary, 7, line((10, 10), 'E', 3), board=Board(north={(10, 10): 0, (30, 20): 0}, west=fence))
+    t = me.turn(30, {1: ('B', line((13, 10), 'W', 4))})
+    check('portal: other side unknown, the hunter stays', t['move'][:1] in ('E', 'S') and len(t['pings']) >= 3, t)
+    me.close()
+
+    # Revenge, her cell only heard of. The portal comes out one step nearer on paper, but nothing between its
+    # far tile and her cell was ever seen, so it is not sure: the hunter walks.
+    far = (25, 10)
+    me = Dragon(binary, 9, line((10, 10), 'E', 3), board=Board(north={(10, 10): 0, (13, 10): 0}))
+    log = [me.turn(rnd, {}, wires=[leader(4, 12, rnd, (30, 20), 1), ping(7, far, rnd - 1, state=1)])
+           for rnd in range(100, 104)]
+    check('portal: nearer on paper only, the revenge hunter walks',
+          all(t['pings'] for t in log) and [t['head'] for t in log] == [(11 + k, 10) for k in range(4)],
+          [(t['move'], t['head'], len(t['pings'])) for t in log])
+    me.close()
+
+    # Walled into a 3x3 room whose only way out is a portal with an unknown far side: no hunt, no pings.
+    # (It needs three turns to leave the room, so all three are decided inside it.)
+    room = Board(north={**{(x, 9): 'w' for x in (9, 10, 11)}, **{(x, 12): 'w' for x in (9, 10)}, (11, 12): 0,
+                        (30, 20): 0},
+                 west={**{(9, y): 'w' for y in (9, 10, 11)}, **{(12, y): 'w' for y in (9, 10, 11)}})
+    me = Dragon(binary, 9, [(10, 10), (9, 10), (9, 9)], board=room)
+    log = [me.turn(rnd, {}, wires=[leader(4, 12, rnd, (30, 20), 1), ping(7, far, rnd - 1, state=1)])
+           for rnd in range(100, 103)]
+    check('portal: sealed in with an unknown portal, no hunt', not any(t['pings'] for t in log),
+          [(t['move'], t['head'], len(t['pings'])) for t in log])
+    me.close()
+
+    # Her cell is 3 open steps away and the portal's far tile is also 3 from her: not closer, the hunter walks.
+    me = Dragon(binary, 7, line((10, 10), 'E', 3), board=Board(north={(10, 10): 0, (12, 9): 0}))
+    t = me.turn(30, {1: ('B', line((13, 10), 'W', 4))})
+    check('portal: far tile no nearer, the hunter walks', t['move'][:1] == 'E' and len(t['pings']) >= 3, t)
     me.close()
     return results
 
