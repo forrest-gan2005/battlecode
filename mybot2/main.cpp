@@ -124,6 +124,10 @@ constexpr bool QUEEN_WAIT = true;
 constexpr int QW_MIN_LENGTH = 4;
 constexpr bool QW_ANY_BLOCK = true;
 constexpr bool QW_LOG = false;
+constexpr bool QUEEN_SAFETY = false;
+constexpr double QS_THREAT_MULT = 4.0;
+constexpr double QS_HIT_PENALTY = 3e8;
+constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool STRIDE_SAFE_END = true;
@@ -599,6 +603,19 @@ class Bot {
             return;
         }
 
+        if (hit_blocked && chosen_scored && chosen_index >= 0) {
+            if (hit_escape(path)) {
+                ct.make_moves(path);
+                act_dirs = path;
+                remember_path(path);
+                return;
+            }
+            if (ct.can_split(unswbc::Constants::MIN_SIZE)) {
+                split_off(unswbc::Constants::MIN_SIZE);
+                return;
+            }
+        }
+
         if (queen_wait()) {
             if (QW_LOG) {
                 ct.output_log("QWAIT", round, head.x, head.y, length, any_enterable ? 1 : 0);
@@ -651,14 +668,14 @@ class Bot {
             return;
         }
 
-        if (cornered && (is_big() || is_queen()) && sprint_escape(path, true)) {
+        if (cornered && (is_big() || queen_wary()) && sprint_escape(path, true)) {
             ct.make_moves(path);
             act_dirs = path;
             remember_path(path);
             return;
         }
 
-        if (cornered && !is_queen() && tail_index >= 0 && threat_at(tail_index) == 0) {
+        if (cornered && !queen_wary() && tail_index >= 0 && threat_at(tail_index) == 0) {
             int const tail_part = length - unswbc::Constants::MIN_SIZE;
             if (ct.can_split(tail_part) && tail_room() >= CHILD_MIN_ROOM) {
                 split_off(tail_part);
@@ -779,7 +796,7 @@ class Bot {
                     is_ally_head(position_of(next))) {
                     continue;
                 }
-                if (threat_at(next) > origin_threat || enemy_can_step_to(position_of(next))) {
+                if (threat_at(next) > origin_threat || enemy_can_step_to(position_of(next)) || hit_at(next)) {
                     continue;
                 }
                 if (SHARE_SIGHT && enemy_near(position_of(next), 2)) {
@@ -1451,6 +1468,9 @@ class Bot {
         refresh_leader_zone();
         map_rivals();
         map_threats();
+        if (QUEEN_SAFETY && real_queen()) {
+            map_hits();
+        }
         mark_trade_targets();
         mark_hunt_targets();
     }
@@ -2367,7 +2387,7 @@ class Bot {
     void map_threats() {
         threat_mark++;
         update_ghosts();
-        std::size_t const sources = enemy_heads.size() + (is_big() || is_queen() ? ghosts.size() : 0);
+        std::size_t const sources = enemy_heads.size() + (is_big() || queen_wary() ? ghosts.size() : 0);
         for (std::size_t k = 0; k < sources; k++) {
             bool const ghost = k >= enemy_heads.size();
             Ghost const* g = ghost ? &ghosts[k - enemy_heads.size()] : nullptr;
@@ -2379,7 +2399,7 @@ class Bot {
             int const small_reach = SMALL_SPRINT_THREAT ? std::max(SMALL_UNIT_THREAT_REACH, parts - 1) : SMALL_UNIT_THREAT_REACH;
             int const queen_reach = SPRINT_FREE_DIV > 0 ? (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV + parts - 1 : parts + 1;
             int const true_reach = std::clamp((parts + 3) / 4 + parts - 2 + BIG_TRUE_MARGIN, 1, std::max(1, BIG_TRUE_REACH));
-            int const reach = (is_queen() ? std::clamp(queen_reach, THREAT_REACH_MIN, QUEEN_REACH_MAX)
+            int const reach = (queen_wary() ? std::clamp(queen_reach, THREAT_REACH_MIN, QUEEN_REACH_MAX)
                                : BIG_TRUE_REACH > 0 && is_big() && !ghost ? true_reach
                                           : std::clamp(parts + (is_big() ? BIG_REACH_BONUS : 0), THREAT_REACH_MIN, THREAT_REACH_MAX)) +
                               (ghost ? round - g->round : 0);
@@ -2407,7 +2427,7 @@ class Bot {
                     }
                     visit_stamp[next] = visit_mark;
                     step_count[next] = steps + 1;
-                    int const depth = std::min(reach - steps, is_queen() ? QUEEN_REACH_MAX : std::max(THREAT_REACH_MAX, BIG_TRUE_REACH));
+                    int const depth = std::min(reach - steps, queen_wary() ? QUEEN_REACH_MAX : std::max(THREAT_REACH_MAX, BIG_TRUE_REACH));
                     if (threat_stamp[next] != threat_mark) {
                         threat_stamp[next] = threat_mark;
                         threat_depth[next] = 0;
@@ -2431,12 +2451,12 @@ class Bot {
         if (threat_stamp[index] != threat_mark) {
             return 0;
         }
-        return length <= TRADE_MAX_LENGTH && !is_queen() ? threat_depth_small[index] : threat_depth[index];
+        return length <= TRADE_MAX_LENGTH && !queen_wary() ? threat_depth_small[index] : threat_depth[index];
     }
 
     void mark_hunt_targets() {
         hunt_targets = 0;
-        if (is_queen()) {
+        if (queen_wary()) {
             hunt_queen = false;
             return;
         }
@@ -2682,7 +2702,7 @@ class Bot {
     }
 
     bool sprint_escape(std::vector<Direction>& path, bool force) {
-        if ((length < SPRINT_ESCAPE_MIN_LENGTH && !(is_queen() && sprint_reach() >= 2)) || !chosen_scored || chosen_index < 0 || threat_at(chosen_index) == 0) {
+        if ((length < SPRINT_ESCAPE_MIN_LENGTH && !(queen_wary() && sprint_reach() >= 2)) || !chosen_scored || chosen_index < 0 || threat_at(chosen_index) == 0) {
             return false;
         }
         double best = force ? SCORE_REJECT * 0.5 : chosen_score;
@@ -3549,7 +3569,8 @@ class Bot {
     }
 
     bool is_trader() const {
-        return length <= TRADE_MAX_LENGTH && !is_leader() && (!is_queen() || (QUEEN_TRADE_SMALL && aggressive)) && trade_targets > 0;
+        return length <= TRADE_MAX_LENGTH && !is_leader() && !(QUEEN_SAFETY && real_queen()) &&
+               (!is_queen() || (QUEEN_TRADE_SMALL && aggressive)) && trade_targets > 0;
     }
 
     bool can_scout_portals() const {
@@ -3591,6 +3612,122 @@ class Bot {
 
     bool real_queen() const {
         return QUEEN_MODE && ct.get_id() == queen_id;
+    }
+
+    // Queen threat handling on every map when QUEEN_SAFETY is on.
+    bool queen_wary() const {
+        return is_queen() || (QUEEN_SAFETY && real_queen());
+    }
+
+    // Tiles a visible enemy head can enter this turn with its free steps.
+    void map_hits() {
+        if (hit_stamp.empty()) {
+            hit_stamp.assign(cells, 0);
+        }
+        hit_mark++;
+        hit_round = round;
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int parts = visible_parts(enemy_head_ids[k]);
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.id == enemy_head_ids[k]) {
+                    parts = std::max(parts, ghost.parts);
+                }
+            }
+            int const reach = SPRINT_FREE_DIV > 0 ? std::max(1, (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
+            visit_mark++;
+            int queue_head = 0;
+            int queue_tail = 0;
+            int const origin = index_of(enemy_heads[k]);
+            visit_stamp[origin] = visit_mark;
+            step_count[origin] = 0;
+            bfs_queue[queue_tail++] = enemy_heads[k];
+            while (queue_head < queue_tail) {
+                Position const position = bfs_queue[queue_head++];
+                int const steps = step_count[index_of(position)];
+                if (steps >= reach) {
+                    continue;
+                }
+                for (Direction const direction : Direction::get_direction_list()) {
+                    int const next = step_index(position, direction);
+                    if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2)) {
+                        continue;
+                    }
+                    visit_stamp[next] = visit_mark;
+                    step_count[next] = steps + 1;
+                    hit_stamp[next] = hit_mark;
+                    bfs_queue[queue_tail++] = position_of(next);
+                }
+            }
+        }
+    }
+
+    bool hit_at(int index) const {
+        return QUEEN_SAFETY && hit_round == round && hit_stamp[index] == hit_mark;
+    }
+
+    // Free sprint to the best seen tile outside the hit zone.
+    bool hit_escape(std::vector<Direction>& path) {
+        int const limit = std::min(sprint_free(), STRIDE_MAX);
+        struct Node {
+            int cell;
+            int parent;
+            int depth;
+            Direction dir;
+        };
+        std::vector<Node> nodes;
+        visit_mark++;
+        int const start = index_of(head);
+        visit_stamp[start] = visit_mark;
+        nodes.push_back({start, -1, 0, dir_of(Direction::NORTH)});
+        std::vector<int> safe;
+        for (std::size_t q = 0; q < nodes.size(); q++) {
+            Node const node = nodes[q];
+            if (node.depth >= limit) {
+                continue;
+            }
+            Position const position = position_of(node.cell);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_KELP || edge == EDGE_PORTAL || edge == EDGE_UNKNOWN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark || seen_round[next] != round) {
+                    continue;
+                }
+                if (enter_time[next] > (node.depth == 0 ? 1 : 0) || is_enemy_head(position_of(next)) ||
+                    is_ally_head(position_of(next))) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
+                if (node.depth + 1 >= 2 && !hit_at(next)) {
+                    safe.push_back(static_cast<int>(nodes.size()) - 1);
+                }
+            }
+        }
+        double best = SCORE_REJECT * 0.5;
+        int best_node = -1;
+        int evals = 0;
+        for (int const k : safe) {
+            if (evals++ >= QS_ESCAPE_EVALS || (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET)) {
+                break;
+            }
+            double const score = score_step(position_of(nodes[k].cell));
+            if (score > best && (last_reaches_tail || last_room >= length + 2.0)) {
+                best = score;
+                best_node = k;
+            }
+        }
+        if (best_node < 0) {
+            return false;
+        }
+        path.clear();
+        for (int k = best_node; nodes[k].parent >= 0; k = nodes[k].parent) {
+            path.push_back(nodes[k].dir);
+        }
+        std::reverse(path.begin(), path.end());
+        return true;
     }
 
     bool portal_guarded() const {
@@ -4794,8 +4931,8 @@ class Bot {
             int const depth = threat_at(index_of(destination));
             if (depth > 0) {
                 double penalty = PENALTY_HEAD_RACE * std::max(0.5, length / THREAT_LENGTH_SCALE) * (0.5 + 0.5 * depth);
-                if (is_queen()) {
-                    penalty *= queen_guard() ? QG_THREAT_MULT : QUEEN_THREAT_MULT;
+                if (queen_wary()) {
+                    penalty *= queen_guard() ? QG_THREAT_MULT : QUEEN_SAFETY ? QS_THREAT_MULT : QUEEN_THREAT_MULT;
                 } else if (is_leader()) {
                     penalty *= LEADER_HEAD_MULT;
                 }
@@ -4997,6 +5134,28 @@ class Bot {
                             HARVEST_SEGMENT_VALUE * (pearls[k] - unswbc::Constants::MIN_SIZE);
                 harvest[k] = true;
             }
+        }
+
+        hit_blocked = false;
+        if (QUEEN_SAFETY && real_queen()) {
+            bool hit = false;
+            bool safe = false;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (!scored[k] || dests[k] < 0) {
+                    continue;
+                }
+                if (hit_at(dests[k])) {
+                    hit = true;
+                } else if (!closed[k]) {
+                    safe = true;
+                }
+            }
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                if (safe && scored[k] && dests[k] >= 0 && hit_at(dests[k])) {
+                    scores[k] -= QS_HIT_PENALTY;
+                }
+            }
+            hit_blocked = hit && !safe;
         }
 
         apply_route(scores, scored, closed, dests, route_dist);
@@ -5298,6 +5457,10 @@ class Bot {
     int turn_cells = 0;
     int survey_cap_now = 0;
     std::vector<int> ally_part_stamp;
+    std::vector<int> hit_stamp;
+    int hit_mark = 0;
+    int hit_round = -1;
+    bool hit_blocked = false;
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
     std::vector<int> eaten_count;
