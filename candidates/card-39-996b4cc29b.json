@@ -1,0 +1,20 @@
+{
+  "version": "card-39-996b4cc29b",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Make sure the queen isn't right next to enemy dragon's head"
+  ],
+  "results": {
+    "held": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "main": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "mechanism": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "cpu": "Forced: checks may be skipped or use an old base; see issue audit."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    39
+  ],
+  "pr": null,
+  "base_commit": "a447456230aea1caee9e2864a3373d396712ed68",
+  "candidate_commit": "996b4cc29b7d4091701fd67807ff92b6a4c3779f"
+}
