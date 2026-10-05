@@ -127,6 +127,8 @@ constexpr bool QW_LOG = false;
 constexpr bool QUEEN_SAFETY = false;
 constexpr double QS_THREAT_MULT = 4.0;
 constexpr double QS_HIT_PENALTY = 3e8;
+constexpr double QS_PAY_PENALTY = 2e8;
+constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
@@ -605,27 +607,42 @@ class Bot {
         }
 
         if (hit_blocked && chosen_scored && chosen_index >= 0) {
-            if (hit_escape(path, false)) {
-                ct.output_log("QS", "sprint", round, length);
+            int const keep = unswbc::Constants::MIN_SIZE;
+            bool const exposed = hit_head || pay_head;
+            if (hit_escape(path, false, 0)) {
                 ct.make_moves(path);
                 act_dirs = path;
                 remember_path(path);
                 return;
             }
-            if (!hit_head && ct.can_split(unswbc::Constants::MIN_SIZE)) {
-                ct.output_log("QS", "wait", round, length);
-                split_off(unswbc::Constants::MIN_SIZE);
+            if (!exposed && ct.can_split(keep)) {
+                split_off(keep);
                 return;
             }
-            if (hit_escape(path, true)) {
-                ct.output_log("QS", "paid", round, length);
+            if (hit_escape(path, true, 0)) {
+                ct.make_moves(path);
+                act_dirs = path;
+                remember_path(path);
+                return;
+            }
+            // Her own tile is in reach too: she keeps 2 and the rest leaves as a child.
+            if (exposed && ct.can_split(length - keep)) {
+                split_off(length - keep);
+                return;
+            }
+            // A tile an enemy must pay for beats one it hits for free.
+            if (pay_open && risk_at(chosen_index) < 2) {
+                ct.make_move(best);
+                act_dirs.assign(1, best);
+                return;
+            }
+            if (hit_escape(path, false, 1) || hit_escape(path, true, 1)) {
                 ct.make_moves(path);
                 act_dirs = path;
                 remember_path(path);
                 return;
             }
             // Trapped: for this turn she moves as a plain dragon.
-            ct.output_log("QS", "plain", round, length);
             qs_plain = true;
             map_threats();
             mark_trade_targets();
@@ -643,6 +660,12 @@ class Bot {
                 remember_path(path);
                 return;
             }
+        }
+
+        if (QUEEN_SAFETY && queen_wary() && !any_enterable && (hit_head || pay_head) &&
+            ct.can_split(length - unswbc::Constants::MIN_SIZE)) {
+            split_off(length - unswbc::Constants::MIN_SIZE);
+            return;
         }
 
         if (queen_wait()) {
@@ -780,6 +803,7 @@ class Bot {
         }
         Position const origin = head;
         int const origin_threat = threat_at(chosen_index);
+        int const origin_risk = std::min(risk_at(chosen_index), 1);
         double stop_value = stride_value(chosen_index);
         // Body timers as they stand once the head has reached cells[count - 1].
         auto place = [&](std::size_t count, int eaten_now) {
@@ -825,7 +849,7 @@ class Bot {
                     is_ally_head(position_of(next))) {
                     continue;
                 }
-                if (threat_at(next) > origin_threat || enemy_can_step_to(position_of(next)) || hit_at(next)) {
+                if (threat_at(next) > origin_threat || enemy_can_step_to(position_of(next)) || risk_at(next) > origin_risk) {
                     continue;
                 }
                 if (SHARE_SIGHT && enemy_near(position_of(next), 2)) {
@@ -1005,6 +1029,9 @@ class Bot {
             return 0;
         }
         if (QH_SCOUT && qh_on && qh_in_view) {
+            return 0;
+        }
+        if (QUEEN_SAFETY && queen_wary() && (hit_head || pay_head)) {
             return 0;
         }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
@@ -1381,6 +1408,7 @@ class Bot {
         ally_head_dirs.clear();
         seen_ids.clear();
         seen_parts.clear();
+        edge_ids.clear();
         enemy_heads.clear();
         enemy_head_ids.clear();
         own_parts.clear();
@@ -1424,6 +1452,9 @@ class Bot {
             if (part->get_id() != ct.get_id()) {
                 mark_blocked(index);
                 count_part(part->get_id());
+                if (QUEEN_SAFETY && on_view_edge(position)) {
+                    edge_ids.push_back(part->get_id());
+                }
                 if (QUEEN_WAIT && part->get_team() == ct.get_team()) {
                     ally_part_stamp[index] = round;
                 }
@@ -3699,25 +3730,39 @@ class Bot {
         return QUEEN_SAFETY ? real_queen() && !qs_plain : is_queen();
     }
 
-    // Tiles a visible enemy head, the enemy queen aside, can enter this turn with its free steps.
+    bool on_view_edge(Position position) const {
+        int const radius = unswbc::Constants::VISION_RADIUS;
+        return torus_gap(position.x, head.x, width) == radius || torus_gap(position.y, head.y, height) == radius;
+    }
+
+    // Tiles a visible enemy head, the enemy queen aside, can enter this turn: on free steps (hit) or by paying length too (pay).
     void map_hits() {
         if (hit_stamp.empty()) {
             hit_stamp.assign(cells, 0);
+            pay_stamp.assign(cells, 0);
         }
         hit_mark++;
         hit_round = round;
         hit_head = false;
+        pay_head = false;
+        int const keep = unswbc::Constants::MIN_SIZE;
         for (std::size_t k = 0; k < enemy_heads.size(); k++) {
             if (enemy_head_ids[k] == enemy_queen_id) {
                 continue;
             }
-            int parts = visible_parts(enemy_head_ids[k]);
+            int const seen = visible_parts(enemy_head_ids[k]);
+            int parts = seen;
             for (Ghost const& ghost : ghosts) {
                 if (ghost.id == enemy_head_ids[k]) {
                     parts = std::max(parts, ghost.parts);
                 }
             }
-            int const reach = SPRINT_FREE_DIV > 0 ? std::max(1, (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
+            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
+            // A body running out of view may be longer than it looks.
+            bool const cut = std::find(edge_ids.begin(), edge_ids.end(), enemy_head_ids[k]) != edge_ids.end();
+            int const size = cut ? std::max({parts, seen + 1, static_cast<int>(unswbc::Constants::INITIAL_LENGTH)}) : parts;
+            int const full = (SPRINT_FREE_DIV > 0 ? (size + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV : 1) + size - keep;
+            int const reach = std::max(free, std::min(full, QS_PAY_REACH));
             visit_mark++;
             int queue_head = 0;
             int queue_tail = 0;
@@ -3734,26 +3779,33 @@ class Bot {
                 for (Direction const direction : Direction::get_direction_list()) {
                     int const next = step_index(position, direction);
                     if (next == index_of(head)) {
-                        hit_head = true;
+                        (steps < free ? hit_head : pay_head) = true;
                     }
                     if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2)) {
                         continue;
                     }
                     visit_stamp[next] = visit_mark;
                     step_count[next] = steps + 1;
-                    hit_stamp[next] = hit_mark;
+                    if (steps < free) {
+                        hit_stamp[next] = hit_mark;
+                    }
+                    pay_stamp[next] = hit_mark;
                     bfs_queue[queue_tail++] = position_of(next);
                 }
             }
         }
     }
 
-    bool hit_at(int index) const {
-        return QUEEN_SAFETY && !qs_plain && hit_round == round && hit_stamp[index] == hit_mark;
+    // 2 = an enemy head hits the tile for free, 1 = only by paying length, 0 = out of reach.
+    int risk_at(int index) const {
+        if (!QUEEN_SAFETY || qs_plain || hit_round != round) {
+            return 0;
+        }
+        return hit_stamp[index] == hit_mark ? 2 : pay_stamp[index] == hit_mark ? 1 : 0;
     }
 
-    // Sprint to the best seen tile outside the hit zone, on free steps or, with paid, on length too.
-    bool hit_escape(std::vector<Direction>& path, bool paid) {
+    // Sprint to the best seen tile of at most this risk, on free steps or, with paid, on length too.
+    bool hit_escape(std::vector<Direction>& path, bool paid, int risk) {
         int const limit = std::min(paid ? sprint_reach() : sprint_free(), STRIDE_MAX);
         struct Node {
             int cell;
@@ -3788,7 +3840,7 @@ class Bot {
                 }
                 visit_stamp[next] = visit_mark;
                 nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
-                if (node.depth + 1 >= 2 && !hit_at(next)) {
+                if (node.depth + 1 >= 2 && risk_at(next) <= risk) {
                     safe.push_back(static_cast<int>(nodes.size()) - 1);
                 }
             }
@@ -5232,25 +5284,33 @@ class Bot {
         }
 
         hit_blocked = false;
+        pay_open = false;
         if (QUEEN_SAFETY && queen_wary()) {
-            bool hit = false;
-            bool safe = false;
+            bool risky = false;
+            std::array<bool, 2> open{};
             for (std::size_t k = 0; k < directions.size(); k++) {
                 if (!scored[k] || dests[k] < 0) {
                     continue;
                 }
-                if (hit_at(dests[k])) {
-                    hit = true;
-                } else if (!closed[k]) {
-                    safe = true;
+                int const risk = risk_at(dests[k]);
+                risky = risky || risk > 0;
+                if (risk < 2 && !closed[k]) {
+                    open[static_cast<std::size_t>(risk)] = true;
                 }
             }
             for (std::size_t k = 0; k < directions.size(); k++) {
-                if (safe && scored[k] && dests[k] >= 0 && hit_at(dests[k])) {
+                if (!scored[k] || dests[k] < 0) {
+                    continue;
+                }
+                int const risk = risk_at(dests[k]);
+                if (risk == 2 && (open[0] || open[1])) {
                     scores[k] -= QS_HIT_PENALTY;
+                } else if (risk == 1 && open[0]) {
+                    scores[k] -= QS_PAY_PENALTY;
                 }
             }
-            hit_blocked = hit && !safe;
+            hit_blocked = risky && !open[0];
+            pay_open = open[1];
         }
 
         apply_route(scores, scored, closed, dests, route_dist);
@@ -5555,8 +5615,12 @@ class Bot {
     std::vector<int> hit_stamp;
     int hit_mark = 0;
     int hit_round = -1;
+    std::vector<int> pay_stamp;
+    std::vector<int> edge_ids;
     bool hit_blocked = false;
+    bool pay_open = false;
     bool hit_head = false;
+    bool pay_head = false;
     bool qs_plain = false;
     std::vector<int> peer_depth;
     std::vector<int> visit_stamp;
