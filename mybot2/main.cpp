@@ -281,8 +281,11 @@ constexpr bool KEEP_GUARDS = false;
 constexpr int KG_COUNT = 3;
 constexpr int KG_REACH = 6;
 constexpr int KG_FRESH = 10;
+constexpr int KG_KEEP = 4;
 constexpr int KG_LAST_ROUNDS = 10;
 constexpr double KG_PENALTY = 1500.0;
+constexpr double KG_BLOCK = 1e9;
+constexpr int KG_CUT_MAX = 0x1FFF;
 
 constexpr int ESCAPE_MIN_LENGTH = 4;
 constexpr int ESCAPE_TAIL_CLEAR = 2;
@@ -762,6 +765,9 @@ class Bot {
                     continue;
                 }
                 if (SHARE_SIGHT && enemy_near(position_of(next), 2)) {
+                    continue;
+                }
+                if (KEEP_GUARDS && kg_duty && guard_blocks(position_of(next))) {
                     continue;
                 }
                 if (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET) {
@@ -1570,8 +1576,8 @@ class Bot {
 
     std::uint64_t pack_leader(int id, int len, int when, Position pos, Direction facing) const {
         int tagged = QUEEN_QUIET_ROUND > 0 && queen_game && id == queen_id ? (id | 0x8000) : id;
-        if (KEEP_GUARDS && id >= 0 && id == queen_id && when == kg_want_round) {
-            tagged |= 0x4000;
+        if (KEEP_GUARDS && id >= 0 && id <= 1 && id == queen_id && when == kg_cut_round) {
+            tagged |= 0x4000 | (kg_cut << 1);
         }
         std::uint64_t const body = (static_cast<std::uint64_t>(tagged) & 0xFFFF) |
                                    ((static_cast<std::uint64_t>(len) & 0xFFF) << 16) |
@@ -1689,16 +1695,17 @@ class Bot {
             Direction facing = dir_of(Direction::NORTH);
             
             if (unpack_leader(message, id, len, when, pos, facing)) {
-                bool const wanted = KEEP_GUARDS && (id & 0x4000) != 0;
-                if (KEEP_GUARDS) {
-                    id &= ~0x4000;
+                int cut = -1;
+                if (KEEP_GUARDS && (id & 0x4000) != 0) {
+                    cut = (id >> 1) & KG_CUT_MAX;
+                    id &= 0x8001;
                 }
                 if ((id & 0x8000) != 0) {
                     id &= 0x7FFF;
                     queen_game = true;
                 }
                 if (KEEP_GUARDS && id <= 1 && id != ct.get_id()) {
-                    hear_queen(len, when, pos, facing, wanted);
+                    hear_queen(len, when, pos, facing, cut);
                 }
                 if (id != ct.get_id()) {
                     hear_exact(id, len, when, pos, facing);
@@ -1911,7 +1918,7 @@ class Bot {
         bool const early = FEED_EARLY_ROUND > 0 && round > FEED_EARLY_ROUND && length <= FEED_EARLY_MAX;
         if ((!feeding_phase() && !early) || is_queen() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_len < 2 ||
-            !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS || (KEEP_GUARDS && kg_duty)) {
+            !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS || (KEEP_GUARDS && kg_hold)) {
             return;
         }
         if (manhattan(head, live_leader_head()) > feeder_approach) {
@@ -3188,7 +3195,7 @@ class Bot {
 
     bool can_scout_portals() const {
         
-        return length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() && !(KEEP_GUARDS && kg_duty) &&
+        return length <= PORTAL_SCOUT_MAX_LENGTH && !is_feeder() && !(KEEP_GUARDS && kg_hold) &&
                !is_leader() && (!is_queen() || round < QUEEN_PORTAL_ROUND) && !(QUEEN_PORTAL_ALL && real_queen()) && tail_index >= 0;
     }
 
@@ -4232,7 +4239,7 @@ class Bot {
         return std::max(torus_gap(a.x, b.x, width), torus_gap(a.y, b.y, height));
     }
 
-    void hear_queen(int len, int when, Position pos, Direction facing, bool wanted) {
+    void hear_queen(int len, int when, Position pos, Direction facing, int cut) {
         if (when >= kg_note_round) {
             kg_note_round = when;
             kg_note_len = len;
@@ -4244,30 +4251,54 @@ class Bot {
             kg_pos = pos;
             kg_dir = facing;
         }
-        if (wanted) {
-            kg_want_round = std::max(kg_want_round, when);
+        if (cut >= 0 && when >= kg_cut_round) {
+            kg_cut_round = when;
+            kg_cut = cut;
         }
     }
 
-    // KEEP_GUARDS: the queen asks for guards; a dragon that sees her holds unless KG_COUNT newer ones already do.
+    // Cut 0: the queen sees fewer than KG_COUNT, so all in her view hold. Otherwise ids from the cut up hold.
+    bool guard_named() const {
+        return round - kg_cut_round <= KG_FRESH && (kg_cut == 0 || ct.get_id() >= kg_cut);
+    }
+
+    // KEEP_GUARDS, queen: list the dragons seen in her view lately and name the KG_COUNT newest.
+    void guard_list() {
+        for (int const id : ally_head_ids) {
+            if (id == known_leader_id) {
+                continue;
+            }
+            auto const known = std::find_if(kg_roll.begin(), kg_roll.end(),
+                                            [id](std::pair<int, int> const& entry) { return entry.first == id; });
+            if (known == kg_roll.end()) {
+                kg_roll.emplace_back(id, round);
+            } else {
+                known->second = round;
+            }
+        }
+        kg_roll.erase(std::remove_if(kg_roll.begin(), kg_roll.end(),
+                                     [this](std::pair<int, int> const& entry) { return round - entry.second > KG_KEEP; }),
+                      kg_roll.end());
+        std::sort(kg_roll.begin(), kg_roll.end());
+        int const listed = static_cast<int>(kg_roll.size());
+        kg_cut = listed < KG_COUNT ? 0 : std::min(kg_roll[static_cast<std::size_t>(listed - KG_COUNT)].first, KG_CUT_MAX);
+        kg_cut_round = round;
+        kg_note_round = round;
+        kg_note_len = length;
+        kg_note_pos = head;
+        kg_note_dir = ct.get_dir();
+    }
+
+    // KEEP_GUARDS: only a dragon the queen's list names holds back; it is on duty while it sees her.
     void guard_update() {
         kg_seen = false;
         kg_duty = false;
+        kg_hold = false;
         if (!feeding_phase() || queen_id < 0) {
             return;
         }
         if (ct.get_id() == queen_id) {
-            int guards = 0;
-            for (int const id : ally_head_ids) {
-                guards += id != known_leader_id ? 1 : 0;
-            }
-            kg_note_round = round;
-            kg_note_len = length;
-            kg_note_pos = head;
-            kg_note_dir = ct.get_dir();
-            if (guards < KG_COUNT) {
-                kg_want_round = round;
-            }
+            guard_list();
             return;
         }
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
@@ -4278,23 +4309,16 @@ class Bot {
                 kg_dir = ally_head_dirs[k];
             }
         }
-        if (!kg_seen || is_leader()) {
-            return;
-        }
-        int newer = 0;
-        for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
-            int const id = ally_head_ids[k];
-            if (id != queen_id && id != known_leader_id && id > ct.get_id() &&
-                sight_gap(ally_heads[k], kg_pos) <= unswbc::Constants::VISION_RADIUS) {
-                newer++;
-            }
-        }
         bool const calm_end = round > unswbc::Constants::MAX_ROUNDS - KG_LAST_ROUNDS && enemy_heads.empty() &&
                               !enemy_near(kg_pos, KG_REACH);
-        kg_duty = newer < KG_COUNT && !calm_end;
+        if (is_leader() || !guard_named() || calm_end) {
+            return;
+        }
+        kg_duty = kg_seen;
         if (kg_duty) {
             kg_duty_round = round;
         }
+        kg_hold = round - kg_duty_round <= KG_FRESH;
     }
 
     bool guard_crowds(Position cell) const {
@@ -4305,15 +4329,20 @@ class Bot {
         return across_axis(cell, kg_pos, kg_dir) == 0 && along > 0 && along <= FEEDER_FRONT_CLEAR;
     }
 
+    // The cells next to her head stay hers, the one in front included.
+    bool guard_blocks(Position cell) const {
+        return manhattan(cell, kg_pos) <= 1;
+    }
+
     bool guard_follow() const {
         if (!feeding_phase() || kg_seen || queen_id < 0 || ct.get_id() == queen_id || is_leader() || is_feeder() ||
             round - kg_round > KG_FRESH) {
             return false;
         }
-        if (round - kg_duty_round <= KG_FRESH) {
+        if (kg_hold) {
             return true;
         }
-        return round - kg_want_round <= KG_FRESH &&
+        return kg_cut == 0 && round - kg_cut_round <= KG_FRESH &&
                (manhattan(head, kg_pos) <= feeder_approach || ct.get_unit_count() <= KG_COUNT + 1);
     }
 
@@ -4547,6 +4576,12 @@ class Bot {
             score -= KG_PENALTY * std::max(0, sight_gap(destination, kg_pos) - unswbc::Constants::VISION_RADIUS);
             if (guard_crowds(destination)) {
                 score -= KG_PENALTY;
+            }
+            if (guard_blocks(destination)) {
+                score -= KG_BLOCK;
+            }
+            if (pearl_here[index_of(destination)] && sight_gap(destination, kg_pos) <= unswbc::Constants::VISION_RADIUS) {
+                score -= KG_PENALTY * 2.0;
             }
         }
         if (is_trader() && survey.dist_trade >= 0) {
@@ -4804,9 +4839,12 @@ class Bot {
     int feed_id = -1;
     bool kg_seen = false;
     bool kg_duty = false;
+    bool kg_hold = false;
+    std::vector<std::pair<int, int>> kg_roll;
     int kg_duty_round = -1000;
     int kg_round = -1000;
-    int kg_want_round = -1000;
+    int kg_cut_round = -1000;
+    int kg_cut = 0;
     int kg_note_round = -1000;
     int kg_note_len = 0;
     Position kg_pos{};
