@@ -107,7 +107,10 @@ constexpr double QUEEN_THREAT_MULT = 1.0;
 constexpr int QUEEN_REACH_MAX = 8;
 constexpr int QUEEN_GUARD_RADIUS = 0;
 constexpr double QUEEN_GUARD_PENALTY = 1500.0;
-constexpr double QUEEN_DEAD_PENALTY = 0.0;
+// Card #36: queen dead-end penalty and room margin, tail out of sight counts as unreachable, known-tile room check.
+constexpr bool QUEEN_DEAD_END = false;
+constexpr double QUEEN_DEAD_PENALTY = QUEEN_DEAD_END ? 6000.0 : 0.0;
+constexpr double QUEEN_KNOWN_STEP = 400.0;
 constexpr int QUEEN_DEFEND_RADIUS = 0;
 constexpr int QUEEN_HUNT_STEPS = 12;
 constexpr int QUEEN_CHASE_DIST = 0;
@@ -150,7 +153,7 @@ constexpr bool QUEEN_TRADE_SMALL = false;
 constexpr int QUEEN_MIN_CELLS = 600;
 constexpr bool SYM_INFER = false;
 constexpr int SURVEY_CAP = 0;
-constexpr int QUEEN_ROOM = 0;
+constexpr int QUEEN_ROOM = QUEEN_DEAD_END ? 8 : 0;
 constexpr bool QUEEN_ALLY_BLOCK = false;
 constexpr int ALLY_BLOCK_MAX_LEN = 0;
 constexpr int POCKET_CAP = 48;
@@ -2902,6 +2905,49 @@ class Bot {
         return exit >= 0 && pocket_size(exit) < POCKET_CAP;
     }
 
+    // Tiles reachable from `start` over seen tiles and known open edges only, counted up to `limit`.
+    // Reaching the known tail counts as enough room.
+    int known_room(int start, int limit) {
+        if (known_stamp.size() != static_cast<std::size_t>(cells)) {
+            known_stamp.assign(cells, 0);
+            known_steps.assign(cells, 0);
+            known_eaten.assign(cells, 0);
+            known_queue.assign(cells, 0);
+        }
+        known_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        known_stamp[start] = known_mark;
+        known_steps[start] = 1;
+        known_eaten[start] = pearl_here[start];
+        known_queue[queue_tail++] = start;
+        while (queue_head < queue_tail && queue_tail < limit) {
+            int const index = known_queue[queue_head++];
+            Position const position = position_of(index);
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(position, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (known_stamp[next] == known_mark || seen_round[next] < 0) {
+                    continue;
+                }
+                int const free_at = enter_time[next];
+                if (free_at >= BLOCKED_FOREVER || known_steps[index] + 1 - known_eaten[index] < free_at) {
+                    continue;
+                }
+                if (next == tail_index) {
+                    return limit;
+                }
+                known_stamp[next] = known_mark;
+                known_steps[next] = known_steps[index] + 1;
+                known_eaten[next] = known_eaten[index] + pearl_here[next];
+                known_queue[queue_tail++] = next;
+            }
+        }
+        return std::min(queue_tail, limit);
+    }
+
     int pocket_size(int start) {
         if (pocket_stamp.size() != static_cast<std::size_t>(cells)) {
             pocket_stamp.assign(cells, 0);
@@ -4615,10 +4661,17 @@ class Bot {
         last_cramped = cramped;
         last_dist_route = survey.dist_route;
         last_pearls = survey.pearls;
-        last_dead_end = tail_index >= 0 && !survey.reaches_tail && room < room_wanted;
+        last_dead_end = (tail_index >= 0 || (QUEEN_DEAD_END && is_queen())) && !survey.reaches_tail && room < room_wanted;
         double score = space - cramped;
         if (is_queen() && QUEEN_ROOM > 0 && (last_dead_end || avail < length + QUEEN_ROOM)) {
             score -= QUEEN_DEAD_PENALTY;
+        }
+        if (QUEEN_DEAD_END && is_queen()) {
+            int const need = length + 2;
+            int const known = known_room(index_of(destination), need);
+            if (known < need) {
+                score -= QUEEN_DEAD_PENALTY + QUEEN_KNOWN_STEP * (need - known);
+            }
         }
         if (QUEEN_MODE && QUEEN_GIVE_WAY > 0 && !is_queen()) {
             for (std::size_t k = 0; k < ally_heads.size(); k++) {
@@ -4989,6 +5042,11 @@ class Bot {
     std::vector<int> pocket_stamp;
     std::vector<int> pocket_queue;
     int pocket_mark = 0;
+    std::vector<int> known_stamp;
+    std::vector<int> known_steps;
+    std::vector<int> known_eaten;
+    std::vector<int> known_queue;
+    int known_mark = 0;
     std::vector<int> center_dist;
     int center_dist_round = -1;
     std::vector<int> occupied_round;
