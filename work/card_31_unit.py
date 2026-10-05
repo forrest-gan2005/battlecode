@@ -182,15 +182,15 @@ def cases(binary):
     check('20 quiet rounds: finder takes over', len(log[50]['pings']) >= 3, log[50])
     me.close()
 
-    # 5. Two hunters before the revenge phase: the lower id keeps the job.
-    for other, keeps in ((7, False), (12, True)):
+    # 5. Two hunters before the revenge phase: both keep hunting, whichever id is lower (Zhe, attempt 3).
+    for other in (7, 12):
         me = dragon(9, 3)
-        foe = beside(me)
-        a = me.turn(30, foe)
-        foe = beside(me)
-        b = me.turn(31, foe, wires=[ping(other, foe[1][1][0], 31)])
-        check(f'hunter 9 hears hunter {other}: {"keeps" if keeps else "yields"}',
-              len(a['pings']) >= 3 and bool(b['pings']) == keeps, (a, b))
+        log = []
+        for rnd in range(30, 34):
+            foe = beside(me)
+            log.append(me.turn(rnd, foe, wires=[ping(other, foe[1][1][0], rnd)] if rnd > 30 else ()))
+        check(f'hunter 9 hears hunter {other}: keeps hunting', all(len(t['pings']) >= 3 for t in log),
+              [(t['round'], len(t['pings'])) for t in log])
         me.close()
 
     # 6. Revenge phase: a small dragon told "our queen is dead" goes for a relayed position, only from round 100.
@@ -265,17 +265,55 @@ def cases(binary):
           [(t['move'], t['head'], len(t['pings'])) for t in log])
     me.close()
 
-    # Walled into a 3x3 room whose only way out is a portal with an unknown far side: no hunt, no pings.
-    # (It needs three turns to leave the room, so all three are decided inside it.)
-    room = Board(north={**{(x, 9): 'w' for x in (9, 10, 11)}, **{(x, 12): 'w' for x in (9, 10)}, (11, 12): 0,
-                        (30, 20): 0},
-                 west={**{(9, y): 'w' for y in (9, 10, 11)}, **{(12, y): 'w' for y in (9, 10, 11)}})
-    me = Dragon(binary, 9, [(10, 10), (9, 10), (9, 9)], board=room)
-    log = [me.turn(rnd, {}, wires=[leader(4, 12, rnd, (30, 20), 1), ping(7, far, rnd - 1, state=1)])
-           for rnd in range(100, 103)]
-    check('portal: sealed in with an unknown portal, no hunt', not any(t['pings'] for t in log),
-          [(t['move'], t['head'], len(t['pings'])) for t in log])
-    me.close()
+    # Walled into a 3x3 room (x 9-11, y 9-11) with her clearly outside; the way out is the portal on the south
+    # side of (11, 11), three turns away. Zhe, attempt 3: get out through the portal, then carry on hunting.
+    def room(north=None, west=None):
+        return Board(north={**{(x, 9): 'w' for x in (9, 10, 11)}, **{(x, 12): 'w' for x in (9, 10)}, (11, 12): 0,
+                            **(north or {})},
+                     west={**{(9, y): 'w' for y in (9, 10, 11)}, **{(12, y): 'w' for y in (9, 10, 11)}, **(west or {})})
+
+    def walled_in(board, turns=3):
+        me = Dragon(binary, 9, [(10, 10), (9, 10), (9, 9)], board=board)
+        log = [me.turn(rnd, {}, wires=[leader(4, 12, rnd, (30, 20), 1), ping(7, far, rnd - 1, state=1)])
+               for rnd in range(100, 100 + turns)]
+        me.close()
+        return log, [(t['move'], t['head'], len(t['pings'])) for t in log]
+
+    def inside(cell):
+        return 9 <= cell[0] <= 11 and 9 <= cell[1] <= 11
+
+    # Far side never seen: it still goes, lands at (30, 20) and walks on towards her cell.
+    log, shown = walled_in(room(north={(30, 20): 0}), turns=4)
+    check('portal: walled in, far side never seen: the hunter leaves through it',
+          all(t['pings'] for t in log) and log[2]['head'] == (30, 20), shown)
+    check('portal: out of the room, the hunt goes on', dist(log[3]['head'], far) < dist((30, 20), far), shown)
+
+    # Far side seen at (13, 11), open country from there but nothing sure: it goes (attempt 2 gave up here).
+    log, shown = walled_in(room(north={(13, 11): 0}))
+    check('portal: walled in, far tile may lead to her: the hunter leaves through it',
+          all(t['pings'] for t in log) and log[2]['head'] == (13, 11), shown)
+
+    # Far side seen at (13, 13), a one-tile pocket with no other way out: the portal leads nowhere, no hunt.
+    log, shown = walled_in(room(north={(13, 13): 0, (13, 14): 'w'}, west={(13, 13): 'w', (14, 13): 'w'}))
+    check('portal: walled in, far tile is another dead end: no hunt', not any(t['pings'] for t in log), shown)
+
+    # Two ways out: an unseen portal right above the head, a seen one two steps away. The seen one is taken.
+    log, shown = walled_in(room(north={(13, 11): 0, (10, 9): 1, (30, 5): 1}))
+    check('portal: walled in, a seen way out comes before an unseen one',
+          all(t['pings'] for t in log) and log[2]['head'] == (13, 11), shown)
+
+    # The other way round: she is the one shut in (her cell (11, 7) is in a closed 3x2 room, x 11-13, y 7-8) and we
+    # stand in the open next to a portal. "Get out" does not apply to us: an unseen far side is no reason to go,
+    # a far tile inside her room, (13, 8), is.
+    den = {'north': {**{(x, 7): 'w' for x in (11, 12, 13)}, (11, 9): 'w', (12, 9): 'w'},
+           'west': {(11, 7): 'w', (11, 8): 'w', (14, 7): 'w', (14, 8): 'w'}}
+    for name, north, goes in (('far side never seen: no hunt', {(13, 9): 'w', (10, 10): 0, (30, 20): 0}, False),
+                              ('far tile inside her room: the hunter takes it', {(13, 9): 0, (10, 10): 0}, True)):
+        me = Dragon(binary, 9, line((10, 10), 'E', 3), board=Board(north={**den['north'], **north}, west=den['west']))
+        t = me.turn(100, {}, wires=[leader(4, 12, 100, (30, 20), 1), ping(7, (11, 7), 99, state=1)])
+        check(f'portal: she is shut in, we are not, {name}',
+              (t['move'][:1] == 'N' and len(t['pings']) >= 3) if goes else not t['pings'], t)
+        me.close()
 
     # Her cell is 3 open steps away and the portal's far tile is also 3 from her: not closer, the hunter walks.
     me = Dragon(binary, 7, line((10, 10), 'E', 3), board=Board(north={(10, 10): 0, (12, 9): 0}))

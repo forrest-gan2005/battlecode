@@ -17,19 +17,29 @@ Words:
                revised build only starts a hunt when she can be walked to or a sure portal leads to her, so a
                dragon looking at her across kelp is no longer expected to go.)
   hunter turn  a turn in which the dragon sends a queen ping. The ping carries the cell the hunter is heading for.
+  shut in      a hunter turn that starts on a tile with no walk to the pinged cell, in a walk region of at most
+               half the map (the hunter is on the smaller side, not her).
+  walled in    shut in, in a room of at most ROOM_MAX tiles: no more than one 7x7 view holds, so the dragon can
+               have seen every side of it. The bot only takes a way out once it has.
+  walled-in hunt  one hunter's run of walled-in hunter turns in consecutive rounds. It "gets out" when the hunter
+               goes through a portal on one of those turns, and "reaches her side" when one of those crossings
+               lands on a tile with a walk to the pinged cell.
   crossing     a hunter turn in which the hunter's head goes through a portal. It is "closer" when the tile it
                lands on has a shorter walk to the pinged cell than the tile it left (no walk at all counts as
-               longest), "boxed" when it was not closer but every plain step off its tile led onto a dragon body
-               (the bot then takes any portal rather than die), and "stray" otherwise.
+               longest), "out" when it was not closer but the hunter was shut in (it left its closed space and
+               the far side was not hers either), "boxed" when it was neither but every plain step off its
+               tile led onto a dragon body (the bot then takes any portal rather than die), and "stray" otherwise.
   portal chance  a hunter turn that starts on a tile with a portal on one of its sides.
+  heard        a queen ping of one of our hunters lands on another dragon of ours (the replay records who a sonar
+               message hits). A "heard case" is a dragon with a higher id than the sender that pinged on its own
+               previous turn, heard the ping before the revenge phase and was still alive for its next turn.
 
-Expectation 1-12, written before any switch-on game was run (attempt 1; only the word "opportunity" in 2-3
-was narrowed for attempt 2, as said above):
+Expectation 1-3 and 5-12, written before any switch-on game was run (attempt 1; only the word "opportunity" in
+2-3 was narrowed for attempt 2, as said above):
   1. silent: a pair is replay-identical up to the round of the first queen ping.
   2. target seen: at least MIN_GAMES switch-on games have an opportunity after round QUIET.
   3. scout fires: in at least FIRE_SHARE of those games a queen ping is sent within FIRE_WAIT rounds of the
      first opportunity.
-  4. one early hunter: over the early rounds with a queen ping, the mean number of dragons pinging is <= ONE_MAX.
   5. follows: in at least half of the early hunter-rounds the hunter is within NEAR cells of her head.
   6. not wasted: at most half of the early hunters die while hunting without ever getting next to her.
   7. small cost: before round 300, early hunting takes at most HUNT_SHARE of our dragon-rounds.
@@ -39,13 +49,25 @@ was narrowed for attempt 2, as said above):
  11. revenge hunt: in more than half of the triggered revenge games a dragon pings her inside the window.
  12. traffic: our sonar messages are <= COST_RATIO of the base count and we time out no more often
      (and CPU points per action are <= COST_RATIO of base when the replay records them).
-Expectation 13-14, added for Zhe's revision (a hunter takes a portal only when it is sure the far tile is closer
-to her last seen cell) before any game of the revised build was run:
+Expectation 13, added for Zhe's first revision before any game of that build was run (attempt 2):
  13. portal seen: at least PORTAL_GAMES switch-on games have a portal chance, PORTAL_CHANCES or more in total.
- 14. portal rule: no stray crossing.
-passed = all fourteen. A check whose target never appeared is null and never counts as a pass.
-Her deaths, kills by hunters, wins, lengths, how often a hunter has a walk to her and the closer/boxed crossing
-counts are reported but not gated: 16-32 games cannot settle them.
+Expectation 4 and 14-16, written for Zhe's second revision (attempt 3) before any game of this build was run.
+He asked for two things: several hunters may hunt at once (nobody stands down for a lower id), and a hunter shut
+in a closed space with her clearly outside leaves through the portal and carries on; portals are otherwise only
+for sure shortcuts.
+  4. keeps hunting: at least HEARD_MIN heard cases, and in at least KEEP_SHARE of them the dragon pings again on
+     its next turn. (Attempts 1-2 asked for "about one early hunter", at most ONE_MAX dragons pinging per hunt
+     round. That number is still reported, no longer gated: Zhe is fine with several.)
+ 14. portal rule: no stray crossing. (Attempt 2 also called a shut-in hunter's crossing stray when the tile it
+     landed on had no walk to her either; that is now "out", which Zhe asked for. A hunter that has a walk to
+     her, or stands on the bigger side while she is the one shut in, still may only take a portal that lands
+     closer.)
+ 15. walled in seen: at least WALLED_MIN walled-in hunts in the switch-on games.
+ 16. gets out: at least half of the walled-in hunts get out.
+passed = all sixteen. A check whose target never appeared is null and never counts as a pass.
+Her deaths, kills by hunters, wins, lengths, how often a hunter has a walk to her, the closer/out/boxed crossing
+counts, how many walled-in hunts reach her side and how the others ended, what hunters shut in a bigger space
+do, and the number of hunters per hunt round are reported but not gated: 16-32 games cannot settle them.
 Exit code 0 for a completed measurement, nonzero for missing or unpaired replays.
 """
 import argparse, concurrent.futures as cf, glob, hashlib, json, os, sys
@@ -71,6 +93,10 @@ TRIGGER_SHARE = 1 / 3
 COST_RATIO = 1.25
 PORTAL_GAMES = 3
 PORTAL_CHANCES = 10
+HEARD_MIN = 3
+KEEP_SHARE = 2 / 3
+WALLED_MIN = 3
+ROOM_MAX = (2 * VIEW + 1) ** 2
 MARKS = (100, 200, 300)
 REASONS = ['wall', 'self', 'body', 'head-on', 'no action']
 STEP = {'N': (0, -1), 'E': (1, 0), 'S': (0, 1), 'W': (-1, 0)}
@@ -80,19 +106,25 @@ BUILT_AS = (
     "after round 20 and has heard no queen ping for 20 rounds becomes the hunter: it walks to her, rams her head "
     "when in reach, and sends its id + her cell in all four directions every turn. Nobody else shares her position. "
     "A hunter stops when it reaches her last cell and she is gone, when its sighting is 20 rounds old, or when "
-    "known walls seal her off. Not asked by Zhe, our choice: if two hunters hear each other before the revenge "
-    "phase, the higher id stands down. Revenge phase = a dragon has been told our queen is dead and the round is "
+    "it has no way to her (see portals). Revenge phase = a dragon has been told our queen is dead and the round is "
     "100 or more: every small dragon holding a position at most 20 rounds old hunts and pings; longer dragons and "
     "the leader never do. 'Our queen is dead' comes from a dragon that saw her head one turn and an unexplained "
     "pearl there the next (card #17's trigger), passed on in two spare bits of the usual leader message. "
-    "Revision asked by Zhe after the online games: a hunting dragon takes a portal only when it has seen both "
-    "ends and the tile on the far side is surely closer to her last seen cell than the tile it stands on. "
-    "'Surely closer' as built: the walk from the far tile to her cell over sides the dragon has seen open is "
-    "shorter than the best possible walk from where it stands (unseen sides counted as open); walks use no "
-    "portal. Other portals are shut for a hunter: it does not step through them, plan a route through them or "
-    "scout them, and it only starts or keeps hunting when her cell can be walked to or such a portal on its side "
-    "leads there. Our choice, not asked by Zhe: a hunter with no free step left still takes a portal rather "
-    "than die.")
+    "Second revision (attempt 3), Zhe's two points. (a) Several hunters: a hunter that hears another hunter keeps "
+    "hunting, whatever the ids; attempts 1-2 made the higher id stand down, our own addition, now removed. A dragon "
+    "that is not hunting still stays out for 20 rounds after it hears a ping. (b) Portals. While her last seen cell "
+    "can be walked to (unseen tile sides counted as open), a hunter takes a portal only as a sure shortcut: it has "
+    "seen both ends and the walk from the far tile to her cell over sides it has seen open is shorter than the best "
+    "possible walk from where it stands (attempt 2's rule, unchanged). When no walk can exist, it heads for a "
+    "portal and goes through: first one whose far tile surely walks to her cell; failing that, and only when the "
+    "hunter itself is the one shut in, a way out. 'Shut in' as built: it has seen every side of the space it can "
+    "walk in (all wall or portal), her cell is not in it, and that space is no bigger than the part of the map her "
+    "cell could walk to. A way out is a portal of that space whose far tile it has seen and which may walk to her "
+    "cell, or else one whose far side it has never seen (our reading of Zhe's 'try using the portal to get out'); "
+    "a portal known to lead into another dead end is not taken, and with no way out the dragon does not hunt. "
+    "After the crossing it hunts on from where it lands. Every other portal is shut for a hunter: no step, no "
+    "route, no scouting. Our choice, not asked by Zhe: a hunter with no free step left still takes a portal "
+    "rather than die.")
 
 # mybot2/sonar_codec.hpp in Python: the check reads our own messages.
 M64 = (1 << 64) - 1
@@ -269,6 +301,7 @@ def scan(path, ours):
     first = {'ping': None, 'claim': None}
     early_d, rev_d = [], []
     turn_start, hunt_turns, crossings = {}, {}, []
+    acted, hunted, heard = set(), set(), {}
     rnd = 0
 
     def sample(hid):
@@ -353,6 +386,7 @@ def scan(path, ours):
             if team_of.get(pl.i32(0)) == ours:
                 if pl.i32(0) in bodies:
                     turn_start[pl.i32(0)] = (rnd, bodies[pl.i32(0)][0])
+                    acted.add((pl.i32(0), rnd))
                 usage = pl.pointer(1)
                 points = usage.u64(0) if usage else 0
                 stat['actions'] += 1
@@ -394,6 +428,12 @@ def scan(path, ours):
                 stat['ping_count'] += 1
             rec['last'] = rnd
             (rev_ids if revenge else early_ids).setdefault(rnd, set()).add(hid)
+            hunted.add((hid, rnd))
+            # A lower id moves first, so a higher-id dragon it hits reads the ping on its turn this same round.
+            got = pl.i32(12) if pl.u16(6) else None
+            if (got is not None and not revenge and got > hid and team_of.get(got) == ours and
+                    turn_start.get(got, (None,))[0] != rnd and (got, rnd - 1) in hunted):
+                heard.setdefault((got, rnd), hid)
             sample(hid)
             if (hid, rnd) not in hunt_turns and turn_start.get(hid, (None,))[0] == rnd:
                 hunt_turns[(hid, rnd)] = {'her_cell': (m['cell'] % W, m['cell'] // W), 'start': turn_start[hid][1],
@@ -403,6 +443,17 @@ def scan(path, ours):
 
     # Portals: every hunter turn that starts beside one, and every hunter turn that goes through one.
     chances = [t for t in hunt_turns.values() if any(side(t['start'], ch) == 2 for ch in STEP)]
+    room = {}
+    for label in region.values():
+        room[label] = room.get(label, 0) + 1
+
+    def shut_in(tile, her_cell):
+        """No walk to her cell, and the hunter's side is not the bigger one."""
+        return region[tile] != region[her_cell] and 2 * room[region[tile]] <= W * H
+
+    def walled(tile, her_cell):
+        return shut_in(tile, her_cell) and room[region[tile]] <= ROOM_MAX
+
     walks, portal_log = {}, []
     for c in crossings:
         turn = hunt_turns.get((c['id'], c['round']))
@@ -412,10 +463,41 @@ def scan(path, ours):
             walks[turn['her_cell']] = walk_from(turn['her_cell'])
         a, b = walks[turn['her_cell']].get(c['from']), walks[turn['her_cell']].get(c['to'])
         closer = b is not None and (a is None or b < a)
+        shut = shut_in(c['from'], turn['her_cell'])
         portal_log.append({'round': c['round'], 'id': c['id'], 'from': c['from'], 'to': c['to'],
                            'her_cell': turn['her_cell'], 'walk_before': a, 'walk_after': b,
-                           'revenge': turn['revenge'],
-                           'kind': 'closer' if closer else 'boxed' if c['boxed'] else 'stray'})
+                           'revenge': turn['revenge'], 'shut_in': shut, 'room': room[region[c['from']]],
+                           'kind': 'closer' if closer else 'out' if shut else 'boxed' if c['boxed'] else 'stray'})
+
+    # Walled-in hunts: one hunter's walled-in hunter turns in consecutive rounds (it may pass through more rooms).
+    crossed = {(c['id'], c['round']): c for c in portal_log}
+    shut_turns = sorted(k for k, t in hunt_turns.items() if walled(t['start'], t['her_cell']))
+    big_turns = [k for k, t in hunt_turns.items() if shut_in(t['start'], t['her_cell']) and k not in set(shut_turns)]
+    walled_log = []
+    for hid, r in shut_turns:
+        last = walled_log[-1] if walled_log else None
+        if last and last['id'] == hid and last['last'] == r - 1:
+            last['last'] = r
+        else:
+            last = {'id': hid, 'first': r, 'last': r, 'start': hunt_turns[(hid, r)]['start'],
+                    'her_cell': hunt_turns[(hid, r)]['her_cell'], 'room': room[region[hunt_turns[(hid, r)]['start']]],
+                    'revenge': hunt_turns[(hid, r)]['revenge'], 'out_round': None, 'crossings': 0, 'reached': False}
+            walled_log.append(last)
+        if (hid, r) in crossed:
+            last['crossings'] += 1
+            last['reached'] = last['reached'] or crossed[(hid, r)]['walk_after'] is not None
+            if last['out_round'] is None:
+                last['out_round'] = r
+    for w in walled_log:
+        dead = death.get(w['id'])
+        w['turns'] = w['last'] - w['first'] + 1
+        w['got_out'] = w['out_round'] is not None
+        w['turns_to_out'] = w['out_round'] - w['first'] + 1 if w['got_out'] else None
+        w['end'] = ('out' if w['got_out'] else 'died' if dead and dead[0] <= w['last'] + FIRE_WAIT else
+                    'game over' if w['last'] >= rnd - 1 else 'gave up')
+
+    heard_log = [{'id': b, 'round': r, 'from': a, 'kept': (b, r) in hunted}
+                 for (b, r), a in sorted(heard.items()) if (b, r) in acted]
 
     d_us, d_them = death.get(q_us), death.get(q_them)
     for hid, rec in hunters.items():
@@ -499,11 +581,28 @@ def scan(path, ours):
         'our_crossings': len(crossings),
         'hunter_crossings': len(portal_log),
         'hunter_crossings_closer': sum(1 for c in portal_log if c['kind'] == 'closer'),
+        'hunter_crossings_out': sum(1 for c in portal_log if c['kind'] == 'out'),
         'hunter_crossings_boxed': sum(1 for c in portal_log if c['kind'] == 'boxed'),
         'hunter_crossings_stray': sum(1 for c in portal_log if c['kind'] == 'stray'),
+        'hunter_crossings_shut_in': sum(1 for c in portal_log if c['shut_in']),
+        'walled_turns': len(shut_turns),
+        'shut_in_big_space_turns': len(big_turns),
+        'shut_in_big_space_crossings': sum(1 for k in big_turns if k in crossed),
+        'walled_hunts': len(walled_log),
+        'walled_hunts_out': sum(1 for w in walled_log if w['got_out']),
+        'walled_hunts_reached': sum(1 for w in walled_log if w['reached']),
+        'walled_hunt_crossings': sum(w['crossings'] for w in walled_log),
+        'walled_hunts_died': sum(1 for w in walled_log if w['end'] == 'died'),
+        'walled_hunts_gave_up': sum(1 for w in walled_log if w['end'] == 'gave up'),
+        'walled_turns_to_out_sum': sum(w['turns_to_out'] for w in walled_log if w['got_out']),
+        'heard_cases': len(heard_log),
+        'heard_kept': sum(1 for c in heard_log if c['kept']),
+        'early_rounds_two_hunters': sum(1 for v in early_ids.values() if len(v) >= 2),
         'hunter_rounds_walk_measured': stat['walk_rounds'],
         'hunter_rounds_walk_to_her': stat['walk_ok'],
         'portal_log': portal_log,
+        'walled_log': walled_log,
+        'heard_log': heard_log,
         'hunter_log': {str(i): r for i, r in sorted(hunters.items())},
     }
 
@@ -603,7 +702,13 @@ def main():
     sonar_ratio = ratio(sonar['candidate'], sonar['base'])
     chances = total(pairs, 'candidate', 'portal_chances')
     chance_games = sum(1 for p in pairs if p['candidate']['portal_chances'])
-    crossed = {k: total(pairs, 'candidate', f'hunter_crossings{k}') for k in ('', '_closer', '_boxed', '_stray')}
+    crossed = {k: total(pairs, 'candidate', f'hunter_crossings{k}')
+               for k in ('', '_closer', '_out', '_boxed', '_stray', '_shut_in')}
+    heard_cases = total(pairs, 'candidate', 'heard_cases')
+    heard_kept = total(pairs, 'candidate', 'heard_kept')
+    walled_hunts = total(pairs, 'candidate', 'walled_hunts')
+    walled_out = total(pairs, 'candidate', 'walled_hunts_out')
+    walled_games = sum(1 for p in pairs if p['candidate']['walled_hunts'])
     walk_rounds = total(pairs, 'candidate', 'hunter_rounds_walk_measured')
     walk_ok = total(pairs, 'candidate', 'hunter_rounds_walk_to_her')
     sightings = sum(1 for p in pairs if p['candidate']['sighting_after_quiet'])
@@ -612,7 +717,7 @@ def main():
         'silent': all(p['silent_ok'] for p in pairs),
         'target_seen': len(opp) >= MIN_GAMES,
         'scout_fires': fired >= FIRE_SHARE * len(opp) if opp else None,
-        'one_early_hunter': mean_early <= ONE_MAX if hunt_rounds else None,
+        'keeps_hunting': (heard_kept >= KEEP_SHARE * heard_cases if heard_cases >= HEARD_MIN else None),
         'follows': 2 * near >= samples if samples else None,
         'not_wasted': 2 * wasted <= early_hunters if early_hunters else None,
         'small_cost': share <= HUNT_SHARE if hunt_rounds and share is not None else None,
@@ -623,7 +728,9 @@ def main():
         'traffic': (sonar_ratio <= COST_RATIO and (cpu_ratio is None or cpu_ratio <= COST_RATIO) and
                     tle['candidate'] <= tle['base']) if sonar_ratio is not None else None,
         'portal_seen': chance_games >= PORTAL_GAMES and chances >= PORTAL_CHANCES,
-        'portal_rule': crossed['_stray'] == 0 if chances else None,
+        'portal_rule': crossed['_stray'] == 0 if chances or crossed[''] else None,
+        'walled_seen': walled_hunts >= WALLED_MIN,
+        'gets_out': 2 * walled_out >= walled_hunts if walled_hunts else None,
     }
     passed = all(v is True for v in checks.values())
     failed = [k for k, v in checks.items() if v is False]
@@ -635,8 +742,10 @@ def main():
         f"{len(opp)} of them with a walk to her that needs no portal; a queen ping followed within {FIRE_WAIT} "
         f"rounds of the first such chance in {fired}. Early hunting: {early_hunters} hunters over "
         f"{hunt_rounds} rounds, {mean_early} dragons pinging per hunt round (max "
-        f"{max((p['candidate']['early_max_hunters'] for p in pairs), default=0)}), {share} of our dragon-rounds "
-        f"before round 300; the hunter was within {NEAR} cells of her in {near} of {samples} hunter-rounds; "
+        f"{max((p['candidate']['early_max_hunters'] for p in pairs), default=0)}; two or more in "
+        f"{total(pairs, 'candidate', 'early_rounds_two_hunters')} rounds), {share} of our dragon-rounds "
+        f"before round 300. A hunting dragon heard a lower-id hunter {heard_cases} times and pinged again on its "
+        f"next turn in {heard_kept}. The hunter was within {NEAR} cells of her in {near} of {samples} hunter-rounds; "
         f"{total(pairs, 'candidate', 'early_hunters_next_to_her')} hunters got next to her, "
         f"{total(pairs, 'candidate', 'early_hunters_died_hunting')} died while hunting, {wasted} of those without "
         f"ever getting next to her. Revenge (our queen dead, theirs alive, round {REVENGE_ROUND}+, for "
@@ -651,7 +760,16 @@ def main():
         f"{'not in the replay' if cpu_ratio is None else str(cpu['candidate']) + ' vs ' + str(cpu['base'])}. "
         f"Portals: {chances} hunter turns started beside a portal ({chance_games} games); hunters went through "
         f"one {crossed['']} times: {crossed['_closer']} onto a tile with a shorter walk to the pinged cell, "
-        f"{crossed['_boxed']} with no free step left, {crossed['_stray']} neither (the rule allows none). A hunter "
+        f"{crossed['_out']} out of a closed space onto a tile with no walk to her either, {crossed['_boxed']} with "
+        f"no free step left, {crossed['_stray']} none of these (the rule allows none); {crossed['_shut_in']} of "
+        f"the crossings started with no walk to her. Walled-in hunts (no walk to the pinged cell, hunter in a "
+        f"room of at most {ROOM_MAX} tiles): {walled_hunts} in {walled_games} games, {walled_out} got out through "
+        f"a portal and {total(pairs, 'candidate', 'walled_hunts_reached')} of those reached her side "
+        f"({total(pairs, 'candidate', 'walled_hunt_crossings')} crossings in all; "
+        f"{total(pairs, 'candidate', 'walled_hunts_died')} hunts ended with the hunter dead, "
+        f"{total(pairs, 'candidate', 'walled_hunts_gave_up')} with it going quiet inside). Shut in a bigger space: "
+        f"{total(pairs, 'candidate', 'shut_in_big_space_turns')} hunter turns, "
+        f"{total(pairs, 'candidate', 'shut_in_big_space_crossings')} crossings. A hunter "
         f"had a walk to her without any portal in {walk_ok} of {walk_rounds} hunter-rounds. Wins "
         f"{total(pairs, 'candidate', 'win')} vs {total(pairs, 'base', 'win')} (not a result: too few games).")
     if passed:
@@ -722,8 +840,24 @@ def main():
         'portal_chance_games': chance_games,
         'hunter_crossings': crossed[''],
         'hunter_crossings_closer': crossed['_closer'],
+        'hunter_crossings_out': crossed['_out'],
         'hunter_crossings_boxed': crossed['_boxed'],
         'hunter_crossings_stray': crossed['_stray'],
+        'hunter_crossings_shut_in': crossed['_shut_in'],
+        'walled_turns': total(pairs, 'candidate', 'walled_turns'),
+        'walled_hunts': walled_hunts,
+        'walled_hunt_games': walled_games,
+        'walled_hunts_out': walled_out,
+        'walled_hunts_reached': total(pairs, 'candidate', 'walled_hunts_reached'),
+        'walled_hunt_crossings': total(pairs, 'candidate', 'walled_hunt_crossings'),
+        'shut_in_big_space_turns': total(pairs, 'candidate', 'shut_in_big_space_turns'),
+        'shut_in_big_space_crossings': total(pairs, 'candidate', 'shut_in_big_space_crossings'),
+        'walled_hunts_died': total(pairs, 'candidate', 'walled_hunts_died'),
+        'walled_hunts_gave_up': total(pairs, 'candidate', 'walled_hunts_gave_up'),
+        'mean_turns_to_get_out': ratio(total(pairs, 'candidate', 'walled_turns_to_out_sum'), walled_out),
+        'heard_cases': heard_cases,
+        'heard_kept': heard_kept,
+        'early_rounds_two_hunters': total(pairs, 'candidate', 'early_rounds_two_hunters'),
         'our_crossings': both(lambda t: total(pairs, t, 'our_crossings')),
         'hunter_rounds_walk_measured': walk_rounds,
         'hunter_rounds_walk_to_her': walk_ok,
@@ -736,8 +870,16 @@ def main():
                        'portal_chances': total(rows, 'candidate', 'portal_chances'),
                        'hunter_crossings': total(rows, 'candidate', 'hunter_crossings'),
                        'hunter_crossings_closer': total(rows, 'candidate', 'hunter_crossings_closer'),
+                       'hunter_crossings_out': total(rows, 'candidate', 'hunter_crossings_out'),
                        'hunter_crossings_boxed': total(rows, 'candidate', 'hunter_crossings_boxed'),
                        'hunter_crossings_stray': total(rows, 'candidate', 'hunter_crossings_stray'),
+                       'walled_turns': total(rows, 'candidate', 'walled_turns'),
+                       'walled_hunts': total(rows, 'candidate', 'walled_hunts'),
+                       'walled_hunts_out': total(rows, 'candidate', 'walled_hunts_out'),
+                       'walled_hunts_reached': total(rows, 'candidate', 'walled_hunts_reached'),
+                       'shut_in_big_space_turns': total(rows, 'candidate', 'shut_in_big_space_turns'),
+                       'heard_cases': total(rows, 'candidate', 'heard_cases'),
+                       'heard_kept': total(rows, 'candidate', 'heard_kept'),
                        'hunter_rounds_walk_measured': total(rows, 'candidate', 'hunter_rounds_walk_measured'),
                        'hunter_rounds_walk_to_her': total(rows, 'candidate', 'hunter_rounds_walk_to_her'),
                        'early_hunters': total(rows, 'candidate', 'early_hunters'),
@@ -749,7 +891,8 @@ def main():
                      'fire_share': round(FIRE_SHARE, 3), 'fire_wait': FIRE_WAIT, 'one_max': ONE_MAX, 'near': NEAR,
                      'hunt_share': HUNT_SHARE, 'min_revenge': MIN_REVENGE, 'min_window': MIN_WINDOW,
                      'trigger_share': round(TRIGGER_SHARE, 3), 'cost_ratio': COST_RATIO,
-                     'portal_games': PORTAL_GAMES, 'portal_chances': PORTAL_CHANCES},
+                     'portal_games': PORTAL_GAMES, 'portal_chances': PORTAL_CHANCES, 'heard_min': HEARD_MIN,
+                     'keep_share': round(KEEP_SHARE, 3), 'walled_min': WALLED_MIN, 'room_max': ROOM_MAX},
         'limits': 'Who hunts is read from our own sonar (a hunter pings every turn); hunt state inside the bot is '
                   'not in the replay. Early/revenge is replay truth, not what each dragon believed. A sighting or '
                   'opportunity uses end-of-round positions and the real map, and ignores the bot\'s own leader test '
@@ -757,7 +900,14 @@ def main():
                   'portal numbers use walks on the real map. The portal rule is judged against the real map and the '
                   'cell in the hunter\'s own ping, so it does not show what the dragon had seen: a crossing can be '
                   'closer on the real map without the dragon having been sure, and a hunter that never takes a '
-                  'useful portal is not caught by it. "Boxed" looks at dragon bodies when the hunter moved. There is '
+                  'useful portal is not caught by it. "Shut in" and "walled in" are the real map too: the dragon may not '
+                  'have seen all the walls yet and still believe it can walk to her, so a walled-in hunt that ends '
+                  'inside is not always a hunter that refused the portal. "At most half the map" and the room size '
+                  'stand in for the bot\'s own test of who is shut in, which needs every side of its space seen. '
+                  'A walled-in hunt that gets out may only have reached the next room; "reaches her side" says '
+                  'whether a crossing landed where she can be walked to. A heard case is read '
+                  'from the replay\'s record of which dragon a sonar message hit. "Boxed" looks at dragon bodies '
+                  'when the hunter moved. There is '
                   'no switch-off counterpart for the portal numbers (the base bot has no hunters). A kill by a '
                   'hunter means a hunter and her both died head-on in the same round. The two games of a pair '
                   'diverge after the first hunt, so later rounds are not round-for-round comparable. Kept replays '
