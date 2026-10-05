@@ -108,7 +108,7 @@ constexpr int QUEEN_REACH_MAX = 8;
 constexpr int QUEEN_GUARD_RADIUS = 0;
 constexpr double QUEEN_GUARD_PENALTY = 1500.0;
 // Card #36: queen dead-end penalty and room margin, tail out of sight counts as unreachable, known-tile room check.
-constexpr bool QUEEN_DEAD_END = false;
+constexpr bool QUEEN_DEAD_END = true;
 constexpr double QUEEN_DEAD_PENALTY = QUEEN_DEAD_END ? 6000.0 : 0.0;
 constexpr double QUEEN_KNOWN_STEP = 400.0;
 constexpr int QUEEN_DEFEND_RADIUS = 0;
