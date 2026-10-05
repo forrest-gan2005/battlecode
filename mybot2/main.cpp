@@ -117,6 +117,10 @@ constexpr bool STRIDE = true;
 constexpr double STRIDE_MARGIN = -50;
 constexpr int STRIDE_BUDGET = 12000;
 constexpr int STRIDE_CAP = 1500;
+constexpr bool QUEEN_WAIT = true;
+constexpr int QW_MIN_LENGTH = 4;
+constexpr bool QW_ANY_BLOCK = true;
+constexpr bool QW_LOG = false;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool STRIDE_SAFE_END = true;
@@ -427,6 +431,7 @@ class Bot {
         threat_stamp.assign(cells, 0);
         threat_depth.assign(cells, 0);
         threat_depth_small.assign(cells, 0);
+        ally_part_stamp.assign(cells, -1);
         bfs_parent.assign(cells, -1);
         bfs_via.assign(cells, 'N');
         rival_dist.assign(cells, 0);
@@ -574,6 +579,14 @@ class Bot {
             ct.make_moves(path);
             act_dirs = path;
             remember_path(path);
+            return;
+        }
+
+        if (queen_wait()) {
+            if (QW_LOG) {
+                ct.output_log("QWAIT", round, head.x, head.y, length, any_enterable ? 1 : 0);
+            }
+            split_off(unswbc::Constants::MIN_SIZE);
             return;
         }
 
@@ -1341,6 +1354,9 @@ class Bot {
             if (part->get_id() != ct.get_id()) {
                 mark_blocked(index);
                 count_part(part->get_id());
+                if (QUEEN_WAIT && part->get_team() == ct.get_team()) {
+                    ally_part_stamp[index] = round;
+                }
             } else {
                 own_parts.push_back(index);
             }
@@ -3166,6 +3182,33 @@ class Bot {
         return QUEEN_NO_PORTAL && (is_queen() || (QUEEN_PORTAL_ALL && real_queen())) && round >= QUEEN_PORTAL_ROUND;
     }
 
+    bool queen_wait() {
+        if (!QUEEN_WAIT || !real_queen() || length < QW_MIN_LENGTH || !ct.can_split(unswbc::Constants::MIN_SIZE)) {
+            return false;
+        }
+        bool const stuck = !any_enterable || (chosen_scored && !chosen_reaches_tail && chosen_room < length + 2.0);
+        if (!stuck) {
+            return false;
+        }
+        bool ally_block = false;
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(head, direction) == EDGE_KELP) {
+                continue;
+            }
+            int const next = step_index(head, direction);
+            if (next < 0) {
+                continue;
+            }
+            if ((is_enemy_head(position_of(next)) || threat_at(next) > 1) && !(QW_ANY_BLOCK && !any_enterable)) {
+                return false;
+            }
+            if (ally_part_stamp[next] == round) {
+                ally_block = true;
+            }
+        }
+        return ally_block || QW_ANY_BLOCK;
+    }
+
     bool real_queen() const {
         return QUEEN_MODE && ct.get_id() == queen_id;
     }
@@ -4828,6 +4871,7 @@ class Bot {
     std::vector<int> corner_bad;
     int turn_cells = 0;
     int survey_cap_now = 0;
+    std::vector<int> ally_part_stamp;
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
     std::vector<int> eaten_count;
