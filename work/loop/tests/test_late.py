@@ -38,7 +38,7 @@ class LateTests(unittest.TestCase):
         return list(late.json_rows(self.root / 'events.jsonl'))
 
     def test_threshold_repeat_restart_and_crash_recovery(self):
-        self.assertFalse(self.check(25)['late'])
+        self.assertFalse(self.check(24)['late'])
         self.assertTrue(self.check(26)['late'])
         state = (self.path / 'late.json').read_text()
         first = self.events()[0]
@@ -55,6 +55,79 @@ class LateTests(unittest.TestCase):
         self.assertEqual(jobs.read(self.path / 'late.json')['notice'], self.events()[-1])
         jobs.write(self.path / 'done.json', {'ok': True})
         self.assertFalse(self.check(90)['late'])
+
+    def test_waiting_discord_cadence_and_restart(self):
+        self.timing['queue'] = 'ai lock'
+        with patch('late.lock_reason', return_value=('waiting for #9 pool-check', 10, True,
+                                                     [{'job': 'holder', 'late': True}])):
+            self.check(0, resources=['ai'])
+            for minute in (30, 60, 119, 120, 121, 239, 240):
+                self.check(minute, resources=['ai'])
+        posted = [e for e in self.events() if e['post']]
+        self.assertEqual([e['elapsed_minutes'] for e in posted], [120, 240])
+        self.assertEqual(posted[0]['reason'], 'waiting for #9 pool-check')
+        self.assertEqual(posted[0]['new_start_at'], jobs.iso_time(1000 + 130 * 60))
+
+    def test_running_discord_milestones_and_hourly(self):
+        for minute in (24, 26, 38, 40, 41, 99, 100, 159, 160):
+            self.check(minute)
+        self.assertEqual([e['elapsed_minutes'] for e in self.events() if e['post']],
+                         [26, 40, 100, 160])
+        self.assertTrue(any(e['post'] is False for e in self.events()))
+
+    def test_post_boundary_does_not_change_status_threshold(self):
+        result = self.check(25)
+        self.assertFalse(result['late'])
+        self.assertTrue(self.events()[0]['post'])
+        self.assertNotIn('notice', jobs.read(self.path / 'late.json'))
+
+    def test_waiting_status_keeps_old_estimates_and_resets_on_running(self):
+        self.timing['queue'] = 'batch lock'
+        with patch('late.lock_reason', return_value=('waiting for #9 pool-check', 10, True, [])):
+            self.check(0)
+            result = self.check(15)
+            self.assertTrue(result['late'])
+            self.assertEqual(result['new_eta_minutes'], 30)
+            for minute in (30, 60, 119, 120, 240):
+                self.check(minute)
+        self.assertEqual([e['elapsed_minutes'] for e in self.events() if e['post']], [120, 240])
+        self.timing['queue'] = None
+        self.spec['started'] = 1000 + 241 * 60
+        jobs.write(self.path / 'job.json', self.spec)
+        self.check(241)
+        self.check(267)
+        self.assertTrue(self.events()[-1]['post'])
+        self.assertEqual(jobs.read(self.path / 'late.json')['posts'], 1)
+
+    def test_brief_build_then_test_with_three_continuous_waiters(self):
+        build = self.path
+        self.spec['eta_minutes'] = 26
+        self.spec['resources'] = ['ai']
+        jobs.write(build / 'job.json', self.spec)
+        test = self.root / 'card-31/attempt-1/jobs/outcome'
+        spec = {**self.spec, 'step': 'outcome', 'eta_minutes': 77, 'started': 1000 + 65 * 60}
+        waiters = [(self.root / f'card-{n}/attempt-1/jobs/build',
+                    {'number': n, 'name': f'waiting-{n}'}) for n in (32, 33, 34)]
+        for minute in range(157):
+            holder = build if minute < 65 else test
+            if minute == 65:
+                jobs.write(build / 'done.json', {'ok': True})
+                jobs.write(test / 'job.json', spec)
+            with jobs.lock(holder / 'lease'):
+                for path, card in waiters:
+                    late.check_late(self.root, self.root / 'locks', card, 'build', path,
+                                    {'eta_minutes': 20, 'queue': 'ai lock'}, resources=['ai'],
+                                    now=1000 + minute * 60)
+                late.check_late(self.root, self.root / 'locks', self.card,
+                                'build' if minute < 65 else 'outcome', holder,
+                                {'eta_minutes': 26 if minute < 65 else 77, 'queue': None},
+                                now=1000 + minute * 60)
+        posted = [e for e in self.events() if e['post']]
+        self.assertEqual(len(posted), 5)
+        running = [e for e in posted if not e['waiting']]
+        self.assertEqual([e['elapsed_minutes'] for e in running], [33, 52])
+        self.assertTrue(all(len(e['waiters']) == 3 for e in running))
+        self.assertEqual([e['elapsed_minutes'] for e in posted if e['waiting']], [120] * 3)
 
     def test_five_minimum_and_longest_history(self):
         self.timing['eta_minutes'] = 2

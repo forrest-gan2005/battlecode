@@ -1,4 +1,4 @@
-"""Explain missed estimates from local evidence; persist one notice per deadline."""
+"""Explain missed estimates from local evidence; keep status estimates separate from Discord notice timing."""
 from collections import Counter
 import datetime as dt
 import json
@@ -231,18 +231,28 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
     prior = state.get('notice')
     due = (now > state['deadline'] if prior else elapsed >= 15 if waiting
            else elapsed > planned * 1.25 and elapsed - planned >= 5)
-    holders = []
+    posts = state.get('posts', 0)
     if waiting:
-        reason, wait, known, holders = lock_reason(root, locks, resources, path, now, queued, describe_external=due)
+        post_due = elapsed >= (posts + 1) * 120
+        if posts:
+            post_due = post_due and now >= state['last_post'] + 120 * 60
+    elif posts == 0:
+        post_due = elapsed >= planned * 1.25 and elapsed - planned >= 5
+    elif posts == 1:
+        post_due = elapsed >= planned * 2
+    else:
+        post_due = now >= state['last_post'] + 60 * 60
+    holders, covered = [], []
+    if waiting:
+        reason, wait, known, holders = lock_reason(root, locks, resources, path, now, queued, describe_external=due or post_due)
         state['holders'] = holders
         covered = [h['job'] for h in holders if h['late']]
         if covered:
             state['covered_by'] = covered
-            write(path / 'late.json', state)
-            return {'late': False, 'holders': holders, 'covered_by': covered,
-                    'waiting_started': iso_time(state['started'])}
-        state.pop('covered_by', None)
-    if due:
+            due = False
+        else:
+            state.pop('covered_by', None)
+    if due or post_due:
         if not waiting:
             known, wait = True, None
         if waiting:
@@ -258,18 +268,25 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
         level = state['level'] + 1
         deadline = now + (wait if waiting and known else minutes) * 60
         notice = append_event(path, event_spec, 'late', now,
-                              job=str(path), holders=holders,
+                              job=str(path), holders=holders, post=post_due,
                               waiters=waiting_cards(root, spec.get('resources', []), path) if not waiting else [],
-                              event_id=f'{path}:{phase}:{state["started"]}:{level}', level=level,
+                              event_id=f'{path}:{phase}:{state["started"]}:post:{posts + 1}' if post_due
+                              else f'{path}:{phase}:{state["started"]}:{level}', level=level,
                               started=iso_time(state['started']), planned_minutes=planned,
                               elapsed_minutes=elapsed, reason=compact(reason), waiting=waiting,
                               queue=timing.get('queue'), new_eta_minutes=minutes,
                               new_eta_at=iso_time(now + minutes * 60), eta_known=known,
                               new_start_at=iso_time(deadline) if waiting and known else None,
                               next_check_at=iso_time(deadline))
-        state.update(level=level, notice=notice,
-                     deadline=dt.datetime.fromisoformat(notice['next_check_at']).timestamp())
+        if due:
+            state.update(level=level, notice=notice,
+                         deadline=dt.datetime.fromisoformat(notice['next_check_at']).timestamp())
+        if post_due:
+            state.update(posts=posts + 1, last_post=now)
     write(path / 'late.json', state)
+    if covered:
+        return {'late': False, 'holders': holders, 'covered_by': covered,
+                'waiting_started': iso_time(state['started'])}
     notice = state.get('notice')
     return ({'late': True, **{k: notice[k] for k in ('reason', 'new_eta_minutes', 'new_eta_at',
              'new_start_at', 'eta_known', 'level')}, 'elapsed_minutes': elapsed,
