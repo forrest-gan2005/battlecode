@@ -281,7 +281,9 @@ constexpr bool KEEP_GUARDS = false;
 constexpr int KG_COUNT = 3;
 constexpr int KG_REACH = 6;
 constexpr int KG_FRESH = 10;
-constexpr int KG_KEEP = 4;
+constexpr int KG_KEEP = 10;
+constexpr int KG_SHOW = 6;
+constexpr int KG_TRACK = 3;
 constexpr int KG_LAST_ROUNDS = 10;
 constexpr double KG_PENALTY = 1500.0;
 constexpr double KG_BLOCK = 1e9;
@@ -1705,7 +1707,7 @@ class Bot {
                     queen_game = true;
                 }
                 if (KEEP_GUARDS && id <= 1 && id != ct.get_id()) {
-                    hear_queen(len, when, pos, facing, cut);
+                    hear_queen(when, pos, facing, cut);
                 }
                 if (id != ct.get_id()) {
                     hear_exact(id, len, when, pos, facing);
@@ -1747,9 +1749,6 @@ class Bot {
         }
         std::uint64_t sight = 0;
         bool const has_sight = SHARE_SIGHT && pack_sight(sight);
-        // KEEP_GUARDS: where the fed dragon is not the queen, her own report shares the sonar slots.
-        bool const queen_note = KEEP_GUARDS && feeding_phase() && queen_id >= 0 && known_leader_id != queen_id &&
-                                round - kg_note_round <= KG_FRESH;
         for (std::size_t k = 0; k < directions.size(); k++) {
             if (QG_SAFEZONE && zone_check_dir >= 0 && static_cast<int>(k) != zone_check_dir) {
                 continue;
@@ -1760,8 +1759,6 @@ class Bot {
                 ct.send_sonar(directions[k], pack_zone());
             } else if (has_sight && (known_leader_id < 0 || (round + static_cast<int>(k)) % 2 == 0)) {
                 ct.send_sonar(directions[k], sight);
-            } else if (queen_note && (known_leader_id < 0 || (round + static_cast<int>(k)) % 2 == 0)) {
-                ct.send_sonar(directions[k], pack_leader(queen_id, kg_note_len, kg_note_round, kg_note_pos, kg_note_dir));
             } else if (known_leader_id >= 0) {
                 ct.send_sonar(directions[k], message);
             }
@@ -4239,13 +4236,7 @@ class Bot {
         return std::max(torus_gap(a.x, b.x, width), torus_gap(a.y, b.y, height));
     }
 
-    void hear_queen(int len, int when, Position pos, Direction facing, int cut) {
-        if (when >= kg_note_round) {
-            kg_note_round = when;
-            kg_note_len = len;
-            kg_note_pos = pos;
-            kg_note_dir = facing;
-        }
+    void hear_queen(int when, Position pos, Direction facing, int cut) {
         if (when >= kg_round) {
             kg_round = when;
             kg_pos = pos;
@@ -4257,12 +4248,13 @@ class Bot {
         }
     }
 
-    // Cut 0: the queen sees fewer than KG_COUNT, so all in her view hold. Otherwise ids from the cut up hold.
+    // Cut 0: the queen lists fewer than KG_COUNT, so all who see her hold. Otherwise ids from the cut up hold.
     bool guard_named() const {
         return round - kg_cut_round <= KG_FRESH && (kg_cut == 0 || ct.get_id() >= kg_cut);
     }
 
     // KEEP_GUARDS, queen: list the dragons seen in her view lately and name the KG_COUNT newest.
+    // The list rides in spare id bits of her own report (pack_leader) and takes no sonar slot.
     void guard_list() {
         for (int const id : ally_head_ids) {
             if (id == known_leader_id) {
@@ -4283,17 +4275,19 @@ class Bot {
         int const listed = static_cast<int>(kg_roll.size());
         kg_cut = listed < KG_COUNT ? 0 : std::min(kg_roll[static_cast<std::size_t>(listed - KG_COUNT)].first, KG_CUT_MAX);
         kg_cut_round = round;
-        kg_note_round = round;
-        kg_note_len = length;
-        kg_note_pos = head;
-        kg_note_dir = ct.get_dir();
     }
 
-    // KEEP_GUARDS: only a dragon the queen's list names holds back; it is on duty while it sees her.
+    // KEEP_GUARDS: only a dragon the queen's list names holds back. One guard may stand in her view while
+    // nobody else is there; the others post just outside it and step in every KG_SHOW rounds to stay listed.
     void guard_update() {
+        // She saw me on her last turn if my head is in view of where I saw her the turn before.
+        if (kg_sight_round == round - 1 && sight_gap(head, kg_sight_pos) <= unswbc::Constants::VISION_RADIUS) {
+            kg_shown_round = round;
+        }
         kg_seen = false;
         kg_duty = false;
         kg_hold = false;
+        kg_show = false;
         if (!feeding_phase() || queen_id < 0) {
             return;
         }
@@ -4307,6 +4301,8 @@ class Bot {
                 kg_round = round;
                 kg_pos = ally_heads[k];
                 kg_dir = ally_head_dirs[k];
+                kg_sight_round = round;
+                kg_sight_pos = ally_heads[k];
             }
         }
         bool const calm_end = round > unswbc::Constants::MAX_ROUNDS - KG_LAST_ROUNDS && enemy_heads.empty() &&
@@ -4314,19 +4310,45 @@ class Bot {
         if (is_leader() || !guard_named() || calm_end) {
             return;
         }
-        kg_duty = kg_seen;
-        if (kg_duty) {
+        if (kg_seen) {
             kg_duty_round = round;
         }
         kg_hold = round - kg_duty_round <= KG_FRESH;
+        kg_duty = kg_hold && round - kg_round <= KG_TRACK;
+        if (kg_duty) {
+            // Others I see in her view; feeders and newer guards go ahead of me.
+            int company = 0;
+            int ahead = 0;
+            for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
+                int const id = ally_head_ids[k];
+                if (id == queen_id || sight_gap(ally_heads[k], kg_pos) > unswbc::Constants::VISION_RADIUS) {
+                    continue;
+                }
+                company++;
+                if (id > ct.get_id() || id < kg_cut) {
+                    ahead++;
+                }
+            }
+            kg_show = ahead == 0 || (round - kg_shown_round >= KG_SHOW && company < KG_COUNT - 1);
+        }
     }
 
+    // Cells off the guard's post: inside her view while kg_show, otherwise just outside it and within reach.
+    int guard_off(Position cell) const {
+        int const gap = sight_gap(cell, kg_pos);
+        if (kg_show) {
+            return std::max(0, gap - unswbc::Constants::VISION_RADIUS);
+        }
+        return std::max(0, unswbc::Constants::VISION_RADIUS + 1 - gap) + std::max(0, manhattan(cell, kg_pos) - KG_REACH);
+    }
+
+    // Her next cells and the feeders' drop cells stay clear.
     bool guard_crowds(Position cell) const {
         if (manhattan(cell, kg_pos) <= FEEDER_KEEP_OFF) {
             return true;
         }
         int const along = forward_along(cell, kg_pos, kg_dir);
-        return across_axis(cell, kg_pos, kg_dir) == 0 && along > 0 && along <= FEEDER_FRONT_CLEAR;
+        return across_axis(cell, kg_pos, kg_dir) <= 1 && along > 0 && along <= FEEDER_DROP_MAX;
     }
 
     // The cells next to her head stay hers, the one in front included.
@@ -4334,13 +4356,14 @@ class Bot {
         return manhattan(cell, kg_pos) <= 1;
     }
 
+    // A guard that lost her or fell behind walks back; while she lists fewer than KG_COUNT, others nearby come too.
     bool guard_follow() const {
         if (!feeding_phase() || kg_seen || queen_id < 0 || ct.get_id() == queen_id || is_leader() || is_feeder() ||
             round - kg_round > KG_FRESH) {
             return false;
         }
         if (kg_hold) {
-            return true;
+            return !kg_duty || manhattan(head, kg_pos) > KG_REACH + 2;
         }
         return kg_cut == 0 && round - kg_cut_round <= KG_FRESH &&
                (manhattan(head, kg_pos) <= feeder_approach || ct.get_unit_count() <= KG_COUNT + 1);
@@ -4573,14 +4596,14 @@ class Bot {
             score += std::max(0.0, FEEDER_REWARD - FEEDER_DECAY * survey.dist_feed);
         }
         if (KEEP_GUARDS && kg_duty) {
-            score -= KG_PENALTY * std::max(0, sight_gap(destination, kg_pos) - unswbc::Constants::VISION_RADIUS);
+            score -= KG_PENALTY * guard_off(destination);
             if (guard_crowds(destination)) {
                 score -= KG_PENALTY;
             }
             if (guard_blocks(destination)) {
                 score -= KG_BLOCK;
             }
-            if (pearl_here[index_of(destination)] && sight_gap(destination, kg_pos) <= unswbc::Constants::VISION_RADIUS) {
+            if (pearl_here[index_of(destination)] && manhattan(destination, kg_pos) <= LEADER_PEARL_RADIUS) {
                 score -= KG_PENALTY * 2.0;
             }
         }
@@ -4840,17 +4863,17 @@ class Bot {
     bool kg_seen = false;
     bool kg_duty = false;
     bool kg_hold = false;
+    bool kg_show = false;
     std::vector<std::pair<int, int>> kg_roll;
     int kg_duty_round = -1000;
     int kg_round = -1000;
+    int kg_sight_round = -1000;
+    int kg_shown_round = -1000;
     int kg_cut_round = -1000;
     int kg_cut = 0;
-    int kg_note_round = -1000;
-    int kg_note_len = 0;
     Position kg_pos{};
-    Position kg_note_pos{};
+    Position kg_sight_pos{};
     Direction kg_dir = dir_of(Direction::NORTH);
-    Direction kg_note_dir = dir_of(Direction::NORTH);
     int known_leader_id = -1;
     int known_leader_len = 0;
     int known_leader_round = -1;

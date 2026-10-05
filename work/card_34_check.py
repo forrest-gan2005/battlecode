@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Card #34 mechanism check (KEEP_GUARDS): do a few of our dragons stay near our queen through the feeding phase,
-and is it only a few?
+is it only a few, and does the switch stay quiet where no guard is named?
 
 usage: python3 work/card_34_check.py --replays DIR --base base --candidate candidate --output FILE
 Replays are DIR/<tag>_<map>_<seed>_<side>.replay (work/ab3.py with KEEP=1), paired by (map, seed, side).
 
-Everything is rebuilt from the replay alone (no bot logs). At the start of every round from 420 on, while our queen
-(dragon id 0/1) is alive, it counts our other dragons around her head:
-  guard slots = those within 6 cells, counted up to 3 (are guards there?)
-  crowd round = a round with 5 or more of ours inside her 7x7 view (is the cap of 3 real?). 4 is not a crowd: a feeder
-                has to step into her view to feed, so 3 guards plus one feeder passing through is the plan working.
-                Rounds with 4 or more are reported next to it.
+Everything is rebuilt from the replay alone (no bot logs). While our queen (dragon id 0/1) is alive it counts our
+other dragons around her head at the start of every round:
+  guard slots = those within 6 cells, counted up to 3, from round 420 on (are guards there?)
+  crowded round = a round with 4 or more of ours inside her 7x7 view, counted from her first guard list to the end
+                  of the game (does the cap hold for the whole feeding phase?). The base game of a pair is counted
+                  from the same round.
 The replay also records every sonar ping, so the queen's guard list is decoded from her own pings, and for each of
-our dragons the newest list a ping has delivered to it. That says whether a dragon in her view had been told to hold.
+our dragons the newest list a ping has delivered to it. A pair where a list reached at least one of our dragons is
+an "acting" pair; in every other pair the switch must change nothing at all.
 
 Pre-registered before any game of this build was played (see PASS RULE). Queen survival, splits, rams and wins are
 reported as raw numbers and are NOT part of the pass rule: the local opponent is our own bot, which does not hunt a
@@ -27,12 +28,15 @@ import replay
 
 # PASS RULE (fixed before seeing results)
 SAME_UNTIL = 200     # every pair must be replay-identical through this round (feeding cannot start earlier)
+QUIET_PAIRS = 2      # quiet: at least this many pairs where no list reached any of ours, and all of them identical to base
 TARGET_ROUNDS = 300  # base needs at least this many late rounds with our queen alive, over all games
 TARGET_MAX = 2.0     # ... and must fill at most this many of the 3 slots on average (the hole is there)
-FILLED_MIN = 1.5     # switch on: at least this many of the 3 slots filled on average
+ACTING_ROUNDS = 150  # guards: base needs at least this many late rounds with our queen alive in the acting pairs
+FILLED_MIN = 1.5     # ... switch on fills at least this many of the 3 slots on average there
 FILLED_GAIN = 0.5    # ... and at least this much above base
 ALONE_CUT = 0.5      # ... and rounds with nobody near her at most this fraction of base's share
-CROWD_EXTRA = 0.05   # cap: share of late rounds that are crowd rounds at most base's share plus this
+CROWD_EXTRA = 0.05   # cap: share of crowded rounds from her first list on at most base's share plus this
+CROWD_MAP_ROUNDS = 100  # ... over all acting pairs, and on every map with at least this many such rounds in both
 FED_MIN_LEN = 10     # "fed as before" is read on pairs where the base queen ended at least this long, both queens alive
 FED_PAIRS = 2        # ... it needs at least this many such pairs
 FED_RATIO = 0.75     # ... and her mean end length there must be at least this fraction of base's
@@ -43,7 +47,7 @@ SIGHT = 3            # her 7x7 view
 SLOTS = 3            # KG_COUNT
 HOLD = 3             # round starts in a row inside her view before a dragon counts as staying (reported only)
 ROSTER_FRESH = 10    # KG_FRESH: a guard list older than this is ignored by the bot
-KEEP = 4             # KG_KEEP: the queen lists a dragon for this many rounds after it was last in her view
+KEEP = 10            # KG_KEEP: the queen lists a dragon for this many rounds after it was last in her view
 FEED_FROM = 200
 AFTER = 20           # "the queen survived that approach" = still alive this many rounds later
 CAUSE = ['wall', 'self', 'body', 'headon', 'none']
@@ -145,7 +149,9 @@ def one(job):
     approaches, rams = [], []
     streak = Counter()   # round starts in a row inside her view
     heard = {}           # dragon -> (round the list was made, cut) of the newest guard list a ping delivered to it
-    duty = {}            # dragon -> at its last turn it saw her and held a fresh list that names it
+    told = {}            # dragon -> last round it saw her while a fresh list named it
+    duty = {}            # dragon -> at its last turn a fresh list named it and it had seen her within the last 10 rounds
+    view_n = {}          # round -> how many of ours were inside her view at its start (rounds after 200, queen alive)
     sent = {}            # round -> cut in the list the queen sent that round
     seen_cut = {}        # round -> cut her view over the last KEEP rounds calls for
     roll = {}            # dragon -> last round it was in her view at her turn
@@ -195,10 +201,13 @@ def one(job):
                         del streak[d]
                 for d in view:
                     streak[d] += 1
+                view_n[rnd] = len(view)
                 if rnd >= LATE:
                     n6 = sum(1 for d in team if manh(bodies[d][0], qh) <= NEAR)
                     holders = [d for d in view if streak[d] >= HOLD]
                     on_duty = sum(1 for d in team if duty.get(d))
+                    c['late_duty_near'] += sum(1 for d in team if duty.get(d) and manh(bodies[d][0], qh) <= NEAR)
+                    c['late_duty_view'] += sum(1 for d in view if duty.get(d))
                     c['late_rounds'] += 1
                     c['late_filled'] += min(n6, SLOTS)
                     c['late_filled_sight'] += min(len(view), SLOTS)
@@ -244,7 +253,9 @@ def one(job):
                     got = heard.get(did)
                     fresh = got is not None and rnd - got[0] <= ROSTER_FRESH
                     named = fresh and (got[1] == 0 or did >= got[1])
-                    duty[did] = sees and named
+                    if sees and named:
+                        told[did] = rnd
+                    duty[did] = named and rnd - told.get(did, -1000) <= ROSTER_FRESH
                     if rnd >= LATE and sees:
                         c['view_turns'] += 1
                         c['view_turns_told'] += fresh
@@ -272,9 +283,11 @@ def one(job):
                     if sender == queen and when == rnd:
                         sent[rnd] = cut
                     hit = pl.i32(12)
-                    if pl.u16(6) and hit != queen and team_of.get(hit) == ours and (hit not in heard or when >= heard[hit][0]):
-                        heard[hit] = (when, cut)
-                        c['lists_delivered'] += rnd >= LATE
+                    if pl.u16(6) and hit != queen and team_of.get(hit) == ours:
+                        c['lists_reaching_ours'] += 1
+                        if hit not in heard or when >= heard[hit][0]:
+                            heard[hit] = (when, cut)
+                            c['lists_delivered'] += rnd >= LATE
         elif kind == 'dragonUpdate':
             did = pl.i32(0)
             h = replay.point(pl.pointer(0))
@@ -298,7 +311,7 @@ def one(job):
             bodies[ch] = deque(replay.point(x) for x in pl.pointer(1))
             team_of[pa] = team_of[ch] = ('A', 'B')[pl.u16(8)]
             c['queen_splits'] += pa == queen and rnd > FEED_FROM
-            for memory in (heard, duty, streak):
+            for memory in (heard, told, duty, streak):
                 memory.pop(ch, None)
         elif kind == 'dragonDeath':
             did = pl.i32(0)
@@ -317,7 +330,7 @@ def one(job):
                 if did != queen and rnd > FEED_FROM:
                     c[f'late_death_{cause}'] += 1
             bodies.pop(did, None)
-            for memory in (heard, duty, streak):
+            for memory in (heard, told, duty, streak):
                 memory.pop(did, None)
     prefix[last_round + 1] = sha.hexdigest()
 
@@ -354,6 +367,8 @@ def one(job):
     out = dict(c)
     out['prefix'] = prefix
     out['queen_died'] = queen_died
+    out['view_n'] = view_n
+    out['first_list'] = min(sent) if sent else None
     return out
 
 
@@ -379,6 +394,12 @@ def total(rows):
 
 def share(a, b):
     return a / b if b else 0.0
+
+
+def crowding(row, start):
+    """Rounds from `start` on with our queen alive: [rounds, those with 4+ of ours in her view, those with 5+]."""
+    counts = [n for r, n in row['view_n'].items() if r >= start]
+    return [len(counts), sum(n > SLOTS for n in counts), sum(n > SLOTS + 1 for n in counts)]
 
 
 def first_diff(b, c):
@@ -410,9 +431,12 @@ def view(s):
         'pearls_eaten_late_by_queen': s['late_queen_ate'],
         'pearls_eaten_late_by_others_in_her_view': s['late_others_ate'],
         'named_guards_mean': round(share(s['late_duty'], late), 2),
+        'named_guards_within_6_mean': round(share(s['late_duty_near'], late), 2),
+        'named_guards_in_her_view_mean': round(share(s['late_duty_view'], late), 2),
         'late_rounds_more_than_3_named': s['late_duty4'],
         'guard_lists_sent_by_queen': s['lists_sent'], 'of_those_asking_for_more_guards': s['lists_sent_wanting'],
         'of_those_matching_her_view': s['lists_match_view'], 'guard_lists_delivered': s['lists_delivered'],
+        'guard_list_pings_reaching_ours_after_r200': s['lists_reaching_ours'],
         'turns_in_her_view': s['view_turns'], 'of_those_with_a_fresh_list': s['view_turns_told'],
         'of_those_named': s['view_turns_named'],
         'sonar_pings_read': [s['pings_read'], s['pings']],
@@ -487,6 +511,11 @@ def main():
                      'pearls_eaten_late_by_queen': [mb['late_queen_ate'], mc['late_queen_ate']],
                      'pearls_eaten_late_by_others_in_her_view': [mb['late_others_ate'], mc['late_others_ate']],
                      'named_guards_mean': both('late_duty', 'late_rounds'),
+                     'named_guards_within_6_mean': both('late_duty_near', 'late_rounds'),
+                     'named_guards_in_her_view_mean': both('late_duty_view', 'late_rounds'),
+                     'pairs_where_a_list_reached_ours': sum(1 for k in keys if k[0] == m and cand[k].get('lists_reaching_ours', 0) > 0),
+                     'pairs_identical_to_base': sum(1 for k in keys if k[0] == m and diffs[k] is None),
+                     'first_list_rounds': sorted(cand[k]['first_list'] for k in keys if k[0] == m and cand[k]['first_list'] is not None),
                      'guard_lists_sent_by_queen': [mb['lists_sent'], mc['lists_sent']],
                      'turns_in_her_view_with_a_fresh_list': [f"{mb['view_turns_told']}/{mb['view_turns']}",
                                                              f"{mc['view_turns_told']}/{mc['view_turns']}"],
@@ -500,38 +529,73 @@ def main():
                      'our_dragons_at_end_mean': both('units_end', 'games'),
                      'wins': [mb['win'], mc['win']]}
 
+    # Acting pairs: a guard list reached at least one of our dragons with the switch on. Everywhere else it must do nothing.
+    acting = [k for k in keys if cand[k].get('lists_reaching_ours', 0) > 0]
+    quiet = [k for k in keys if k not in acting]
+    quiet_changed = sorted('_'.join(k) for k in quiet if diffs[k] is not None)
+    ab, ac = view(total(base[k] for k in acting)), view(total(cand[k] for k in acting))
+    crowd_pairs, crowd_maps, crowd_all = {}, {}, [[0, 0, 0], [0, 0, 0]]
+    for k in acting:
+        start = cand[k]['first_list']
+        if start is None:
+            continue
+        both = [crowding(base[k], start), crowding(cand[k], start)]
+        crowd_pairs['_'.join(k)] = {'first_list_round': start, 'base': both[0], 'candidate': both[1]}
+        per_map = crowd_maps.setdefault(k[0], [[0, 0, 0], [0, 0, 0]])
+        for which in (0, 1):
+            for i in range(3):
+                per_map[which][i] += both[which][i]
+                crowd_all[which][i] += both[which][i]
+
+    def crowd_ok(pair):
+        return pair[1][0] > 0 and share(pair[1][1], pair[1][0]) <= share(pair[0][1], pair[0][0]) + CROWD_EXTRA
+
+    crowd_bad_maps = sorted(m for m, pair in crowd_maps.items()
+                            if min(pair[0][0], pair[1][0]) >= CROWD_MAP_ROUNDS and not crowd_ok(pair))
+
     prefix_ok = not early
+    quiet_ok = len(quiet) >= QUIET_PAIRS and not quiet_changed
     target_seen = bv['late_rounds_queen_alive'] >= TARGET_ROUNDS and bv['slots_filled_mean'] <= TARGET_MAX
-    guards_ok = (cv['late_rounds_queen_alive'] > 0 and cv['slots_filled_mean'] >= FILLED_MIN and
-                 cv['slots_filled_mean'] >= bv['slots_filled_mean'] + FILLED_GAIN and
-                 cv['alone_share'] <= ALONE_CUT * bv['alone_share'])
-    cap_ok = cv['late_rounds_queen_alive'] > 0 and cv['crowd_share'] <= bv['crowd_share'] + CROWD_EXTRA
+    guards_ok = (ab['late_rounds_queen_alive'] >= ACTING_ROUNDS and ac['late_rounds_queen_alive'] > 0 and
+                 ac['slots_filled_mean'] >= FILLED_MIN and
+                 ac['slots_filled_mean'] >= ab['slots_filled_mean'] + FILLED_GAIN and
+                 ac['alone_share'] <= ALONE_CUT * ab['alone_share'])
+    cap_ok = crowd_ok(crowd_all) and not crowd_bad_maps
     fed_ok = len(fed) >= FED_PAIRS and fed_ratio >= FED_RATIO
-    passed = bool(prefix_ok and target_seen and guards_ok and cap_ok and fed_ok)
+    passed = bool(prefix_ok and quiet_ok and target_seen and guards_ok and cap_ok and fed_ok)
     why = []
     if not prefix_ok:
         why.append(f'{len(early)} pairs differ at or before round {SAME_UNTIL}, before feeding can start')
+    if not quiet_ok:
+        why.append(f'the switch is not quiet where no guard is named (needs {QUIET_PAIRS}+ pairs where no list reached any '
+                   f'of ours, all identical to base; got {len(quiet)} such pairs, {len(quiet_changed)} of them differ)')
     if not target_seen:
         why.append(f"base did not show the hole (needs {TARGET_ROUNDS}+ late rounds with the queen alive and at most "
                    f"{TARGET_MAX} slots filled; got {bv['late_rounds_queen_alive']} rounds, {bv['slots_filled_mean']} filled)")
     if not guards_ok:
-        why.append(f'guards are not there (needs {FILLED_MIN} of 3 slots, base + {FILLED_GAIN}, and at most '
-                   f'{ALONE_CUT:.0%} of base\'s rounds alone)')
+        why.append(f'guards are not there in the acting pairs (needs {ACTING_ROUNDS}+ base late rounds there, {FILLED_MIN} of 3 '
+                   f'slots, base + {FILLED_GAIN}, and at most {ALONE_CUT:.0%} of base\'s rounds alone)')
     if not cap_ok:
-        why.append(f'more than 3 hold back too often (rounds with 5+ in her view may be at most base\'s share + {CROWD_EXTRA:.0%})')
+        why.append(f'the cap does not hold from her first list on (rounds with 4+ of ours in her view may be at most base\'s '
+                   f'share + {CROWD_EXTRA:.0%}, over all acting pairs and on every map with {CROWD_MAP_ROUNDS}+ such rounds'
+                   + (f'; over on {", ".join(crowd_bad_maps)}' if crowd_bad_maps else '') + ')')
     if not fed_ok:
         why.append(f'the queen is not fed as before (needs {FED_PAIRS}+ pairs where base ended {FED_MIN_LEN}+ long with both '
                    f'alive, and at least {FED_RATIO:.0%} of base\'s length there; got {len(fed)} pairs, {fed_ratio:.0%})')
-    note = (f"rounds {LATE}+ with our queen alive ({bv['late_rounds_queen_alive']} base, {cv['late_rounds_queen_alive']} switch on). "
-            f"Guards there: slots filled (ours within {NEAR} cells, max 3) {bv['slots_filled_mean']} -> {cv['slots_filled_mean']}, "
-            f"nobody near her {bv['alone_share']:.0%} -> {cv['alone_share']:.0%}. "
-            f"Cap: rounds with 5+ of ours in her view {bv['crowd_rounds']} -> {cv['crowd_rounds']} "
-            f"({bv['crowd_share']:.1%} -> {cv['crowd_share']:.1%}); with 4+ "
-            f"{bv['late_rounds_4_or_more_in_her_view']} -> {cv['late_rounds_4_or_more_in_her_view']}. "
+    cb, cc = crowd_all
+    note = (f"Acting pairs (a guard list reached one of ours): {len(acting)}/{len(keys)}. Quiet pairs: {len(quiet)}, of which "
+            f"{len(quiet_changed)} differ from base. "
+            f"Guards there, acting pairs, rounds {LATE}+ with our queen alive ({ab['late_rounds_queen_alive']} base, "
+            f"{ac['late_rounds_queen_alive']} switch on): slots filled (ours within {NEAR} cells, max 3) "
+            f"{ab['slots_filled_mean']} -> {ac['slots_filled_mean']}, nobody near her {ab['alone_share']:.0%} -> {ac['alone_share']:.0%}; "
+            f"over all pairs {bv['slots_filled_mean']} -> {cv['slots_filled_mean']}, {bv['alone_share']:.0%} -> {cv['alone_share']:.0%}. "
+            f"Cap, acting pairs, from her first list to the end: rounds with 4+ of ours in her view {cb[1]} of {cb[0]} -> "
+            f"{cc[1]} of {cc[0]} ({share(cb[1], cb[0]):.1%} -> {share(cc[1], cc[0]):.1%}); with 5+ {cb[2]} -> {cc[2]}. "
             f"Fed as before: her end length in the {len(fed)} pairs where base ended {FED_MIN_LEN}+ long and she lived "
             f"{fed_base:.1f} -> {fed_cand:.1f} ({fed_ratio:.0%}); she died with the switch in {fed_dead} more such pairs. "
-            f"Guard list: sent by the queen in {cv['guard_lists_sent_by_queen']} late rounds, dragons in her view held a fresh one on "
-            f"{cv['of_those_with_a_fresh_list']} of {cv['turns_in_her_view']} turns, named guards per round {cv['named_guards_mean']}. "
+            f"Guard list: sent by the queen in {cv['guard_lists_sent_by_queen']} late rounds, named guards holding per late round "
+            f"{cv['named_guards_mean']} ({cv['named_guards_within_6_mean']} within {NEAR} cells, "
+            f"{cv['named_guards_in_her_view_mean']} in her view). "
             f"Pairs that differ: {len(changed)}/{len(keys)}, earliest at round {changed[0] if changed else 'never'}. "
             f"Not gated, {len(keys)} games each: pearls eaten late by her {bv['pearls_eaten_late_by_queen']} -> "
             f"{cv['pearls_eaten_late_by_queen']} and by others in her view {bv['pearls_eaten_late_by_others_in_her_view']} -> "
@@ -545,11 +609,22 @@ def main():
             + ('' if passed else '. NOT shown: ' + '; '.join(why)))
     out = {'passed': passed, 'note': note, 'target_seen': bool(target_seen), 'pairs': len(keys),
            'maps': sorted({k[0] for k in keys}),
-           'pass_rule': {'same_until_round': SAME_UNTIL, 'target_rounds': TARGET_ROUNDS, 'target_max': TARGET_MAX,
+           'pass_rule': {'same_until_round': SAME_UNTIL, 'quiet_pairs': QUIET_PAIRS, 'target_rounds': TARGET_ROUNDS,
+                         'target_max': TARGET_MAX, 'acting_rounds': ACTING_ROUNDS,
                          'filled_min': FILLED_MIN, 'filled_gain': FILLED_GAIN, 'alone_cut': ALONE_CUT,
-                         'crowd_extra': CROWD_EXTRA, 'fed_min_len': FED_MIN_LEN, 'fed_pairs': FED_PAIRS,
-                         'fed_ratio': FED_RATIO, 'prefix_ok': bool(prefix_ok), 'target_seen': bool(target_seen),
+                         'crowd_extra': CROWD_EXTRA, 'crowd_map_rounds': CROWD_MAP_ROUNDS,
+                         'fed_min_len': FED_MIN_LEN, 'fed_pairs': FED_PAIRS,
+                         'fed_ratio': FED_RATIO, 'prefix_ok': bool(prefix_ok), 'quiet_ok': bool(quiet_ok),
+                         'target_seen': bool(target_seen),
                          'guards_ok': bool(guards_ok), 'cap_ok': bool(cap_ok), 'fed_ok': bool(fed_ok)},
+           'acting_pairs': sorted('_'.join(k) for k in acting),
+           'quiet_pairs': sorted('_'.join(k) for k in quiet), 'quiet_pairs_that_differ': quiet_changed,
+           'crowding_from_first_list': {
+               'columns': ['rounds with our queen alive', 'with 4+ of ours in her view', 'with 5+'],
+               'acting_pairs_base': cb, 'acting_pairs_candidate': cc,
+               'share_4_or_more': [round(share(cb[1], cb[0]), 3), round(share(cc[1], cc[0]), 3)],
+               'by_map_base_then_candidate': crowd_maps, 'maps_over_the_limit': crowd_bad_maps, 'by_pair': crowd_pairs},
+           'acting_pairs_base': ab, 'acting_pairs_candidate': ac,
            'fed_as_before': {'pairs': len(fed), 'base_queen_len_mean': round(fed_base, 1),
                              'candidate_queen_len_mean': round(fed_cand, 1), 'ratio': round(fed_ratio, 3),
                              'pairs_where_she_died_with_the_switch': fed_dead},
@@ -557,11 +632,16 @@ def main():
            'pairs_that_differ': len(changed), 'first_differing_rounds': changed, 'pairs_differing_too_early': early,
            'queen_alive_at_end_pairs': {'saved_by_switch': saved, 'lost_with_switch': lost},
            'limits': ('measured from replays without bot logs. A guard slot is any of our dragons within 6 cells of the queen. '
-                      'A crowd round has 5 or more of ours inside her 7x7 view, whatever their reason for being there. '
-                      'A named guard is rebuilt from the sonar pings: at its last turn the dragon saw her and the newest guard '
-                      'list a ping had delivered to it was at most 10 rounds old and named it; the last-10-rounds release is '
+                      'A crowded round has 4 or more of our heads inside her 7x7 view, whatever their reason for being there; '
+                      'it is counted from the round she sent her first guard list with the switch on, and the base game of the '
+                      'pair is counted from that same round. An acting pair is one where a ping carrying a guard list hit one '
+                      'of our dragons after round 200; a quiet pair is any other, and "identical" there means the same moves, '
+                      'splits and deaths in every round. '
+                      'A named guard is rebuilt from the sonar pings: at its last turn the newest guard list a ping had '
+                      'delivered to it was at most 10 rounds old and named it, and it had seen her within the last 10 rounds '
+                      'while named; the last-10-rounds release is '
                       'not modelled, and base sends no lists so its named counts are 0 by construction. "Matching her view" '
-                      'compares the list she sent with the 3 newest of ours seen in her view over the last 4 rounds; where the '
+                      'compares the list she sent with the 3 newest of ours seen in her view over the last 10 rounds; where the '
                       'fed dragon is not the queen the bot leaves that dragon out, which this does not model. Pearls eaten by '
                       'others in her view are length gained by our other dragons while inside her view. Free cells next to '
                       'her head count dragon bodies only, not walls. A guard ram is one of ours dying head-on on its own move '
