@@ -212,8 +212,10 @@ def make(seed, style=None, size=None):
         for x in range(W):
             a, b = full[(x, y)]
             lines.append(f'TILE {x} {y} {a} {b}')
-    lines.append(f'EDGE_COUNT {total}')
+    lines.append(f'EDGE_COUNT {total - (H + 1)}')
     for i in range(total):
+        if (i // (W + 1)) % 2 == 0 and i % (W + 1) == W:
+            continue
         lines.append(f'EDGE {i} {kinds.get(i, 0)} -1')
     lines.append(f'DRAGON_COUNT {len(dragons)}')
     for team, body in dragons:

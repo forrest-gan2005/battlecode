@@ -1,5 +1,6 @@
 """Consume confirmed /meow requests inside the runner lease; never start/stop the poller."""
 from pathlib import Path
+import datetime as dt
 import re
 import shutil
 import sys
@@ -49,6 +50,32 @@ def submit_job(loop, req, step, spec):
     return None
 
 
+def after_build_ready(loop, req, card, meta, state):
+    if req.get('after_build') is not True or req.get('force') is not True or req.get('action') != 'set_state' or req.get('state') != 'candidate':
+        raise ValueError('Waiting for a build is only supported for forced candidate requests.')
+    if type(req.get('attempt')) is not int or req['attempt'] < 1:
+        raise ValueError('The queued Force needs a build attempt number.')
+    created = dt.datetime.fromisoformat(req['created'].replace('Z', '+00:00'))
+    if dt.datetime.now(dt.timezone.utc) - created >= dt.timedelta(hours=6):
+        raise ValueError('The queued Force expired after six hours; no candidate was opened.')
+    if req['attempt'] != meta.get('attempt'):
+        raise ValueError('This card has a new build attempt; the queued Force was for the previous one.')
+    out = Path(loop.context(card, meta)['out'])
+    failed = any(read(out / 'jobs' / step / 'done.json', {}).get('ok') is False
+                 for step in ('build', 'adopt', 'task'))
+    if meta.get('failed') or failed:
+        raise ValueError('This build failed, so the queued Force cannot open a candidate.')
+    if state == 'building':
+        return False
+    if state not in {'needs-look', 'testing', 'tested', 'candidate', 'smoke', 'kept', 'rejected', 'inconclusive'}:
+        raise ValueError('This card is no longer progressing through the requested build.')
+    if not meta.get('commit') or not meta.get('base'):
+        raise ValueError('This build has no recorded commit and base, so the queued Force cannot open a candidate.')
+    if loop.base_moved(meta['base']):
+        raise ValueError('Main changed again; this build is no longer current, so the queued Force was cancelled.')
+    return True
+
+
 def controls(loop):
     if loop.args.dry_run:
         return False
@@ -95,7 +122,10 @@ def controls(loop):
             card = issue(loop, req['card'])
             meta = loop.metadata(card)
             state = next((l['name'][7:] for l in card['labels'] if l['name'].startswith('status:')), 'untested')
-            if req.get('_state') and state != req['_state']:
+            if req.get('after_build'):
+                if not after_build_ready(loop, req, card, meta, state):
+                    continue
+            elif req.get('_state') and state != req['_state']:
                 raise ValueError('Card moved after confirmation; request a fresh preview.')
             write(receipt_path, {'state': 'executing'})
             if action == 'use_branch_as_impl':
@@ -148,7 +178,8 @@ def controls(loop):
             result(loop, req, True, f"Applied {action} to #{card['number']}.")
             write(receipt_path, {'state': 'done'})
         except Exception as exc:
-            result(loop, req, False, f'Control request needs review: {type(exc).__name__}: {exc}')
+            message = str(exc) if req.get('after_build') and isinstance(exc, ValueError) else f'Control request needs review: {type(exc).__name__}: {exc}'
+            result(loop, req, False, message)
             write(receipt_path, {'state': 'error'})
     return control['paused']
 

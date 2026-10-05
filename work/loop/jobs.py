@@ -172,13 +172,14 @@ def load_module(name, path):
 
 
 def transpose(text):
-    """Transpose generated maps, including padded edge IDs and portal partners."""
+    """Transpose generated maps in padded or real-edge format, including portals."""
     lines = [x.split() for x in text.splitlines() if x.strip()]
     w, h = map(int, next(x for x in lines if x[0] == 'MAP')[1:3])
     edges = [x for x in lines if x[0] == 'EDGE']
     count = int(next(x for x in lines if x[0] == 'EDGE_COUNT')[1])
-    if count != (2 * h + 1) * (w + 1):
-        raise ValueError('transpose requires the generated-map padded edge format')
+    total = (2 * h + 1) * (w + 1)
+    if count not in (total, total - (h + 1)) or count != len(edges):
+        raise ValueError('transpose requires a padded or real-edge generated map')
     def eid(i):
         row, x = divmod(int(i), w + 1)
         y, vertical = divmod(row, 2)
@@ -209,8 +210,10 @@ def transpose(text):
             for i in range(3, len(q), 2):
                 q[i], q[i + 1] = q[i + 1], q[i]
         elif k == 'EDGE_COUNT':
-            out.append(f'EDGE_COUNT {(2 * w + 1) * (h + 1)}')
+            out.append(f'EDGE_COUNT {(2 * w + 1) * (h + 1) - (w + 1)}')
             for i in range((2 * w + 1) * (h + 1)):
+                if (i // (h + 1)) % 2 == 0 and i % (h + 1) == h:
+                    continue
                 kind, partner = mapped.get(i, ('0', '-1'))
                 out.append(f'EDGE {i} {kind} {partner}')
             continue
