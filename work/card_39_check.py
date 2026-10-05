@@ -65,6 +65,9 @@ second build as "switch on", 16 games per side; see the build's check-selftest f
 already met there; 7 of the queen's 9 ram deaths with the switch on came from a 3-long enemy paying 1 length to hit
 her from 2 tiles away; and she was shorter than 4 on 19 of her 21 stuck turns, where neither a wait nor a keep-2
 split is possible. So rule 3 may well come out "not seen".
+Fourth build: the same bot code moved onto a newer main, no rule changed, so the pass rule and every constant below
+are carried over as they were. The third build's run on the older main had rule 3 "not seen" (ring-stuck with a way
+out 2 of the 3 needed, keep-2 at 5+ long 0 of 3); the rule is kept anyway, not loosened to fit that.
 """
 import argparse, glob, hashlib, json, os, sys, concurrent.futures as cf
 from collections import Counter, deque
