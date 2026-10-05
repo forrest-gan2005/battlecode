@@ -160,6 +160,7 @@ constexpr int QUEEN_LEAD_ROUND = 0;
 constexpr int QUEEN_QUIET_ROUND = 100;
 constexpr int QUEEN_GAME_FEED_ROUND = 300;
 constexpr int QUEEN_SAFE_ROUND = 300;
+constexpr bool QUEEN_FEED_ALL = false;
 constexpr int QUEEN_SAFE_SPAN = 0;
 constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
@@ -522,7 +523,7 @@ class Bot {
             if (!enemy_heads.empty()) {
                 last_contact = round;
             }
-            if (QUEEN_SAFE_ROUND > 0 && is_queen() && round >= QUEEN_SAFE_ROUND && round - last_contact >= QUEEN_SAFE_SPAN) {
+            if (QUEEN_SAFE_ROUND > 0 && (is_queen() || (QUEEN_FEED_ALL && real_queen())) && round >= QUEEN_SAFE_ROUND && round - last_contact >= QUEEN_SAFE_SPAN) {
                 queen_game = true;
             }
             if (QUEEN_GAME_FEED_ROUND > 0 && queen_game) {
