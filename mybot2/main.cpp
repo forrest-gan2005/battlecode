@@ -697,6 +697,9 @@ class Bot {
             edge_at(head, best) != EDGE_PORTAL && !(QG_SAFEZONE && zone_mode == 1)) {
             std::vector<Direction> stride_path(1, best);
             extend_stride(stride_path);
+            if (QUEEN_STRIDE && is_queen() && stride_path.size() > 1 && !qs_open_end(stride_path)) {
+                stride_path.erase(stride_path.begin() + 1, stride_path.end());
+            }
             if (stride_path.size() > 1) {
                 ct.make_moves(stride_path);
                 act_dirs = stride_path;
@@ -2396,6 +2399,46 @@ class Bot {
         return gap;
     }
 
+    bool qs_open_end(std::vector<Direction> const& path) {
+        std::vector<int> walked;
+        Position cell = head;
+        for (Direction const direction : path) {
+            int const next = step_index(cell, direction);
+            if (next < 0) {
+                return false;
+            }
+            walked.push_back(next);
+            cell = position_of(next);
+        }
+        int const need = length + 2;
+        visit_mark++;
+        visit_stamp[index_of(head)] = visit_mark;
+        for (int const w : walked) {
+            visit_stamp[w] = visit_mark;
+        }
+        std::vector<int> queue(1, walked.back());
+        int room = 0;
+        for (std::size_t at = 0; at < queue.size() && room < need; at++) {
+            Position const position = position_of(queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_KELP || edge == EDGE_PORTAL) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] < BLOCKED_FOREVER &&
+                                                        enter_time[next] > static_cast<int>(walked.size()) + 1) ||
+                    enter_time[next] >= BLOCKED_FOREVER) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                queue.push_back(next);
+                room++;
+            }
+        }
+        return room >= need;
+    }
+
     bool qs_flee(std::vector<Direction>& path) {
         if (!QUEEN_STRIDE || QS_FLEE_RADIUS <= 0 || !is_queen() || !any_enterable || sprint_free() < 2 ||
             qs_gap(head) > QS_FLEE_RADIUS) {
@@ -2447,9 +2490,20 @@ class Bot {
         int best_node = -1;
         int evals = 0;
         for (auto const& [unsafe, far, k] : order) {
-            if (evals++ >= QS_FLEE_EVALS || (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET)) {
+            if (evals >= QS_FLEE_EVALS || (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET)) {
                 break;
             }
+            if (nodes[k].depth >= 2) {
+                std::vector<Direction> trial;
+                for (int j = k; nodes[j].parent >= 0; j = nodes[j].parent) {
+                    trial.push_back(nodes[j].dir);
+                }
+                std::reverse(trial.begin(), trial.end());
+                if (!qs_open_end(trial)) {
+                    continue;
+                }
+            }
+            evals++;
             double const value = stride_value(nodes[k].cell) + QS_FLEE_GAIN * std::min(-far, QS_FLEE_RADIUS + 2) -
                                  (unsafe ? QS_FLEE_UNSAFE : 0.0);
             if (value > best) {
