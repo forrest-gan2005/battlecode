@@ -1,0 +1,20 @@
+{
+  "version": "card-42-b79c988b68",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Send a message when the tail blocks the portal"
+  ],
+  "results": {
+    "held": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "main": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "mechanism": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "cpu": "Forced: checks may be skipped or use an old base; see issue audit."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    42
+  ],
+  "pr": null,
+  "base_commit": "83612e9f48bbcde7b348d8020419877e3c6491f4",
+  "candidate_commit": "b79c988b68d8460879c94832a7ecd9c7c96b18cf"
+}
