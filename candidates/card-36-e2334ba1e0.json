@@ -1,0 +1,20 @@
+{
+  "version": "card-36-e2334ba1e0",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Modify the queen's dead-end punishment"
+  ],
+  "results": {
+    "held": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "main": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "mechanism": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "cpu": "Forced: checks may be skipped or use an old base; see issue audit."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    36
+  ],
+  "pr": null,
+  "base_commit": "83612e9f48bbcde7b348d8020419877e3c6491f4",
+  "candidate_commit": "e2334ba1e0ee671cbc4928ff42cc2d5659b1d946"
+}
