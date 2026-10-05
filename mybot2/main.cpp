@@ -141,6 +141,11 @@ constexpr int QS_FLEE_RADIUS = 4;
 constexpr double QS_FLEE_GAIN = 300.0;
 constexpr double QS_FLEE_UNSAFE = 5000.0;
 constexpr int QS_FLEE_EVALS = 8;
+constexpr bool QUEEN_HOME_LOOP = false;
+constexpr int QH_RADIUS = 4;
+constexpr double QH_PENALTY = 300.0;
+constexpr int QH_UNTIL = 400;
+constexpr int QH_FLEE_RADIUS = 4;
 constexpr bool QUEEN_DEFEND_LATE = false;
 constexpr bool QUEEN_NO_PORTAL = true;
 constexpr int QUEEN_PORTAL_ROUND = 0;
@@ -4612,6 +4617,9 @@ class Bot {
             if (last_dead_end || (!last_reaches_tail && last_room < length + 2.0)) {
                 score -= (queen_guard() ? QG_DEAD_PENALTY : QUEEN_DEAD_PENALTY);
             }
+        }
+        if (QUEEN_HOME_LOOP && is_queen() && queen_home.x >= 0 && round < QH_UNTIL && qs_gap(head) > QH_FLEE_RADIUS) {
+            score -= QH_PENALTY * std::max(0, manhattan(destination, queen_home) - QH_RADIUS);
         }
         if (QG_HOME_RADIUS > 0 && queen_guard() && queen_home.x >= 0) {
             score -= QG_HOME_PENALTY * std::max(0, manhattan(destination, queen_home) - QG_HOME_RADIUS);
