@@ -146,6 +146,12 @@ constexpr int QH_RADIUS = 4;
 constexpr double QH_PENALTY = 300.0;
 constexpr int QH_UNTIL = 400;
 constexpr int QH_FLEE_RADIUS = 4;
+constexpr bool QUEEN_SPIN = false;
+constexpr int QSP_CELLS = 1200;
+constexpr int QSP_RADIUS = 1;
+constexpr double QSP_PENALTY = 2000.0;
+constexpr int QSP_UNTIL = 400;
+constexpr int QSP_FLEE_RADIUS = 4;
 constexpr bool QUEEN_DEFEND_LATE = false;
 constexpr bool QUEEN_NO_PORTAL = true;
 constexpr int QUEEN_PORTAL_ROUND = 0;
@@ -4617,6 +4623,11 @@ class Bot {
             if (last_dead_end || (!last_reaches_tail && last_room < length + 2.0)) {
                 score -= (queen_guard() ? QG_DEAD_PENALTY : QUEEN_DEAD_PENALTY);
             }
+        }
+        if (QUEEN_SPIN && is_queen() && cells > QSP_CELLS && queen_home.x >= 0 && round < QSP_UNTIL &&
+            qs_gap(head) > QSP_FLEE_RADIUS) {
+            int const spread = std::max(torus_gap(destination.x, queen_home.x, width), torus_gap(destination.y, queen_home.y, height));
+            score -= QSP_PENALTY * std::max(0, spread - QSP_RADIUS);
         }
         if (QUEEN_HOME_LOOP && is_queen() && queen_home.x >= 0 && round < QH_UNTIL && qs_gap(head) > QH_FLEE_RADIUS) {
             score -= QH_PENALTY * std::max(0, manhattan(destination, queen_home) - QH_RADIUS);
