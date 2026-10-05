@@ -1,0 +1,20 @@
+{
+  "version": "card-31-0e275b1cf3",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Queen hunt with an early scout: first finder shares her position, everyone hunts once our queen is dead"
+  ],
+  "results": {
+    "held": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "main": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "mechanism": "Forced: checks may be skipped or use an old base; see issue audit.",
+    "cpu": "Forced: checks may be skipped or use an old base; see issue audit."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    31
+  ],
+  "pr": null,
+  "base_commit": "fa618613c2dba9292ec1311a7897b46635965dac",
+  "candidate_commit": "0e275b1cf3aab19243d3c218dd310b42c81b7859"
+}
