@@ -255,6 +255,9 @@ constexpr int CORPSE_FRESH = 15;
 constexpr int STAFF_CELLS = 16;
 constexpr int STAFF_REGION_MAX = 120;
 constexpr int IDLE_ESCAPE = 0;
+constexpr bool IDLE_EXIT = false;
+constexpr int IDLE_EXIT_ROUNDS = 20;
+constexpr int IDLE_EXIT_PEARL = 6;
 constexpr int IDLE_REGION_MAX = 40;
 constexpr bool IDLE_STRICT = false;
 constexpr int IDLE_LOG = 0;
@@ -568,6 +571,10 @@ class Bot {
             income_update();
         }
         route_target = escape_target;
+        if (IDLE_EXIT && route_target < 0 && round - last_growth_round >= IDLE_EXIT_ROUNDS && !real_queen() &&
+            !is_leader() && !is_feeder() && enemy_heads.empty()) {
+            route_target = idle_exit_target();
+        }
         if (INC_PERIOD > 0 && route_target < 0 && inc_target >= 0) {
             route_target = inc_target;
         }
@@ -4640,6 +4647,55 @@ class Bot {
         }
         inc_target = best_cell;
         inc_round = round;
+    }
+
+    // Nearest seen tile beside a never-seen one, over known tiles (no portals); -1 with a pearl within IDLE_EXIT_PEARL steps.
+    int idle_exit_target() {
+        if (escape_stamp.empty()) {
+            escape_stamp.assign(cells, 0);
+            escape_steps.assign(cells, 0);
+            escape_queue.assign(cells, 0);
+        }
+        escape_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        int const start = index_of(head);
+        escape_stamp[start] = escape_mark;
+        escape_steps[start] = 0;
+        escape_queue[queue_tail++] = start;
+        int target = -1;
+        while (queue_head < queue_tail) {
+            int const index = escape_queue[queue_head++];
+            int const steps = escape_steps[index];
+            if (steps > IDLE_EXIT_PEARL) {
+                if (target >= 0) {
+                    break;
+                }
+            } else if (index != start && pearl_here[index]) {
+                return -1;
+            }
+            Position const position = position_of(index);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_KELP || edge == EDGE_PORTAL) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (seen_round[next] < 0) {
+                    if (target < 0 && index != start) {
+                        target = index;
+                    }
+                    continue;
+                }
+                if (escape_stamp[next] == escape_mark || enter_time[next] >= BLOCKED_FOREVER) {
+                    continue;
+                }
+                escape_stamp[next] = escape_mark;
+                escape_steps[next] = steps + 1;
+                escape_queue[queue_tail++] = next;
+            }
+        }
+        return target;
     }
 
     void idle_update() {
