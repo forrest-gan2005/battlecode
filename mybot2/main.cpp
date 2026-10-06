@@ -130,6 +130,17 @@ constexpr double QS_HIT_PENALTY = 3e8;
 constexpr double QS_PAY_PENALTY = 2e8;
 constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
+// Card #38: with no pearl close by, a 2-3 long queen circles a quiet 2x2 square and steps off by margin.
+constexpr bool QUEEN_LOOP = false;
+constexpr int QL_MAX_LENGTH = 3;
+constexpr int QL_UNTIL = 300;
+constexpr int QL_MARGIN = 2;
+constexpr int QL_ENTER_MARGIN = 3;
+constexpr int QL_PEARL_STEPS = 4;
+constexpr int QL_HOME_CLEAR = 4;
+constexpr int QL_AWAY_TILES = 4;
+constexpr int QL_AWAY_ROUNDS = 8;
+constexpr int QL_MIN_EXITS = 2;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool STRIDE_SAFE_END = true;
@@ -502,6 +513,9 @@ class Bot {
         if (queen_home.x < 0 && real_queen()) {
             queen_home = head;
         }
+        if (QUEEN_LOOP && real_queen()) {
+            ql_watch();
+        }
         if (QUEEN_HOME_CLOSED && !home_closed && real_queen() && round <= HOME_CHECK_ROUND && round % 2 == 0) {
             int const size = home_region_size();
             if (size >= HOME_MIN_CELLS) {
@@ -603,6 +617,10 @@ class Bot {
             ct.make_moves(path);
             act_dirs = path;
             remember_path(path);
+            return;
+        }
+
+        if (QUEEN_LOOP && queen_loop()) {
             return;
         }
 
@@ -3725,6 +3743,270 @@ class Bot {
         return QUEEN_MODE && ct.get_id() == queen_id;
     }
 
+    // Enemy heads that pushed her off a loop, kept until unseen for QL_AWAY_ROUNDS.
+    void ql_watch() {
+        for (Ghost& foe : ql_foes) {
+            for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+                if (enemy_head_ids[k] == foe.id) {
+                    foe.pos = enemy_heads[k];
+                    foe.round = round;
+                }
+            }
+        }
+        ql_foes.erase(std::remove_if(ql_foes.begin(), ql_foes.end(),
+                                     [this](Ghost const& foe) { return round - foe.round >= QL_AWAY_ROUNDS; }),
+                      ql_foes.end());
+    }
+
+    // Margin = an enemy head's path distance to a tile minus its full sprint reach (free plus paid steps).
+    void ql_map(bool looping) {
+        if (ql_gap.empty()) {
+            ql_gap.assign(cells, 0);
+            ql_stamp.assign(cells, 0);
+        }
+        ql_mark++;
+        ql_pushers.clear();
+        auto full_reach = [](int parts) {
+            int const size = std::max(parts, static_cast<int>(unswbc::Constants::MIN_SIZE));
+            return (size + 3) / 4 + size - static_cast<int>(unswbc::Constants::MIN_SIZE);
+        };
+        auto spread = [&](int id, Position from, int seen, int reach) {
+            visit_mark++;
+            int queue_head = 0;
+            int queue_tail = 0;
+            int const origin = index_of(from);
+            visit_stamp[origin] = visit_mark;
+            step_count[origin] = 0;
+            bfs_queue[queue_tail++] = from;
+            bool pushed = false;
+            while (queue_head < queue_tail) {
+                Position const position = bfs_queue[queue_head++];
+                int const steps = step_count[index_of(position)];
+                if (steps - reach >= QL_ENTER_MARGIN - 1) {
+                    continue;
+                }
+                for (Direction const direction : Direction::get_direction_list()) {
+                    int const next = step_index(position, direction);
+                    if (next < 0 || visit_stamp[next] == visit_mark) {
+                        continue;
+                    }
+                    // Her own tiles are measured but not walked through.
+                    bool const open = enter_time[next] == 0 || enter_time[next] == 2;
+                    if (!open && std::find(trail.begin(), trail.end(), position_of(next)) == trail.end()) {
+                        continue;
+                    }
+                    visit_stamp[next] = visit_mark;
+                    step_count[next] = steps + 1;
+                    int const gap = steps + 1 - reach;
+                    if (ql_stamp[next] != ql_mark || gap < ql_gap[next]) {
+                        ql_stamp[next] = ql_mark;
+                        ql_gap[next] = gap;
+                    }
+                    pushed = pushed || (looping && gap < QL_MARGIN &&
+                                        std::find(ql_cells.begin(), ql_cells.end(), next) != ql_cells.end());
+                    if (open) {
+                        bfs_queue[queue_tail++] = position_of(next);
+                    }
+                }
+            }
+            if (pushed) {
+                ql_pushers.push_back(Ghost{id, from, seen});
+            }
+        };
+        for (std::size_t k = 0; k < enemy_heads.size(); k++) {
+            int const seen = visible_parts(enemy_head_ids[k]);
+            int parts = seen;
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.id == enemy_head_ids[k]) {
+                    parts = std::max(parts, ghost.parts);
+                }
+            }
+            // A body running out of view may be longer than it looks.
+            bool const cut = std::find(edge_ids.begin(), edge_ids.end(), enemy_head_ids[k]) != edge_ids.end();
+            int const size = cut ? std::max({parts, seen + 1, static_cast<int>(unswbc::Constants::INITIAL_LENGTH)}) : parts;
+            spread(enemy_head_ids[k], enemy_heads[k], round, full_reach(size));
+        }
+        for (Ghost const& ghost : ghosts) {
+            if (ghost.round != round || ghost.shared) {
+                spread(ghost.id, ghost.pos, ghost.round, full_reach(ghost.parts) + round - ghost.round);
+            }
+        }
+    }
+
+    int ql_margin(int cell) const {
+        return ql_stamp[cell] == ql_mark ? ql_gap[cell] : QL_ENTER_MARGIN;
+    }
+
+    // The 2x2 square whose north-west tile is `origin`, clockwise.
+    std::array<int, 4> ql_square(Position origin) const {
+        Position const east = origin.add_dir(dir_of(Direction::EAST));
+        return {index_of(origin), index_of(east), index_of(east.add_dir(dir_of(Direction::SOUTH))),
+                index_of(origin.add_dir(dir_of(Direction::SOUTH)))};
+    }
+
+    // Open outer sides of a square she may circle, or -1: inner edges open, every tile has a way out, no portal or
+    // pearl on or beside it, clear of her spawn and of the heads that pushed her off, margin kept on all four tiles.
+    int ql_square_ok(std::array<int, 4> const& square, int margin) const {
+        static constexpr std::array<Direction::Value, 4> ahead{Direction::EAST, Direction::SOUTH, Direction::WEST,
+                                                               Direction::NORTH};
+        int sides = 0;
+        int exits = 0;
+        for (std::size_t k = 0; k < square.size(); k++) {
+            int const cell = square[k];
+            Position const position = position_of(cell);
+            if (std::count(square.begin(), square.end(), cell) != 1 || edge_at(position, dir_of(ahead[k])) != EDGE_OPEN ||
+                enter_time[cell] >= BLOCKED_FOREVER || pearl_here[cell] || ql_margin(cell) < margin ||
+                manhattan(position, queen_home) <= QL_HOME_CLEAR) {
+                return -1;
+            }
+            for (Ghost const& foe : ql_foes) {
+                if (manhattan(position, foe.pos) <= QL_AWAY_TILES) {
+                    return -1;
+                }
+            }
+            int open = 0;
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge == EDGE_PORTAL) {
+                    return -1;
+                }
+                Position const beside = position.add_dir(direction);
+                int const outer = index_of(beside);
+                if (std::find(square.begin(), square.end(), outer) != square.end()) {
+                    continue;
+                }
+                if (pearl_here[outer]) {
+                    return -1;
+                }
+                for (Direction const far : Direction::get_direction_list()) {
+                    if (edge_at(beside, far) == EDGE_PORTAL) {
+                        return -1;
+                    }
+                }
+                if (edge == EDGE_OPEN) {
+                    open++;
+                    exits += enter_time[outer] < BLOCKED_FOREVER ? 1 : 0;
+                }
+            }
+            if (open == 0) {
+                return -1;
+            }
+            sides += open;
+        }
+        return exits >= QL_MIN_EXITS ? sides : -1;
+    }
+
+    // A pearl in view she can walk to within QL_PEARL_STEPS without giving up the margin.
+    bool ql_pearl_near() {
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        visit_stamp[index_of(head)] = visit_mark;
+        step_count[index_of(head)] = 0;
+        bfs_queue[queue_tail++] = head;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const steps = step_count[index_of(position)];
+            if (steps >= QL_PEARL_STEPS) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                if (edge_at(position, direction) != EDGE_OPEN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (visit_stamp[next] == visit_mark || seen_round[next] != round || enter_time[next] > steps + 1 ||
+                    ql_margin(next) < QL_MARGIN) {
+                    continue;
+                }
+                if (pearl_here[next]) {
+                    return true;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        return false;
+    }
+
+    bool ql_enterable(int cell) const {
+        return enter_time[cell] <= 1 && risk_at(cell) == 0;
+    }
+
+    // Takes the next loop step, or starts a loop on a square holding her head. False = she moves as usual.
+    bool queen_loop() {
+        if (!real_queen() || qs_plain || queen_home.x < 0) {
+            return false;
+        }
+        std::size_t const corners = ql_cells.size();
+        bool const on = ql_round == round - 1 && index_of(head) == ql_cells[static_cast<std::size_t>(ql_at)];
+        bool const idle = length > QL_MAX_LENGTH || round >= QL_UNTIL || tail_index < 0 || is_feeder() || is_leader() ||
+                          (QH_SCOUT && qh_on);
+        if (idle && !on) {
+            return false;
+        }
+        ql_map(on);
+        ql_foes.insert(ql_foes.end(), ql_pushers.begin(), ql_pushers.end());
+        if (idle || (hit_round == round && (hit_head || pay_head)) || ql_pearl_near()) {
+            return false;
+        }
+        std::array<int, 4> square = ql_cells;
+        int at = -1;
+        int turn = ql_turn;
+        if (on) {
+            int const next = (ql_at + ql_turn + static_cast<int>(corners)) % static_cast<int>(corners);
+            if (ql_square_ok(square, QL_MARGIN) < 0 || !ql_enterable(square[static_cast<std::size_t>(next)])) {
+                return false;
+            }
+            at = next;
+        } else {
+            if (POCKET_CAP > 0 && pocket_size(index_of(head)) < POCKET_CAP) {
+                return false;
+            }
+            Position const west = head.add_dir(dir_of(Direction::WEST));
+            std::array<Position, 4> const origins{head, west, west.add_dir(dir_of(Direction::NORTH)),
+                                                  head.add_dir(dir_of(Direction::NORTH))};
+            int best_value = -1;
+            for (std::size_t corner = 0; corner < corners; corner++) {
+                std::array<int, 4> const option = ql_square(origins[corner]);
+                int const sides = ql_square_ok(option, QL_ENTER_MARGIN);
+                if (sides < 0) {
+                    continue;
+                }
+                for (int const way : {1, -1}) {
+                    int const next = (static_cast<int>(corner) + way + static_cast<int>(corners)) % static_cast<int>(corners);
+                    int const cell = option[static_cast<std::size_t>(next)];
+                    // Prefer the step she would take anyway, then the more open square.
+                    int const value = sides + (cell == chosen_index ? 16 : 0);
+                    if (ql_enterable(cell) && value > best_value) {
+                        best_value = value;
+                        square = option;
+                        at = next;
+                        turn = way;
+                    }
+                }
+            }
+            if (at < 0) {
+                return false;
+            }
+        }
+        int const target = square[static_cast<std::size_t>(at)];
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(head, direction) != EDGE_OPEN || index_of(head.add_dir(direction)) != target) {
+                continue;
+            }
+            ql_cells = square;
+            ql_at = at;
+            ql_turn = turn;
+            ql_round = round;
+            ct.make_move(direction);
+            act_dirs.assign(1, direction);
+            return true;
+        }
+        return false;
+    }
+
     // Queen threat handling: with QUEEN_SAFETY on every map, except on a turn she is trapped.
     bool queen_wary() const {
         return QUEEN_SAFETY ? real_queen() && !qs_plain : is_queen();
@@ -5622,6 +5904,15 @@ class Bot {
     bool hit_head = false;
     bool pay_head = false;
     bool qs_plain = false;
+    std::vector<int> ql_gap;
+    std::vector<int> ql_stamp;
+    int ql_mark = 0;
+    std::array<int, 4> ql_cells{};
+    int ql_at = 0;
+    int ql_turn = 1;
+    int ql_round = -1000;
+    std::vector<Ghost> ql_foes;
+    std::vector<Ghost> ql_pushers;
     std::vector<int> peer_depth;
     std::vector<int> visit_stamp;
     std::vector<int> step_count;
