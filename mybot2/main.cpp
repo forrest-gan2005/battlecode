@@ -130,10 +130,10 @@ constexpr double QS_HIT_PENALTY = 3e8;
 constexpr double QS_PAY_PENALTY = 2e8;
 constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
-// Card #38: with no pearl close by, a 2-3 long queen circles a quiet 2x2 square and steps off by margin.
+// Card #38: with no pearl close by, a 2-3 long queen circles a quiet 2x2 square all game and steps off by margin.
+// Nobody feeds her and she feeds nobody: the leader is the longest other dragon.
 constexpr bool QUEEN_LOOP = false;
 constexpr int QL_MAX_LENGTH = 3;
-constexpr int QL_UNTIL = 300;
 constexpr int QL_MARGIN = 2;
 constexpr int QL_ENTER_MARGIN = 3;
 constexpr int QL_PEARL_STEPS = 4;
@@ -536,7 +536,7 @@ class Bot {
             if (QUEEN_SAFE_ROUND > 0 && is_queen() && round >= QUEEN_SAFE_ROUND && round - last_contact >= QUEEN_SAFE_SPAN) {
                 queen_game = true;
             }
-            if (QUEEN_GAME_FEED_ROUND > 0 && queen_game) {
+            if (QUEEN_GAME_FEED_ROUND > 0 && queen_game && !QUEEN_LOOP) {
                 feed_round = std::min(feed_round, QUEEN_GAME_FEED_ROUND);
             }
         }
@@ -1769,6 +1769,9 @@ class Bot {
             queen_id = id;
             enemy_queen_id = 1 - id;
         }
+        if (ql_unfed(id)) {
+            return;
+        }
         if (id == known_leader_id) {
             if (when >= known_leader_round) {
                 known_leader_len = len;
@@ -1798,6 +1801,9 @@ class Bot {
     }
 
     void hear_sighting(int id, int visible, Position pos, Direction facing) {
+        if (ql_unfed(id)) {
+            return;
+        }
         if (id == known_leader_id) {
             known_leader_len = std::max(known_leader_len, visible);
             known_leader_pos = pos;
@@ -2318,7 +2324,7 @@ class Bot {
             return;
         }
         bool const early = FEED_EARLY_ROUND > 0 && round > FEED_EARLY_ROUND && length <= FEED_EARLY_MAX;
-        if ((!feeding_phase() && !early) || is_queen() || known_leader_id < 0 ||
+        if ((!feeding_phase() && !early) || is_queen() || ql_unfed(ct.get_id()) || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_len < 2 ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return;
@@ -3743,6 +3749,11 @@ class Bot {
         return QUEEN_MODE && ct.get_id() == queen_id;
     }
 
+    // QUEEN_LOOP: our queen is never the leader and never a feeder.
+    bool ql_unfed(int id) const {
+        return QUEEN_LOOP && QUEEN_MODE && id >= 0 && id == queen_id;
+    }
+
     // Enemy heads that pushed her off a loop, kept until unseen for QL_AWAY_ROUNDS.
     void ql_watch() {
         for (Ghost& foe : ql_foes) {
@@ -3941,8 +3952,7 @@ class Bot {
         }
         std::size_t const corners = ql_cells.size();
         bool const on = ql_round == round - 1 && index_of(head) == ql_cells[static_cast<std::size_t>(ql_at)];
-        bool const idle = length > QL_MAX_LENGTH || round >= QL_UNTIL || tail_index < 0 || is_feeder() || is_leader() ||
-                          (QH_SCOUT && qh_on);
+        bool const idle = length > QL_MAX_LENGTH || tail_index < 0 || (QH_SCOUT && qh_on);
         if (idle && !on) {
             return false;
         }
@@ -5184,8 +5194,8 @@ class Bot {
 
     bool rally_ready() const {
         if ((QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
-            known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
-            !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+            ql_unfed(ct.get_id()) || known_leader_id == ct.get_id() || known_leader_round < 0 ||
+            round - known_leader_round > rally_fresh || !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
         return manhattan(head, known_leader_pos) > feeder_approach;
@@ -5217,7 +5227,8 @@ class Bot {
     }
 
     bool local_die() const {
-        if (!feeding_phase() || is_leader() || is_queen() || is_feeder() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+        if (!feeding_phase() || is_leader() || is_queen() || ql_unfed(ct.get_id()) || is_feeder() ||
+            ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
         for (Position const& enemy : enemy_heads) {

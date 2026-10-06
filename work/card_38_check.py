@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Card #38 queen-loop mechanism check (QUEEN_LOOP): does our queen circle a 2x2 square when no pearl is close, and
-does she step off when an enemy head comes near?
+"""Card #38 queen-loop mechanism check (QUEEN_LOOP, second build): does our queen circle a 2x2 square for the whole
+game when no pearl is close, does she step off when an enemy head comes near, and does the team stop feeding her and
+feed its longest other dragon?
 
 usage: python3 work/card_38_check.py --replays DIR --base base --candidate candidate --output FILE
 Replays are DIR/<tag>_<map>_<seed>_<side>.replay (work/ab3.py with KEEP=1), paired by (map, seed, side).
@@ -8,18 +9,19 @@ Replays are DIR/<tag>_<map>_<seed>_<side>.replay (work/ab3.py with KEEP=1), pair
 Everything is rebuilt from the replay alone; the game runner drops the bot's own log lines.
 
   decision   = one action of our queen (dragon 0 or 1 on our side). She acts once a round.
+  early / late = before round LATE / from round LATE on. LATE is r300: the first build stopped looping there, and it
+               is where the release bot starts feeding a living queen on maps over 600 tiles.
   lap step   = a one-tile move that brings her head back to where it was four actions ago, the four tiles in between
                forming a 2x2 square, each of those four actions a one-tile move. So the first three steps of a loop
                are not lap steps (they cannot be told from walking); every step after that is.
   loop       = a run of lap steps in a row, plus the three steps before it ("lead-in").
-  loop share = lap steps before round UNTIL / her decisions before round UNTIL.
+  loop share = lap steps / her decisions, over the whole game (also given early and late).
   steady loop = a loop of at least STEADY lap steps in a row (two more full laps after the first). The bot without
                the switch also walks a lap now and then, and circles inside a closed-off home; those are counted the
                same way on both sides.
-  on the loop = a decision right after a lap step, before round UNTIL, 2-3 long, on a square more than HOME_CLEAR
-               tiles from her spawn tile (only there can the new rule be the one moving her). Her square is the four
-               tiles of that lap; "going on" = her next action is a one-tile move to the next tile of the square in
-               the same direction.
+  on the loop = a decision right after a lap step, 2-3 long, on a square more than HOME_CLEAR tiles from her spawn
+               tile (only there can the new rule be the one moving her). Her square is the four tiles of that lap;
+               "going on" = her next action is a one-tile move to the next tile of the square in the same direction.
   view       = the 7x7 box around her head. Only what is in it counts as seen.
   reach      = how far an enemy head can come in one turn: free steps (ceil(length / 4)) plus one step per length
                it can pay down to 2. Length = the most parts of it she saw in the last 3 rounds; a body that runs
@@ -32,29 +34,41 @@ Everything is rebuilt from the replay alone; the game runner drops the bot's own
                and round she last saw them.
   near a pusher = a lap step on a square with a tile within AWAY_TILES of such a head's last seen tile, less than
                AWAY_ROUNDS rounds after she last saw it.
-  quiet      = a decision before round UNTIL with her 2-3 long, more than HOME_CLEAR tiles from her spawn tile, no
-               enemy head seen in the last 3 rounds, and no pearl in view within PEARL_STEPS walking steps. This is
-               the situation the card is about; it is counted the same way with the switch off and on.
-  tiles per 100 = different tiles her head stood on before round UNTIL, per 100 decisions.
+  quiet      = a decision with her 2-3 long, more than HOME_CLEAR tiles from her spawn tile, no enemy head seen in
+               the last 3 rounds, and no pearl in view within PEARL_STEPS walking steps. This is the situation the
+               card is about; it is counted the same way with the switch off and on, in every round.
+  tiles per 100 = different tiles her head stood on, per 100 decisions.
+  feed death = one of our dragons other than the queen ending its own turn with the "die" action (the replay's
+               suicide action; the engine records the death as "no valid action"). This is how the bot feeds.
+  feed pearl = a pearl that appears on a tile of such a dragon's body in the round it dies, counted until it is
+               eaten or gone. A dead dragon leaves a pearl on every other tile of its body, head first.
+  lead       = our longest dragon other than the queen at that moment (the replay cannot show which dragon the bot
+               itself calls its leader; with the switch on the bot's leader is the longest other dragon it knows of).
+  feed death by the queen / by the lead = within FEED_NEAR tiles of that head, the closer of the two; the bot drops
+               feeders up to 8 tiles ahead of the leader and one to the side.
 
-PASS RULE (fixed before any switch-on game was played; the constants are below):
-  1. target seen: with the switch off she has at least QUIET_MIN quiet decisions;
+PASS RULE (fixed before any switch-on game of this build was played; the constants are below):
+  1. target seen: with the switch off she has at least QUIET_MIN quiet decisions, she is alive at round LATE in at
+     least LATE_ALIVE_MIN games, and she eats at least BASE_FEED_MIN feed pearls (so there is a late game and a fed
+     queen for the change to act on);
   2. she loops: switch-on loop share is at least LOOP_SHARE_MIN, and at least LOOP_SHARE_GAIN above switch-off;
   3. she roams less: switch-on tiles per 100 is below switch-off;
-  4. she steps off, judged only if it comes up: with at least TIGHT_N switch-on decisions on the loop that are
+  4. she keeps circling late: with the switch on she has at least LATE_N late quiet decisions, and at least
+     LATE_QUIET_LAPS of them are lap steps. Fewer than LATE_N fails the check: then the run did not show it;
+  5. nobody feeds her: with the switch on our team eats at least FEED_N feed pearls while she is alive, and she
+     eats at most QUEEN_FEED_MAX of them. Fewer than FEED_N fails the check: then the run did not show it;
+  6. she steps off, judged only if it comes up: with at least TIGHT_N switch-on decisions on the loop that are
      tight, she goes on in at most TIGHT_STAY of them. When it is tight the new rule lets go and the normal move
      rules pick her step; they can pick the next tile of the square by themselves, so this is not expected to be
      zero. A loop that never let go would go on nearly every time;
-  5. she stays away, judged only if it comes up: with at least PUSH_N switch-on push-offs, at most NEAR_MAX of them
+  7. she stays away, judged only if it comes up: with at least PUSH_N switch-on push-offs, at most NEAR_MAX of them
      are followed by a lap step near that pusher (the normal move rules can walk a lap there by themselves);
-  6. the square is where the card says, judged only with at least PLACE_N switch-on lap steps in steady loops: at
+  8. the square is where the card says, judged only with at least PLACE_N switch-on lap steps in steady loops: at
      most PLACE_BAD of them more than switch-off's own count are within HOME_CLEAR tiles of her spawn tile, the
      same for a portal on or beside the square, and the same for steps taken 4 or longer.
-Rules 4-6 report "not seen" below their minimum and do not fail the check then.
-Deaths, rams, lengths, pearls eaten and wins are raw numbers and NOT part of the pass rule: 16 games per side cannot
-settle them, the outcome A/B does.
-Known before any switch-on game, from running this check on the 20 switch-off identity games (old 10 maps, both
-queens of each game, so 40 queen-games; output in the build's check-selftest folder): see the build's expectation.
+Rules 6-8 report "not seen" below their minimum and do not fail the check then.
+Deaths, rams, lengths, how games ended and wins are raw numbers and NOT part of the pass rule: 16 games per side
+cannot settle them, the outcome A/B does.
 """
 import argparse, glob, hashlib, json, os, sys, concurrent.futures as cf
 from collections import Counter, deque
@@ -63,10 +77,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 import replay
 
-# PASS RULE (fixed before any switch-on game)
+# PASS RULE (fixed before any switch-on game of this build)
 QUIET_MIN = 100        # switch-off quiet decisions needed to call the target seen
-LOOP_SHARE_MIN = 0.10  # switch-on lap steps per decision before round UNTIL (the card's "10%+")
+LATE_ALIVE_MIN = 2     # switch-off games with our queen alive at round LATE needed to call the target seen
+BASE_FEED_MIN = 20     # switch-off feed pearls eaten by our queen needed to call the target seen
+LOOP_SHARE_MIN = 0.10  # switch-on lap steps per decision (the card's "10%+")
 LOOP_SHARE_GAIN = 0.08 # and at least this much above switch-off
+LATE_N = 100           # switch-on late quiet decisions needed to judge the late loop
+LATE_QUIET_LAPS = 0.50 # share of those that must be lap steps
+FEED_N = 20            # switch-on feed pearls eaten by our team while she is alive, needed to judge feeding
+QUEEN_FEED_MAX = 0.10  # share of those she may eat
 TIGHT_N = 10           # switch-on tight decisions on the loop needed to judge stepping off
 TIGHT_STAY = 0.70      # share of those where she may go on (the normal move rules pick the same tile now and then)
 PUSH_N = 5             # switch-on push-offs needed to judge staying away
@@ -76,13 +96,14 @@ PLACE_BAD = 0.02       # share of those, beyond switch-off's own count, that may
 STEADY = 8             # lap steps in a row that make a steady loop
 
 # The bot's constants (mybot2/main.cpp)
-UNTIL = 300            # QL_UNTIL: no loop from this round on
+LATE = 300             # QUEEN_GAME_FEED_ROUND, and the first build's last loop round
 MAX_LEN = 3            # QL_MAX_LENGTH
 MARGIN = 2             # QL_MARGIN: she steps off below this
 PEARL_STEPS = 4        # QL_PEARL_STEPS
 HOME_CLEAR = 4         # QL_HOME_CLEAR
 AWAY_TILES = 4         # QL_AWAY_TILES
 AWAY_ROUNDS = 8        # QL_AWAY_ROUNDS
+FEED_NEAR = 9          # FEEDER_DROP_MAX + 1: the farthest a feeder dies from the leader's head
 VIEW = 3               # the bot sees a 7x7 box around its head
 GHOST_ROUNDS = 3       # how long the bot remembers an enemy head
 FREE_DIV = 4           # free steps per turn = ceil(length / 4)
@@ -90,7 +111,7 @@ MIN_SIZE = 2           # a dragon cannot pay itself below this
 START_SIZE = 3         # INITIAL_LENGTH: the least a half-hidden enemy is taken to be
 CAUSE = ['wall', 'self', 'body', 'headon', 'none']
 DIRS = 'NESW'
-MARKS = (100, 200, 300)
+MARKS = (100, 200, 300, 400)
 
 
 def load_map(text):
@@ -242,11 +263,23 @@ def one(job):
     lap = []             # was that action a lap step
     rounds = []          # round of each action
     stood = set()
+    stood_early = set()
     run = Counter()      # the loop she is on: lap steps, and how many of them break a placement rule
+    corpse = {}          # tile of a feeder's body -> round it died
+    feed_pearl = set()   # tiles holding a feed pearl
+    taken = {}           # tile -> round a feed pearl was picked up from it
     pending = None
     mover = None
     rnd = 0
     alive = True
+
+    def lead_of(skip=None):
+        """Our longest dragon other than the queen (and other than `skip`), or None."""
+        best = None
+        for did, b in bodies.items():
+            if b and did != queen and did != skip and team_of.get(did) == ours and (best is None or len(b) > len(bodies[best])):
+                best = did
+        return best
 
     def look():
         body = bodies[queen]
@@ -306,11 +339,10 @@ def one(job):
             frontier = nxt
         p = dict(rnd=rnd, start=head, end=head, len=len(body), n=0, seen=0, dead=False, cause=None,
                  foes=len(foes), pearl=pearl, safe_pearl=safe_pearl, on=False, other_lap=False,
-                 quiet=(rnd < UNTIL and MIN_SIZE <= len(body) <= MAX_LEN and not foes and not pearl
-                        and far(head, spawn) > HOME_CLEAR))
+                 quiet=(MIN_SIZE <= len(body) <= MAX_LEN and not foes and not pearl and far(head, spawn) > HOME_CLEAR))
         if lap and lap[-1]:
             cells = trail[-4:]
-            p['other_lap'] = not (rnd < UNTIL and len(body) <= MAX_LEN and all(far(t, spawn) > HOME_CLEAR for t in cells))
+            p['other_lap'] = not (len(body) <= MAX_LEN and all(far(t, spawn) > HOME_CLEAR for t in cells))
         if lap and lap[-1] and not p['other_lap']:
             p['on'] = True
             p['square'] = cells
@@ -345,17 +377,23 @@ def one(job):
         is_lap = (k >= 3 and all(single[-4:]) and trail[-5] == trail[-1] and square_of(cells, W, H) is not None)
         lap.append(is_lap)
         track.update(f"{p['rnd']}{p['kind']}{p['end']}{p['dead']}".encode())
-        early = p['rnd'] < UNTIL
+        when = '_early' if p['rnd'] < LATE else '_late'
+        short = MIN_SIZE <= p['len'] <= MAX_LEN
         c['decisions'] += 1
-        c['decisions_early'] += early
-        c['short_early'] += early and p['len'] <= MAX_LEN
+        c['decisions' + when] += 1
+        c['short'] += short
+        c['short' + when] += short
         c['quiet'] += p['quiet']
-        c['foe_seen_early'] += early and p['foes'] > 0
-        c['pearl_near_early'] += early and p['pearl']
+        c['quiet' + when] += p['quiet']
+        c['foe_seen'] += p['foes'] > 0
+        c['pearl_near'] += p['pearl']
         c['moves'] += p['kind'] == 'move'
+        c['queen_feed_deaths'] += p['kind'] == 'die'
         c['path_mismatch'] += p['kind'] == 'move' and not p['dead'] and p['seen'] != p['n']
-        if early and not p['dead']:
+        if not p['dead']:
             stood.add(p['end'])
+            if p['rnd'] < LATE:
+                stood_early.add(p['end'])
         if not is_lap:
             flush()
         else:
@@ -367,8 +405,9 @@ def one(job):
             for name, value in flags.items():
                 run[name] += value
             c['lap_steps'] += 1
-            c['lap_steps_early' if early else 'lap_steps_late'] += 1
+            c['lap_steps' + when] += 1
             c['lap_quiet'] += p['quiet']
+            c['lap_quiet' + when] += p['quiet']
             c['lap_long'] += flags['long']
             c['lap_home'] += flags['home']
             c['lap_portal'] += flags['portal']
@@ -379,7 +418,7 @@ def one(job):
                     c['push_then_near'] += 1
             if not (k >= 1 and lap[-2]):
                 c['loops'] += 1
-                c['lead_in_steps_early'] += sum(r < UNTIL for r in rounds[-4:-1])
+                c['lead_in_steps'] += 3
         c['other_lap_decisions'] += p['other_lap']
         if p['on']:
             went_on = one_step and p['end'] == p['expect']
@@ -391,14 +430,34 @@ def one(job):
             c['on_loop_true_tight_went_on'] += p['true_tight'] and went_on
             c['on_loop_true_tight_unseen'] += p['true_tight'] and not p['tight']
             if not went_on:
-                why = ('tight' if p['tight'] else 'late' if p['rnd'] >= UNTIL else 'pearl' if p['safe_pearl']
-                       else 'long' if p['len'] > MAX_LEN else 'blocked' if p['blocked'] else 'foe_seen' if p['foes'] else 'other')
+                why = ('tight' if p['tight'] else 'pearl' if p['safe_pearl'] else 'long' if p['len'] > MAX_LEN
+                       else 'blocked' if p['blocked'] else 'foe_seen' if p['foes'] else 'other')
                 c['left_' + why] += 1
                 c['left_died'] += p['dead']
                 if p['tight']:
                     c['push_offs'] += 1
                     for did, (at, seen) in p['pushed_by'].items():
                         pushers[did] = [at, seen, False]
+
+    def feed_death(did):
+        """One of our dragons other than the queen dies on purpose: where, and which tiles its pearls land on."""
+        body = bodies[did]
+        when = '_early' if rnd < LATE else '_late'
+        c['feed_deaths'] += 1
+        c['feed_deaths' + when] += 1
+        for cell in body:
+            corpse[cell] = rnd
+        if not (alive and bodies.get(queen)):
+            return
+        c['feed_deaths_alive'] += 1
+        lead = lead_of(did)
+        to_queen = far(body[0], bodies[queen][0])
+        to_lead = far(body[0], bodies[lead][0]) if lead is not None else None
+        by_queen = to_queen <= FEED_NEAR and (to_lead is None or to_queen <= to_lead)
+        by_lead = not by_queen and to_lead is not None and to_lead <= FEED_NEAR
+        c['feed_deaths_by_queen'] += by_queen
+        c['feed_deaths_by_lead'] += by_lead
+        c['feed_deaths_elsewhere'] += not by_queen and not by_lead
 
     for ev in root.pointer(3):
         which = ev.u16(0)
@@ -409,24 +468,36 @@ def one(job):
             mover = None
             rnd = pl.i32(0)
             for mark in MARKS:
-                if rnd == mark and alive and bodies.get(queen):
-                    c[f'alive_r{mark}'] += 1
-                    c[f'len_sum_r{mark}'] += len(bodies[queen])
+                if rnd == mark:
+                    lead = lead_of()
+                    c[f'games_r{mark}'] += 1
+                    c[f'lead_len_sum_r{mark}'] += len(bodies[lead]) if lead is not None else 0
+                    if alive and bodies.get(queen):
+                        c[f'alive_r{mark}'] += 1
+                        c[f'len_sum_r{mark}'] += len(bodies[queen])
         elif kind == 'tileChange':
             at = replay.point(pl.pointer(0))
             if pl.u32(0) == 1:
                 pearls.add(at)
+                if corpse.pop(at, -1) == rnd:
+                    feed_pearl.add(at)
+                    c['feed_pearls'] += 1
             else:
                 pearls.discard(at)
+                if at in feed_pearl:
+                    feed_pearl.discard(at)
+                    taken[at] = rnd
         elif kind == 'dragonAction':
             close()
             mover = pl.i32(0)
             a = pl.pointer(0)
+            what = a.u16(0) if a is not None else 0
+            if what == 2 and mover != queen and team_of.get(mover) == ours and bodies.get(mover):
+                feed_death(mover)
             if mover != queen or a is None or not bodies.get(queen):
                 continue
             pending = look()
-            what = a.u16(0)
-            pending['kind'] = 'move' if what == 0 else 'split' if what == 1 else 'other'
+            pending['kind'] = 'move' if what == 0 else 'split' if what == 1 else 'die' if what == 2 else 'other'
             try:
                 pending['n'] = max(1, len(a.pointer(0))) if what == 0 else 0
             except Exception:
@@ -438,6 +509,7 @@ def one(job):
             b = bodies.setdefault(did, deque())
             before = len(b)
             hopped = bool(b) and b[0] != h
+            lead = lead_of() if hopped and taken.get(h) == rnd else None
             if not b or b[0] != h:
                 if b:
                     c['hops'] += 1
@@ -449,16 +521,26 @@ def one(job):
             while len(b) > 1 and b[-1] != tp:
                 b.pop()
             # A step that leaves the dragon one longer ate a pearl.
-            if hopped and len(b) > before and team_of.get(did) == ours:
-                c['team_eats_r50'] += rnd <= 50
-                c['team_eats_r100'] += rnd <= 100
-                c['queen_eats_early'] += did == queen and rnd < UNTIL
+            if hopped and len(b) > before:
+                mine = team_of.get(did) == ours
+                if mine:
+                    c['team_eats_r50'] += rnd <= 50
+                    c['team_eats_r100'] += rnd <= 100
+                    c['queen_eats'] += did == queen
+                    c['queen_eats_early' if rnd < LATE else 'queen_eats_late'] += did == queen
+                if taken.get(h) == rnd:
+                    del taken[h]
+                    who = 'queen' if did == queen else 'lead' if did == lead else 'others' if mine else 'enemy'
+                    c['feed_eaten_by_' + who] += 1
+                    if mine and alive and bodies.get(queen):
+                        c['feed_eaten_alive'] += 1
+                        c['feed_eaten_alive_by_' + who] += 1
         elif kind == 'dragonSplit':
             pa, ch = pl.i32(0), pl.i32(4)
             bodies[pa] = deque(replay.point(x) for x in pl.pointer(0))
             bodies[ch] = deque(replay.point(x) for x in pl.pointer(1))
             team_of[pa] = team_of[ch] = ('A', 'B')[pl.u16(8)]
-            c['queen_splits_early'] += pa == queen and rnd < UNTIL
+            c['queen_splits'] += pa == queen
         elif kind == 'dragonDeath':
             did = pl.i32(0)
             r = pl.u16(4)
@@ -472,7 +554,7 @@ def one(job):
                 pending['cause'] = cause
             on_loop = bool(lap and lap[-1]) and not pending
             c['queen_deaths'] += 1
-            c['queen_deaths_early'] += rnd < UNTIL
+            c['queen_deaths_early'] += rnd < LATE
             c[f'queen_deaths_{cause}'] += 1
             c['queen_death_round_sum'] += rnd
             if cause == 'headon' and mover != queen:
@@ -483,9 +565,26 @@ def one(job):
             c['queen_died_on_loop'] += on_loop
     close()
     flush()
-    c['tiles_stood_early'] = len(stood)
+    theirs = 'B' if ours == 'A' else 'A'
+    their_queen = next((i for i in (0, 1) if team_of.get(i) == theirs), None)
+    queen_len = len(bodies.get(queen) or ()) if alive else 0
+    their_len = len(bodies.get(their_queen) or ()) if their_queen is not None else 0
+    lead = lead_of()
+    full = result.u16(2) == 1
+    c['tiles_stood'] = len(stood)
+    c['tiles_stood_early'] = len(stood_early)
     c['queen_alive_end'] = int(alive)
-    c['queen_final_len'] = len(bodies.get(queen) or ()) if alive else 0
+    c['queen_final_len'] = queen_len
+    c['queen_final_short'] = int(alive and queen_len <= MAX_LEN)
+    c['their_queen_alive_end'] = int(their_len > 0)
+    c['their_queen_final_len'] = their_len
+    c['lead_final_len'] = len(bodies[lead]) if lead is not None else 0
+    c['team_final_len'] = sum(len(b) for did, b in bodies.items() if team_of.get(did) == ours)
+    c['their_longest_final'] = max((len(b) for did, b in bodies.items() if team_of.get(did) == theirs), default=0)
+    c['full_length_games'] = int(full)
+    c['ended_by_elimination'] = int(not full)
+    c['queen_rule_games'] = int(full and queen_len != their_len)
+    c['queen_rule_wins'] = int(full and queen_len > their_len)
     return 'small' if W * H <= 600 else 'big', dict(c), track.hexdigest()
 
 
@@ -517,20 +616,29 @@ def pct(a, b):
 
 def view(s):
     g = max(1, s['games'])
-    left = {k: s['left_' + k] for k in ('tight', 'pearl', 'blocked', 'long', 'late', 'foe_seen', 'other') if s['left_' + k]}
+    left = {k: s['left_' + k] for k in ('tight', 'pearl', 'blocked', 'long', 'foe_seen', 'other') if s['left_' + k]}
     return {'games': s['games'], 'wins': s['win'],
             'queen_decisions': s['decisions'], 'queen_decisions_before_r300': s['decisions_early'],
-            'of_those_2_or_3_long': s['short_early'], 'share_2_or_3_long_pct': pct(s['short_early'], s['decisions_early']),
-            'quiet_decisions': s['quiet'], 'quiet_share_pct': pct(s['quiet'], s['decisions_early']),
-            'decisions_with_an_enemy_head_seen_before_r300': s['foe_seen_early'],
-            'decisions_with_a_pearl_within_4_steps_before_r300': s['pearl_near_early'],
-            'lap_steps_before_r300': s['lap_steps_early'], 'lap_steps_from_r300': s['lap_steps_late'],
-            'loop_share_pct': pct(s['lap_steps_early'], s['decisions_early']),
+            'queen_decisions_from_r300': s['decisions_late'],
+            'share_2_or_3_long_pct': pct(s['short'], s['decisions']),
+            'share_2_or_3_long_before_r300_pct': pct(s['short_early'], s['decisions_early']),
+            'share_2_or_3_long_from_r300_pct': pct(s['short_late'], s['decisions_late']),
+            'quiet_decisions': s['quiet'], 'quiet_decisions_before_r300': s['quiet_early'],
+            'quiet_decisions_from_r300': s['quiet_late'], 'quiet_share_pct': pct(s['quiet'], s['decisions']),
+            'decisions_with_an_enemy_head_seen': s['foe_seen'],
+            'decisions_with_a_pearl_within_4_steps': s['pearl_near'],
+            'lap_steps': s['lap_steps'], 'lap_steps_before_r300': s['lap_steps_early'],
+            'lap_steps_from_r300': s['lap_steps_late'],
+            'loop_share_pct': pct(s['lap_steps'], s['decisions']),
+            'loop_share_before_r300_pct': pct(s['lap_steps_early'], s['decisions_early']),
+            'loop_share_from_r300_pct': pct(s['lap_steps_late'], s['decisions_late']),
             'loops': s['loops'], 'lap_steps_per_loop': round(share(s['lap_steps'], s['loops']), 1),
-            'loop_share_with_lead_in_pct': pct(s['lap_steps_early'] + s['lead_in_steps_early'], s['decisions_early']),
+            'loop_share_with_lead_in_pct': pct(s['lap_steps'] + s['lead_in_steps'], s['decisions']),
             'lap_steps_on_quiet_decisions': s['lap_quiet'], 'loop_share_of_quiet_pct': pct(s['lap_quiet'], s['quiet']),
-            'tiles_stood_on_before_r300': s['tiles_stood_early'],
-            'tiles_per_100_decisions': round(100 * share(s['tiles_stood_early'], s['decisions_early']), 1),
+            'lap_steps_on_quiet_decisions_from_r300': s['lap_quiet_late'],
+            'loop_share_of_quiet_from_r300_pct': pct(s['lap_quiet_late'], s['quiet_late']),
+            'tiles_stood_on': s['tiles_stood'], 'tiles_stood_on_before_r300': s['tiles_stood_early'],
+            'tiles_per_100_decisions': round(100 * share(s['tiles_stood'], s['decisions']), 1),
             'steady_loops': s['steady_loops'], 'lap_steps_in_steady_loops': s['steady_n'],
             'steady_lap_steps_within_4_of_spawn': s['steady_home'],
             'steady_lap_steps_with_a_portal_on_or_beside': s['steady_portal'],
@@ -544,16 +652,36 @@ def view(s):
             'push_offs': s['push_offs'], 'push_offs_followed_by_a_lap_step_near_the_pusher': s['push_then_near'],
             'lap_steps_within_4_of_spawn': s['lap_home'], 'lap_steps_with_a_portal_on_or_beside': s['lap_portal'],
             'lap_steps_with_a_pearl_on_or_beside': s['lap_pearl'], 'lap_steps_4_or_longer': s['lap_long'],
+            'feed_deaths': s['feed_deaths'], 'feed_deaths_before_r300': s['feed_deaths_early'],
+            'feed_deaths_from_r300': s['feed_deaths_late'], 'feed_deaths_while_queen_alive': s['feed_deaths_alive'],
+            'of_those_by_the_queen': s['feed_deaths_by_queen'], 'of_those_by_the_lead': s['feed_deaths_by_lead'],
+            'of_those_elsewhere': s['feed_deaths_elsewhere'],
+            'feed_pearls': s['feed_pearls'],
+            'feed_pearls_eaten_by': {k: s['feed_eaten_by_' + k] for k in ('queen', 'lead', 'others', 'enemy')},
+            'feed_pearls_eaten_by_our_team_while_queen_alive': s['feed_eaten_alive'],
+            'of_those_by_the_queen_pct': pct(s['feed_eaten_alive_by_queen'], s['feed_eaten_alive']),
+            'feed_pearls_eaten_while_queen_alive_by': {k: s['feed_eaten_alive_by_' + k] for k in ('queen', 'lead', 'others')},
+            'queen_died_to_feed': s['queen_feed_deaths'],
+            'queen_pearls_eaten': s['queen_eats'], 'queen_pearls_eaten_before_r300': s['queen_eats_early'],
+            'queen_pearls_eaten_from_r300': s['queen_eats_late'], 'queen_splits': s['queen_splits'],
             'queen_deaths': s['queen_deaths'], 'queen_deaths_before_r300': s['queen_deaths_early'],
-            'queen_alive_at_end': s['queen_alive_end'],
+            'queen_alive_at_end': s['queen_alive_end'], 'queen_alive_at_end_2_or_3_long': s['queen_final_short'],
             'queen_deaths_by_cause': {k: s[f'queen_deaths_{k}'] for k in CAUSE + ['other'] if s[f'queen_deaths_{k}']},
             'queen_rammed_by_an_enemy_head': s['queen_rammed'], 'of_those_right_after_a_lap_step': s['queen_rammed_on_loop'],
             'queen_died_right_after_a_lap_step': s['queen_died_on_loop'], 'queen_rammed_a_head_herself': s['queen_own_ram'],
             'queen_death_round_mean': round(share(s['queen_death_round_sum'], s['queen_deaths']), 1),
             'queen_alive_and_mean_length_at': {f'r{m}': [s[f'alive_r{m}'], round(share(s[f'len_sum_r{m}'], s[f'alive_r{m}']), 2)]
                                                for m in MARKS},
+            'lead_mean_length_at': {f'r{m}': [s[f'games_r{m}'], round(share(s[f'lead_len_sum_r{m}'], s[f'games_r{m}']), 1)]
+                                    for m in MARKS},
             'queen_final_length_per_game': round(s['queen_final_len'] / g, 2),
-            'queen_pearls_eaten_before_r300': s['queen_eats_early'], 'queen_splits_before_r300': s['queen_splits_early'],
+            'their_queen_alive_at_end': s['their_queen_alive_end'],
+            'their_queen_final_length_per_game': round(s['their_queen_final_len'] / g, 2),
+            'lead_final_length_per_game': round(s['lead_final_len'] / g, 1),
+            'their_longest_final_length_per_game': round(s['their_longest_final'] / g, 1),
+            'team_final_length_per_game': round(s['team_final_len'] / g, 1),
+            'games_that_went_500_rounds': s['full_length_games'], 'games_ended_by_elimination': s['ended_by_elimination'],
+            'games_decided_on_the_queen_rule': s['queen_rule_games'], 'of_those_won': s['queen_rule_wins'],
             'team_pearls_eaten_by_r50_per_game': round(s['team_eats_r50'] / g, 1),
             'team_pearls_eaten_by_r100_per_game': round(s['team_eats_r100'] / g, 1)}
 
@@ -583,14 +711,21 @@ def main():
     bv, cv = view(ball), view(call)
 
     def loop_share(s):
-        return share(s['lap_steps_early'], s['decisions_early'])
+        return share(s['lap_steps'], s['decisions'])
 
     def tiles(s):
-        return share(s['tiles_stood_early'], s['decisions_early'])
+        return share(s['tiles_stood'], s['decisions'])
 
-    target_seen = ball['quiet'] >= QUIET_MIN
+    quiet_seen = ball['quiet'] >= QUIET_MIN
+    late_seen = ball['alive_r300'] >= LATE_ALIVE_MIN
+    fed_seen = ball['feed_eaten_by_queen'] >= BASE_FEED_MIN
+    target_seen = quiet_seen and late_seen and fed_seen
     loops_ok = loop_share(call) >= LOOP_SHARE_MIN and loop_share(call) - loop_share(ball) >= LOOP_SHARE_GAIN
     roam_ok = tiles(call) < tiles(ball)
+    late_loop_seen = call['quiet_late'] >= LATE_N
+    late_loop_ok = late_loop_seen and share(call['lap_quiet_late'], call['quiet_late']) >= LATE_QUIET_LAPS
+    unfed_seen = call['feed_eaten_alive'] >= FEED_N
+    unfed_ok = unfed_seen and share(call['feed_eaten_alive_by_queen'], call['feed_eaten_alive']) <= QUEEN_FEED_MAX
     tight_seen = call['on_loop_tight'] >= TIGHT_N
     tight_ok = bool(share(call['on_loop_tight_went_on'], call['on_loop_tight']) <= TIGHT_STAY) if tight_seen else None
     push_seen = call['push_offs'] >= PUSH_N
@@ -598,16 +733,31 @@ def main():
     place_seen = call['steady_n'] >= PLACE_N
     place_keys = ('steady_home', 'steady_portal', 'steady_long')
     place_ok = bool(all(call[k] - ball[k] <= PLACE_BAD * call['steady_n'] for k in place_keys)) if place_seen else None
-    passed = bool(target_seen and loops_ok and roam_ok and tight_ok is not False and push_ok is not False
-                  and place_ok is not False)
+    passed = bool(target_seen and loops_ok and roam_ok and late_loop_ok and unfed_ok and tight_ok is not False
+                  and push_ok is not False and place_ok is not False)
     why = []
-    if not target_seen:
+    if not quiet_seen:
         why.append(f"target not seen: switch-off shows {ball['quiet']} quiet decisions, needs {QUIET_MIN}")
+    if not late_seen:
+        why.append(f"target not seen: the switch-off queen is alive at r{LATE} in {ball['alive_r300']} games, needs {LATE_ALIVE_MIN}")
+    if not fed_seen:
+        why.append(f"target not seen: the switch-off queen ate {ball['feed_eaten_by_queen']} feed pearls, needs {BASE_FEED_MIN}")
     if not loops_ok:
         why.append(f"loop share {cv['loop_share_pct']}% with the switch on (switch off {bv['loop_share_pct']}%), needs "
                    f"{round(100 * LOOP_SHARE_MIN)}% and {round(100 * LOOP_SHARE_GAIN)} points above switch-off")
     if not roam_ok:
         why.append(f"tiles per 100 decisions did not go down ({bv['tiles_per_100_decisions']} -> {cv['tiles_per_100_decisions']})")
+    if not late_loop_seen:
+        why.append(f"the late loop did not come up: {call['quiet_late']} switch-on quiet decisions from r{LATE}, needs {LATE_N}")
+    elif not late_loop_ok:
+        why.append(f"from r{LATE} only {call['lap_quiet_late']} of {call['quiet_late']} switch-on quiet decisions were lap steps, "
+                   f"needs {round(100 * LATE_QUIET_LAPS)}%")
+    if not unfed_seen:
+        why.append(f"feeding with our queen alive did not come up: our team ate {call['feed_eaten_alive']} feed pearls with the "
+                   f"switch on, needs {FEED_N}")
+    elif not unfed_ok:
+        why.append(f"she ate {call['feed_eaten_alive_by_queen']} of the {call['feed_eaten_alive']} feed pearls our team ate while "
+                   f"she was alive, at most {round(100 * QUEEN_FEED_MAX)}% allowed")
     if tight_ok is False:
         why.append(f"she went on in {call['on_loop_tight_went_on']} of {call['on_loop_tight']} tight decisions on the loop")
     if push_ok is False:
@@ -621,17 +771,31 @@ def main():
         return '' if seen else f' (not seen: fewer than {need}, not judged)'
 
     note = (f"QUEEN_LOOP {'shown' if passed else 'NOT shown'} on {len(keys)} paired games. "
-            f"Loop share (lap steps per queen decision before r{UNTIL}): switch off {bv['loop_share_pct']}% "
-            f"({ball['lap_steps_early']} of {ball['decisions_early']}) -> switch on {cv['loop_share_pct']}% "
-            f"({call['lap_steps_early']} of {call['decisions_early']}); with the three lead-in steps of each loop "
-            f"{bv['loop_share_with_lead_in_pct']}% -> {cv['loop_share_with_lead_in_pct']}%; loops {ball['loops']} -> {call['loops']}, "
+            f"Loop share (lap steps per queen decision, whole game): switch off {bv['loop_share_pct']}% "
+            f"({ball['lap_steps']} of {ball['decisions']}) -> switch on {cv['loop_share_pct']}% "
+            f"({call['lap_steps']} of {call['decisions']}); before r{LATE} {bv['loop_share_before_r300_pct']}% -> "
+            f"{cv['loop_share_before_r300_pct']}%, from r{LATE} {bv['loop_share_from_r300_pct']}% "
+            f"({ball['lap_steps_late']} of {ball['decisions_late']}) -> {cv['loop_share_from_r300_pct']}% "
+            f"({call['lap_steps_late']} of {call['decisions_late']}); loops {ball['loops']} -> {call['loops']}, "
             f"lap steps per loop {bv['lap_steps_per_loop']} -> {cv['lap_steps_per_loop']}. "
             f"Quiet decisions (2-3 long, away from spawn, no enemy head seen, no pearl within {PEARL_STEPS} steps): "
-            f"{ball['quiet']} -> {call['quiet']}, of those lap steps {ball['lap_quiet']} -> {call['lap_quiet']}"
-            + seen_text(target_seen, QUIET_MIN)
-            + f". Share of her decisions before r{UNTIL} at length 2-3: {bv['share_2_or_3_long_pct']}% -> "
-            f"{cv['share_2_or_3_long_pct']}%. Tiles her head stood on per 100 decisions: {bv['tiles_per_100_decisions']} -> "
-            f"{cv['tiles_per_100_decisions']}. Stepping off: on the loop with a seen head inside reach + {MARGIN - 1} of the square, "
+            f"{ball['quiet']} -> {call['quiet']}, of those lap steps {ball['lap_quiet']} -> {call['lap_quiet']}; from r{LATE} "
+            f"{ball['quiet_late']} -> {call['quiet_late']}, of those lap steps {ball['lap_quiet_late']} -> {call['lap_quiet_late']}. "
+            f"Share of her decisions at length 2-3: before r{LATE} {bv['share_2_or_3_long_before_r300_pct']}% -> "
+            f"{cv['share_2_or_3_long_before_r300_pct']}%, from r{LATE} {bv['share_2_or_3_long_from_r300_pct']}% -> "
+            f"{cv['share_2_or_3_long_from_r300_pct']}%. Tiles her head stood on per 100 decisions: "
+            f"{bv['tiles_per_100_decisions']} -> {cv['tiles_per_100_decisions']}. "
+            f"Feeding: feed deaths (our dragons dying on purpose) {ball['feed_deaths']} -> {call['feed_deaths']}; while our queen "
+            f"was alive {ball['feed_deaths_alive']} -> {call['feed_deaths_alive']}, of those by the queen "
+            f"{ball['feed_deaths_by_queen']} -> {call['feed_deaths_by_queen']}, by our longest other dragon "
+            f"{ball['feed_deaths_by_lead']} -> {call['feed_deaths_by_lead']}, elsewhere {ball['feed_deaths_elsewhere']} -> "
+            f"{call['feed_deaths_elsewhere']}. Feed pearls our team ate while she was alive {ball['feed_eaten_alive']} -> "
+            f"{call['feed_eaten_alive']}: by the queen {ball['feed_eaten_alive_by_queen']} -> {call['feed_eaten_alive_by_queen']}, "
+            f"by our longest other dragon {ball['feed_eaten_alive_by_lead']} -> {call['feed_eaten_alive_by_lead']}, by the rest "
+            f"{ball['feed_eaten_alive_by_others']} -> {call['feed_eaten_alive_by_others']}. Queen pearls eaten from r{LATE} "
+            f"{ball['queen_eats_late']} -> {call['queen_eats_late']}; queen died to feed {ball['queen_feed_deaths']} -> "
+            f"{call['queen_feed_deaths']}. "
+            f"Stepping off: on the loop with a seen head inside reach + {MARGIN - 1} of the square, "
             f"switch off {ball['on_loop_tight']} decisions, went on in {ball['on_loop_tight_went_on']} -> "
             f"switch on {call['on_loop_tight']} decisions, went on in {call['on_loop_tight_went_on']}"
             + seen_text(tight_seen, TIGHT_N)
@@ -648,18 +812,27 @@ def main():
             + f". Not gated, {len(keys)} games each: queen deaths {bv['queen_deaths']} -> {cv['queen_deaths']}, rammed by an enemy head "
             f"{bv['queen_rammed_by_an_enemy_head']} -> {cv['queen_rammed_by_an_enemy_head']} (right after a lap step "
             f"{bv['of_those_right_after_a_lap_step']} -> {cv['of_those_right_after_a_lap_step']}), alive at the end "
-            f"{bv['queen_alive_at_end']} -> {cv['queen_alive_at_end']}, mean death round {bv['queen_death_round_mean']} -> "
-            f"{cv['queen_death_round_mean']}, queen pearls eaten before r{UNTIL} {bv['queen_pearls_eaten_before_r300']} -> "
-            f"{cv['queen_pearls_eaten_before_r300']}, team pearls by r100 per game {bv['team_pearls_eaten_by_r100_per_game']} -> "
-            f"{cv['team_pearls_eaten_by_r100_per_game']}, wins {bv['wins']} -> {cv['wins']}, pairs where the queen did exactly the "
-            f"same with the switch on and off {same_track} of {len(keys)}"
+            f"{bv['queen_alive_at_end']} -> {cv['queen_alive_at_end']} (2-3 long {bv['queen_alive_at_end_2_or_3_long']} -> "
+            f"{cv['queen_alive_at_end_2_or_3_long']}), their queen alive at the end {bv['their_queen_alive_at_end']} -> "
+            f"{cv['their_queen_alive_at_end']}, mean death round {bv['queen_death_round_mean']} -> "
+            f"{cv['queen_death_round_mean']}, games decided on the queen rule {bv['games_decided_on_the_queen_rule']} (won "
+            f"{bv['of_those_won']}) -> {cv['games_decided_on_the_queen_rule']} (won {cv['of_those_won']}), our longest other dragon "
+            f"at the end {bv['lead_final_length_per_game']} -> {cv['lead_final_length_per_game']} per game (their longest "
+            f"{bv['their_longest_final_length_per_game']} -> {cv['their_longest_final_length_per_game']}), team pearls by r100 per "
+            f"game {bv['team_pearls_eaten_by_r100_per_game']} -> {cv['team_pearls_eaten_by_r100_per_game']}, wins {bv['wins']} -> "
+            f"{cv['wins']}, pairs where the queen did exactly the same with the switch on and off {same_track} of {len(keys)}"
             + ('' if passed else '. NOT shown: ' + '; '.join(why)))
     out = {'passed': passed, 'note': note, 'target_seen': bool(target_seen),
            'pairs': len(keys), 'pairs_with_identical_queen_track': same_track, 'maps': sorted({k[0] for k in keys}),
-           'pass_rule': {'quiet_min': QUIET_MIN, 'loop_share_min': LOOP_SHARE_MIN, 'loop_share_gain': LOOP_SHARE_GAIN,
+           'pass_rule': {'quiet_min': QUIET_MIN, 'late_alive_min': LATE_ALIVE_MIN, 'base_feed_min': BASE_FEED_MIN,
+                         'loop_share_min': LOOP_SHARE_MIN, 'loop_share_gain': LOOP_SHARE_GAIN,
+                         'late_n': LATE_N, 'late_quiet_laps': LATE_QUIET_LAPS, 'feed_n': FEED_N, 'queen_feed_max': QUEEN_FEED_MAX,
                          'tight_n': TIGHT_N, 'tight_stay': TIGHT_STAY, 'push_n': PUSH_N, 'near_max': NEAR_MAX,
                          'place_n': PLACE_N, 'place_bad': PLACE_BAD, 'steady': STEADY,
-                         'target_seen': bool(target_seen), 'loops_ok': bool(loops_ok), 'roams_less_ok': bool(roam_ok),
+                         'target_quiet_seen': bool(quiet_seen), 'target_late_queen_seen': bool(late_seen),
+                         'target_fed_queen_seen': bool(fed_seen), 'loops_ok': bool(loops_ok), 'roams_less_ok': bool(roam_ok),
+                         'late_loop_seen': bool(late_loop_seen), 'late_loop_ok': bool(late_loop_ok),
+                         'not_fed_seen': bool(unfed_seen), 'not_fed_ok': bool(unfed_ok),
                          'step_off_rule_seen': bool(tight_seen), 'step_off_rule_ok': tight_ok,
                          'stay_away_rule_seen': bool(push_seen), 'stay_away_rule_ok': push_ok,
                          'placement_rule_seen': bool(place_seen), 'placement_rule_ok': place_ok},
@@ -674,11 +847,15 @@ def main():
                       'a lap step needs a full lap, so the first three steps of every loop are not counted in the loop share '
                       '(the lead-in line adds them back); "tight" is her view of the danger, not the truth: enemies out of '
                       'sight and enemies longer than they look are outside it, and the "real length" counts show how often '
-                      'that mattered for heads in view; why she left a loop is a rebuild in a fixed order (tight, round 300, '
-                      'pearl, length, next tile taken, a head seen, other), not the bot\'s own reason; the square-quality '
-                      'rules (open sides, exits, not a pocket) are not rebuilt; deaths, lengths, pearls and wins are raw '
-                      'counts from a small sample against the release bot, which does not hunt queens, so they are not '
-                      'evidence of an outcome')}
+                      'that mattered for heads in view; why she left a loop is a rebuild in a fixed order (tight, pearl, '
+                      'length, next tile taken, a head seen, other), not the bot\'s own reason; the square-quality rules '
+                      '(open sides, exits, not a pocket) are not rebuilt; a feed death is any of our dragons other than the '
+                      'queen dying by its own action, which is how the bot feeds; a feed pearl is a pearl that appears on such '
+                      'a body in the round it dies; "by the queen / by the lead" places a feed death by distance, and the lead is our longest '
+                      'other dragon, which need not be the dragon the bot calls its leader; a game counts as decided on the '
+                      'queen rule when it went 500 rounds and the two queens ended at different lengths (dead = 0); deaths, '
+                      'lengths, how games ended and wins are raw counts from a small sample against the release bot, which '
+                      'does not hunt queens, so they are not evidence of an outcome')}
     with open(a.output, 'w') as f:
         json.dump(out, f, indent=2)
         f.write('\n')
