@@ -11,6 +11,9 @@ from card_names import card_ref
 from jobs import append_event, busy, eta_minutes, iso_time, job_start, read, write
 
 
+WAITER_FRESH = 15 * 60
+
+
 def compact(text, limit=300):
     text = ' '.join(str(text).split())
     return text if len(text) <= limit else text[:limit - 1] + '…'
@@ -199,6 +202,9 @@ def waiting_cards(root, resources, path):
         if file.parent == Path(path) or (file.parent / 'done.json').exists() or busy(file.parent / 'lease'):
             continue
         try:
+            # A queued job is rewritten on every check; an old file is a job that was dropped while waiting.
+            if time.time() - file.stat().st_mtime > WAITER_FRESH:
+                continue
             state = read(file, {})
         except (OSError, ValueError):
             continue

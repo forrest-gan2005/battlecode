@@ -164,6 +164,16 @@ class LateTests(unittest.TestCase):
         Path(self.spec['log']).write_text('')
         self.assertEqual(late.ai_reason(self.spec), 'still editing and checking the change')
 
+    def test_dropped_waiting_job_is_not_listed_as_waiting(self):
+        fresh = self.root / 'card-30/attempt-1/jobs/build'
+        dropped = self.root / 'card-42/attempt-1/jobs/reply'
+        for job, number in ((fresh, 30), (dropped, 42)):
+            jobs.write(job / 'late.json', {'phase': 'waiting', 'resources': ['ai'],
+                                           'card': {'number': number, 'title': '', 'name': ''}})
+        old = dropped.joinpath('late.json').stat().st_mtime - late.WAITER_FRESH - 60
+        os.utime(dropped / 'late.json', (old, old))
+        self.assertEqual([c['number'] for c in late.waiting_cards(self.root, ['ai'], self.path)], [30])
+
     def test_late_holder_covers_waiters_before_its_notice(self):
         holder = self.root / 'ladder/attempt-1/jobs/ladder'
         jobs.write(holder / 'job.json', {'number': 0, 'title': 'Ladder review', 'step': 'ladder',
