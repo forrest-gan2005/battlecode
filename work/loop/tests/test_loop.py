@@ -42,7 +42,7 @@ class JobTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(HERE / 'runner.py'), '--once', '--dry-run',
                   '--out', str(self.root / 'must-not-exist')], env=env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for text in ('ab3:', 'wait/classify Zhe reply', 'auto-pass'):
+        for text in ('ab3:', 'wait/classify look reply from Zhe or a teammate', 'auto-pass'):
             self.assertIn(text, result.stdout)
         self.assertFalse((self.root / 'must-not-exist').exists())
         self.assertLess(result.stdout.index('#1 '), result.stdout.index('#10 '))

@@ -67,11 +67,11 @@ The runner resumes the next step from the label alone, without a private queue o
 |---|---|---|
 | `status:untested` | People | New card awaiting agreement to run; then `status:ready`. |
 | `status:ready` | Runner | Pick by priority; tasks go directly to building; Zhe's idea cards go to `status:needs-info`, others there if unclear, otherwise `status:building`. |
-| `status:needs-info` | AI, then author | AI posts “what if…” edge-case questions and @mentions the author through meowbot. Author answers on the card or in Discord; record Discord answers on the card, then build. No timeout. |
+| `status:needs-info` | AI, then author | AI posts “what if…” edge-case questions and @mentions the author through meowbot. The author, or a teammate answering for them, answers on the card or in Discord; record Discord answers on the card, then build. No timeout. |
 | `status:building` | AI | Tasks follow the checks above and go directly to tested; ideas implement a default-off toggle. Build passes and toggle-off play is replay-identical to the current base on the old 10 maps. Then `status:needs-look`; failure returns to `status:ready` with a note explaining what needs fixing. |
-| `status:needs-look` | AI, then author | Small run checks whether the intended behaviour happens; keep a few replays picked by `tools/smoke_pick.py`. Zhe watches 2–3 and says “that's what I meant”; otherwise revise in `status:building`. This check auto-passes for other authors. Then `status:testing`. |
+| `status:needs-look` | AI, then author | Small run checks whether the intended behaviour happens; keep a few replays picked by `tools/smoke_pick.py`. Zhe, or a teammate answering for him, watches 2–3 and says “that's what I meant”; otherwise revise in `status:building`. This check auto-passes for other authors. Then `status:testing`. |
 | `status:testing` | Runner and AI | Run local outcome A/B, one batch at a time; post results and move to `status:tested`. |
-| `status:tested` | Author | Results are ready, not accepted. Author chooses a candidate (optionally requesting smoke), rejection, or inconclusive. AI may promote its own idea. |
+| `status:tested` | Author or a teammate | Results are ready, not accepted. The author, or a teammate answering for them, chooses a candidate (optionally requesting smoke), rejection, or inconclusive. AI may promote its own idea. |
 | `status:candidate` | AI prepares; people approve | Open a candidate PR; meowbot posts approve buttons. After required OKs and release checks, merge to main and submit that exact merge commit; then `status:smoke` if requested, otherwise `status:kept`. |
 | `status:smoke` | Human or approve action starts; owner decides | Optional online behaviour check. Area owner plus one other OK chooses keep or rollback; finish as kept, rejected, or inconclusive, recording any rollback. |
 | `status:kept` | Nobody pending | Accepted release; final. |
@@ -189,7 +189,7 @@ Stopping the poller leaves detached jobs running; restarting reuses their leases
 A killed supervisor's child retains its lease; once all children exit, an unfinished job can resume on the next poll.
 Step errors stay visible in status/logs; fix the cause and remove only that job's `done.json` to retry. Build failures return to ready.
 Board comments record the base, implementation commit, job paths and replay evidence; human-waiting cards never time out.
-For Zhe cards created by a bot, set `LOOP_ZHE_LOGIN` to Zhe's GitHub login; copied Discord replies use `Answer from Zhe: ...`.
+Any teammate may answer for another's card; the author's own say is kept for the candidate OK. On `by:zhe` cards a reply counts when it comes from Zhe's or QWQ's own GitHub login (`LOOP_ZHE_LOGIN`, `LOOP_QWQ_LOGIN` override them) or is a copied Discord reply, `Answer from Zhe: ...` / `Answer from QWQ: ...` / `Answer from jun: ...` (what `/answer` writes). A bare comment from jun's account does not count there, because tools post under it.
 Optional engine setup: `--game-env PATH=/path/to/bc127/bin:$PATH`; `--game-env NOSANDBOX=1` explicitly selects native games.
 Held and fresh maps use two games per variant; their `_T` copies are generated locally, and the old 10 use eight.
 Incomplete batches are retained as incomplete files and never produce a verdict; result tables distinguish unmeasured lengths.

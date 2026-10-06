@@ -74,7 +74,7 @@ else:
         self.assertLess(p.stdout.index('#5 '), p.stdout.index('#7 '))
         self.assertLess(p.stdout.index('#5 '), p.stdout.index('#9 '))
         self.assertIn('human answer found → building', p.stdout)
-        self.assertIn('wait/classify Zhe reply', p.stdout)
+        self.assertIn('wait/classify look reply from Zhe or a teammate', p.stdout)
         self.assertIn('WORKERS=6 KEEP off', p.stdout)
         self.assertNotIn('#15 ', p.stdout)
         self.assertNotIn('#16 ', p.stdout)
@@ -328,7 +328,7 @@ if __name__ == '__main__':
 class DecisionTests(unittest.TestCase):
     """A reply after the results is the decision (/answer or a GitHub comment)."""
 
-    def run_case(self, decision, by='junsing', who='someone'):
+    def run_case(self, decision, by='junsing', who='someone', body='ship it'):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -337,7 +337,7 @@ class DecisionTests(unittest.TestCase):
         out = Path(tempfile.mkdtemp())
         c = card(7, 'tested', by, comments=[
             comment('Results <!-- card-loop {"phase": "tested", "attempt": 1} -->', '2026-10-04T10:00:00Z', 'juntegral'),
-            comment('ship it', '2026-10-04T11:00:00Z', who)])
+            comment(body, '2026-10-04T11:00:00Z', who)])
         def job(*args, **kwargs):  # the light job writes its classification
             runner.write(out / 'decide.json', {'decision': decision})
             return True
@@ -363,8 +363,14 @@ class DecisionTests(unittest.TestCase):
         self.assertFalse(handled)
         tr.assert_not_called()
 
-    def test_zhe_card_ignores_other_people(self):
-        handled, tr, na = self.run_case('candidate', by='zhe', who='someone')
-        self.assertFalse(handled)
-        handled, tr, na = self.run_case('candidate', by='zhe', who='zhex0121')
-        self.assertTrue(handled)
+    def test_zhe_card_takes_teammates_and_ignores_others(self):
+        for who, body in (('someone', 'ship it'), ('juntegral', 'ship it'),
+                          ('juntegral', 'Online check: no gain.\n\nPosted by Claude for jun.')):
+            handled, tr, na = self.run_case('candidate', by='zhe', who=who, body=body)
+            self.assertFalse(handled, (who, body))
+            tr.assert_not_called()
+        for who, body in (('zhex0121', 'ship it'), ('forrest-gan2005', 'ship it'),
+                          ('juntegral', 'Answer from QWQ: ship it'), ('juntegral', 'Answer from jun: ship it')):
+            handled, tr, na = self.run_case('candidate', by='zhe', who=who, body=body)
+            self.assertTrue(handled, (who, body))
+            self.assertEqual(tr.call_args.args[1], 'candidate')

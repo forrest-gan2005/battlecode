@@ -22,11 +22,14 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 GH_REPO = 'forrest-gan2005/battlecode'
 ZHE_LOGIN = 'zhex0121'
+QWQ_LOGIN = 'forrest-gan2005'
 SWARM = REPO.parent / 'unsw-swarm'
 KST = dt.timezone(dt.timedelta(hours=9))
 FREEZE = dt.datetime(2026, 10, 8, 20, tzinfo=KST)
 ACTIVE = {'ready', 'needs-info', 'building', 'needs-look', 'testing', 'candidate'}
 MARK = re.compile(r'<!-- card-loop (\{.*?\}) -->', re.S)
+# meowbot's copied Discord answer names the speaker.
+RELAYED = re.compile(r'^(?:Reply|Answer) from (?:Zhe|QWQ|jun)\s*:', re.I)
 PREFIXES = ('What we tried: ', 'Did it work: ', 'Who decides now: ')
 AI_IDENTICAL_RATIO = 0.95
 AI_NET_THRESHOLD = 9
@@ -79,7 +82,8 @@ def human_replies(card, after, zhe=False):
     # GitHub bot comments and our marker-bearing comments never count as answers.
     author = card.get('author', {}).get('login')
     # by:zhe cards created through meowbot may have the bot as issue author.
-    wanted = os.environ.get('LOOP_ZHE_LOGIN', ZHE_LOGIN) if zhe else None
+    # Tools post under jun's login, so there only a teammate's own login or a relayed answer counts.
+    own = {os.environ.get('LOOP_ZHE_LOGIN', ZHE_LOGIN), os.environ.get('LOOP_QWQ_LOGIN', QWQ_LOGIN)} - {''}
     result = []
     for c in card.get('comments', []):
         user = c.get('user') or c.get('author') or {}
@@ -87,17 +91,15 @@ def human_replies(card, after, zhe=False):
         body = c.get('body', '')
         if c.get('created_at', c.get('createdAt', '')) <= after:
             continue
-        forwarded = bool(re.search(r'^(?:Reply|Answer) from Zhe\s*:', body, re.I))
+        forwarded = bool(RELAYED.search(body))
         if MARK.search(body):
             continue
         if (user.get('type') == 'Bot' or login.endswith('[bot]')) and not forwarded:
             continue
         if body.startswith('Questions before we build') or '[check] by `card-loop`' in body or '[test] by `card-loop`' in body:
             continue
-        if zhe and login != wanted:
-            # meowbot's copied Discord answer must name the speaker explicitly.
-            if not forwarded:
-                continue
+        if zhe and login not in own and not forwarded:
+            continue
         result.append(c)
     return result
 
@@ -639,7 +641,7 @@ class Loop:
                 return
             replies = human_replies(card, looks[-1].get('created_at', looks[-1].get('createdAt', '')), zhe=True)
             if not replies:
-                self.notice(card, 'waiting for Zhe’s look reply')
+                self.notice(card, 'waiting for a look reply from Zhe or a teammate')
                 return
             response_id = digest(replies)
             # A new reply has its own light job; completed older classifications cannot be reused.
@@ -662,7 +664,7 @@ class Loop:
                 if answer == 'ok':
                     self.transition(card, 'testing')
                 elif answer == 'revise':
-                    self.new_attempt(card, meta, 'Zhe requested a revision; use the reply in the card comments.')
+                    self.new_attempt(card, meta, 'A revision was requested after the replay check; use the reply in the card comments.')
                     self.transition(card, 'building')
                 else:
                     self.notice(card, 'reply does not clearly approve or request a revision; waiting')
@@ -735,7 +737,7 @@ class Loop:
         if answer in ('candidate', 'rejected', 'inconclusive'):
             self.transition(card, answer)
         elif answer == 'revise':
-            self.new_attempt(card, meta, 'The author asked for a revision after the results; use the reply in the card comments.')
+            self.new_attempt(card, meta, 'A revision was requested after the results; use the reply in the card comments.')
             self.transition(card, 'building')
         else:
             self.notice(card, 'reply after the results is not a clear decision; waiting')
@@ -875,7 +877,7 @@ class Loop:
         elif s == 'building':
             action = 'resume build + identity → push card/N → mechanism batch (KEEP=1) → look → needs-look'
         elif s == 'needs-look':
-            action = 'wait/classify Zhe reply (ok / revise)' if 'by:zhe' in labels(card) else 'auto-pass → testing'
+            action = 'wait/classify look reply from Zhe or a teammate (ok / revise)' if 'by:zhe' in labels(card) else 'auto-pass → testing'
         elif s == 'tested':
             action = 'apply AI verdict thresholds; revise once, close, candidate, or wait for online pair test'
         elif s in ('rejected', 'inconclusive'):
