@@ -402,6 +402,16 @@ struct Ghost {
     char face = 0;
 };
 
+// Card #54: an enemy's size as this dragon has seen it, kept all game.
+struct Foe {
+    int id = -1;
+    int whole = 0;  // most parts with its whole body in view
+    int most = 0;   // most parts in one round
+    int last = 0;   // parts at the last sighting
+    bool cut = false;  // its body ran out of view then
+    int round = -1;
+};
+
 struct StrideEnd {
     double room = 0.0;
     bool reaches_tail = false;
@@ -1425,6 +1435,7 @@ class Bot {
         seen_ids.clear();
         seen_parts.clear();
         edge_ids.clear();
+        foe_now.clear();
         enemy_heads.clear();
         enemy_head_ids.clear();
         enemy_head_dirs.clear();
@@ -1471,6 +1482,9 @@ class Bot {
                 count_part(part->get_id());
                 if (QUEEN_SAFETY && on_view_edge(position)) {
                     edge_ids.push_back(part->get_id());
+                }
+                if (LONG_SAFETY && part->get_team() != ct.get_team()) {
+                    foe_now.push_back(part->get_id());
                 }
                 if (QUEEN_WAIT && part->get_team() == ct.get_team()) {
                     ally_part_stamp[index] = round;
@@ -1556,6 +1570,9 @@ class Bot {
         refresh_leader_zone();
         map_rivals();
         map_threats();
+        if (LONG_SAFETY) {
+            note_foes();
+        }
         if ((QUEEN_SAFETY && real_queen()) || long_wary()) {
             map_hits();
         }
@@ -2807,7 +2824,8 @@ class Bot {
                 }
                 visit_stamp[next] = visit_mark;
                 nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
-                if (node.depth + 1 >= 2 && threat_at(next) == 0 && !enemy_can_step_to(position_of(next))) {
+                if (node.depth + 1 >= 2 && threat_at(next) == 0 && !enemy_can_step_to(position_of(next)) &&
+                    !(long_wary() && risk_at(next) > 0)) {
                     safe.push_back(static_cast<int>(nodes.size()) - 1);
                 }
             }
@@ -3780,26 +3798,117 @@ class Bot {
         return (QUEEN_SAFETY && queen_wary()) || long_wary();
     }
 
-    // Card #54: no clean step left: a free stride, then a sprint paying at most LS_ESCAPE_COST, then a 2-child and stay.
+    // Card #54: no clean step left: a free stride, then a sprint paying at most LS_ESCAPE_COST, then a split, then
+    // the least bad tile.
     bool long_stuck(std::vector<Direction>& path) {
         int const keep = unswbc::Constants::MIN_SIZE;
-        if (hit_escape(path, false, 0) || hit_escape(path, true, 0)) {
+        auto run = [&]() {
             ct.make_moves(path);
             act_dirs = path;
             remember_path(path);
             return true;
+        };
+        if (hit_escape(path, false, 0) || hit_escape(path, true, 0)) {
+            return run();
         }
-        // Cornered on a tile in reach: the tail split main already does saves the body.
-        if ((hit_head || pay_head) && cornered && tail_index >= 0 && threat_at(tail_index) == 0 &&
-            ct.can_split(length - keep) && tail_room() >= CHILD_MIN_ROOM) {
+        // The head keeps 2 where it stands and the rest leaves from the tail end, when that end is clean.
+        if (tail_index >= 0 && risk_at(tail_index) == 0 && ct.can_split(length - keep) && tail_room() >= CHILD_MIN_ROOM) {
             split_off(length - keep);
             return true;
         }
-        if (ct.can_split(keep)) {
+        // Its own tile is clean: a 2-child off the tail and it stays.
+        if (!hit_head && !pay_head && ct.can_split(keep)) {
             split_off(keep);
             return true;
         }
-        return false;
+        int const step = least_bad();
+        if (step < 0) {
+            return false;
+        }
+        if (risk_at(step_dest[static_cast<std::size_t>(step)]) == 2 && (hit_escape(path, false, 1) || hit_escape(path, true, 1))) {
+            return run();
+        }
+        Direction const direction = Direction::get_direction_list()[static_cast<std::size_t>(step)];
+        ct.make_move(direction);
+        act_dirs.assign(1, direction);
+        return true;
+    }
+
+    // Card #54: the step when every step is in reach: an open tile over a pocket, a pay-ring tile over a hit-ring
+    // one, then the tile fewer enemy heads reach.
+    int least_bad() const {
+        int best = -1;
+        std::array<int, 4> best_key{};
+        for (int k = 0; k < 4; k++) {
+            std::size_t const slot = static_cast<std::size_t>(k);
+            int const dest = step_dest[slot];
+            if (dest < 0 || step_score[slot] <= SCORE_REJECT * 0.5) {
+                continue;
+            }
+            bool const marked = risk_at(dest) > 0;
+            std::array<int, 4> const key{step_closed[slot] ? 1 : 0, risk_at(dest), marked ? hit_count[dest] : 0,
+                                         marked ? pay_count[dest] : 0};
+            if (best < 0 || key < best_key ||
+                (key == best_key && step_score[slot] > step_score[static_cast<std::size_t>(best)])) {
+                best = k;
+                best_key = key;
+            }
+        }
+        return best;
+    }
+
+    Foe const* foe_of(int id) const {
+        auto const found = std::find_if(foes.begin(), foes.end(), [id](Foe const& foe) { return foe.id == id; });
+        return found == foes.end() ? nullptr : &*found;
+    }
+
+    // Card #54: how much of each enemy, the enemy queen aside, has been in view.
+    void note_foes() {
+        for (int const id : foe_now) {
+            if (id == enemy_queen_id) {
+                continue;
+            }
+            auto found = std::find_if(foes.begin(), foes.end(), [id](Foe const& foe) { return foe.id == id; });
+            if (found == foes.end()) {
+                foes.push_back(Foe{id});
+                found = foes.end() - 1;
+            }
+            if (found->round == round) {
+                continue;
+            }
+            int const seen = visible_parts(id);
+            found->round = round;
+            found->last = seen;
+            found->cut = std::find(edge_ids.begin(), edge_ids.end(), id) != edge_ids.end();
+            found->most = std::max(found->most, seen);
+            if (!found->cut && std::find(enemy_head_ids.begin(), enemy_head_ids.end(), id) != enemy_head_ids.end()) {
+                found->whole = std::max(found->whole, seen);
+            }
+            foe_longest = std::max(foe_longest, seen);
+        }
+    }
+
+    // Card #54: an enemy whose body runs out of view: the most we have seen of it if we know its whole length, else
+    // the longest enemy we have seen; never the stub in view.
+    int foe_size(int id, int seen) const {
+        Foe const* const foe = foe_of(id);
+        int const known = foe && foe->whole > seen ? foe->most : foe_longest;
+        return std::max({known, seen + 1, static_cast<int>(unswbc::Constants::INITIAL_LENGTH)});
+    }
+
+    int ghost_size(Ghost const& ghost) const {
+        Foe const* const foe = foe_of(ghost.id);
+        return foe && foe->cut ? std::max(ghost.parts, foe_size(ghost.id, foe->last)) : ghost.parts;
+    }
+
+    // Card #54: how many heads reach the tile, for free and at all. Call before stamping it.
+    void count_hit(int index, bool free) {
+        if (pay_stamp[index] != hit_mark) {
+            hit_count[index] = 0;
+            pay_count[index] = 0;
+        }
+        hit_count[index] += free ? 1 : 0;
+        pay_count[index]++;
     }
 
     bool on_view_edge(Position position) const {
@@ -3812,6 +3921,10 @@ class Bot {
         if (hit_stamp.empty()) {
             hit_stamp.assign(cells, 0);
             pay_stamp.assign(cells, 0);
+            if (LONG_SAFETY) {
+                hit_count.assign(cells, 0);
+                pay_count.assign(cells, 0);
+            }
         }
         hit_mark++;
         hit_round = round;
@@ -3830,9 +3943,12 @@ class Bot {
                     parts = std::max(parts, ghost.parts);
                 }
             }
-            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
             // A body running out of view may be longer than it looks.
             bool const cut = std::find(edge_ids.begin(), edge_ids.end(), enemy_head_ids[k]) != edge_ids.end();
+            if (longs && cut) {
+                parts = std::max(parts, foe_size(enemy_head_ids[k], seen));
+            }
+            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
             int const size = cut ? std::max({parts, seen + 1, static_cast<int>(unswbc::Constants::INITIAL_LENGTH)}) : parts;
             int const full = (SPRINT_FREE_DIV > 0 ? (size + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV : 1) + size - keep;
             int const reach = longs ? std::min(full, free + LS_PAY_STEPS) : std::max(free, std::min(full, QS_PAY_REACH));
@@ -3851,13 +3967,14 @@ class Bot {
             if (ghost.round == round || ghost.id == enemy_queen_id) {
                 continue;
             }
-            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (ghost.parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
+            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (ghost_size(ghost) + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
             int const spots = ghost_spots(ghost);
             visit_mark++;
             for (int k = 0; k < spots; k++) {
                 int const spot = index_of(bfs_queue[k]);
                 visit_stamp[spot] = visit_mark;
                 step_count[spot] = 0;
+                count_hit(spot, true);
                 hit_stamp[spot] = hit_mark;
                 pay_stamp[spot] = hit_mark;
             }
@@ -3884,6 +4001,9 @@ class Bot {
                 }
                 visit_stamp[next] = visit_mark;
                 step_count[next] = steps + 1;
+                if (LONG_SAFETY) {
+                    count_hit(next, steps < free);
+                }
                 if (steps < free) {
                     hit_stamp[next] = hit_mark;
                 }
@@ -5504,6 +5624,11 @@ class Bot {
             }
 
             score += 0.25 * ((TIE_SEED * 101 + ct.get_id() * 31 + round * 17 + static_cast<int>(k) * 7) % 5);
+            if (LONG_SAFETY) {
+                step_score[k] = score;
+                step_dest[k] = scored[k] ? dests[k] : -1;
+                step_closed[k] = closed[k];
+            }
 
             if (DEBUG_LOG) {
                 ct.output_log("r", round, "len", length, "trail", static_cast<int>(trail.size()), "dir",
@@ -5765,6 +5890,14 @@ class Bot {
     std::vector<int> pay_stamp;
     std::vector<int> edge_ids;
     std::vector<Direction> enemy_head_dirs;
+    std::vector<int> hit_count;
+    std::vector<int> pay_count;
+    std::vector<Foe> foes;
+    std::vector<int> foe_now;
+    int foe_longest = 0;
+    std::array<double, 4> step_score{};
+    std::array<int, 4> step_dest{};
+    std::array<bool, 4> step_closed{};
     bool hit_blocked = false;
     bool pay_open = false;
     bool hit_head = false;
