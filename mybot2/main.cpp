@@ -377,19 +377,18 @@ constexpr int QH_FRESH = 20;
 constexpr int QH_SPAWN_SLACK = 2;
 constexpr std::uint64_t QH_PING_KIND = 0x2B5;
 constexpr bool SN_TAIL_MOUTH = true;
-// Card #47: a dragon in a dead end pings it in all directions; one that splits there with no step left adds refill
-// tiles, which its newborn heads for when nothing else is in reach. Hearers add them to their map, pass a new dead
-// end on once, and pay UM_ENTER_COST to enter one with < UM_PAY pearls.
+// Card #47: a dragon that comes to stand in a dead end, or splits in one, pings it into its own neck (the ray that
+// leaves at its tail tip) that turn and the UM_RESEND after; its other three pings stay as they were. One that
+// splits there with no step left adds refill tiles, which its newborn heads for when nothing else is in reach.
+// Hearers add them to their map and pay UM_ENTER_COST to enter a dead end with < UM_PAY pearls.
 constexpr bool UPDATE_MAP = false;
 constexpr int UM_ROOM_MAX = 31;
 constexpr int UM_PEARLS_NONE = 15;
 constexpr int UM_PAY = 2;
 constexpr double UM_ENTER_COST = 600.0;
-constexpr int UM_COUNT_AGE = 1;
 constexpr int UM_SPOT_SPAN = 32;
 constexpr int UM_RESEND = 2;
 constexpr int UM_ENDS_MAX = 16;
-constexpr int UM_END_NEAR = 16;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
 constexpr double PENALTY_ENEMY_HEAD = 450.0;
@@ -1949,7 +1948,6 @@ class Bot {
                 ct.send_sonar(directions[k], pack_mouth(tail_cell));
             } else if (UPDATE_MAP && um_out[k] != 0) {
                 ct.send_sonar(directions[k], um_out[k]);
-                um_landed = um_landed || (um_aim[k] && um_out[k] == um_message);
             } else if (QG_SAFEZONE && zone_relay(k)) {
                 ct.send_sonar(directions[k], pack_zone());
             } else if (QH_SCOUT && (qh_on || (qh_notice && (round + static_cast<int>(k)) % 4 == 1))) {
@@ -1963,12 +1961,12 @@ class Bot {
     }
 
     // UPDATE_MAP wire: bits 52 and 51 = kind. Gate, way in, room, pearls (UM_PEARLS_NONE = not counted), two refill
-    // tiles as flagged offsets from the gate (0,0 = none; flag on an empty first one = passed-on copy).
-    std::uint64_t pack_split(int gate, int dir, int room, int pearls, std::vector<int> const& spots, bool relay = false) const {
+    // tiles as flagged offsets from the gate (0,0 = none).
+    std::uint64_t pack_split(int gate, int dir, int room, int pearls, std::vector<int> const& spots) const {
         Position const mouth = position_of(gate);
         std::uint64_t body = (1ULL << 52) | ((sonar_tag & 0x3) << 53) | (1ULL << 51) | (static_cast<std::uint64_t>(gate) & 0x3FFF) |
                              ((static_cast<std::uint64_t>(dir) & 0x3) << 14) | ((static_cast<std::uint64_t>(room) & 0x1F) << 16) |
-                             ((static_cast<std::uint64_t>(pearls) & 0xF) << 21) | (relay && spots.empty() ? 1ULL << 37 : 0ULL);
+                             ((static_cast<std::uint64_t>(pearls) & 0xF) << 21);
         for (std::size_t k = 0; k < 2 && k < spots.size(); k++) {
             Position const spot = position_of(spots[k]);
             std::uint64_t const dx = static_cast<std::uint64_t>(um_shift(mouth.x, spot.x, width) + UM_SPOT_SPAN) & 0x3F;
@@ -1993,12 +1991,7 @@ class Bot {
         }
         int const dir = static_cast<int>((body >> 14) & 0x3);
         int const pearls = static_cast<int>((body >> 21) & 0xF);
-        bool const relayed = ((body >> 25) & 0x1FFF) == ((1ULL << 12) | (UM_SPOT_SPAN << 6) | UM_SPOT_SPAN);
-        // A dead end new to us goes out once more, unless this copy was already passed on.
-        if (um_add_end(gate, dir, room, pearls, pearls != UM_PEARLS_NONE) && !relayed) {
-            um_relay = pack_split(gate, dir, room, pearls, {}, true);
-            um_relay_round = round;
-        }
+        um_add_end(gate, dir, room, pearls, pearls != UM_PEARLS_NONE);
         Position const mouth = position_of(gate);
         for (int k = 0; k < 2; k++) {
             std::uint64_t const spot = body >> (25 + 13 * k);
@@ -2031,8 +2024,8 @@ class Bot {
                !in_leader_pearl_zone(index);
     }
 
-    // True when the dead end is new to us. `counted`: `pearls` is a count made this round.
-    bool um_add_end(int gate, int dir, int room, int pearls, bool counted) {
+    // `counted`: `pearls` is a count made this round.
+    void um_add_end(int gate, int dir, int room, int pearls, bool counted) {
         int const inner = index_of(position_of(gate).add_dir(Direction::get_direction_list()[static_cast<std::size_t>(dir)]));
         for (DeadEnd& end : um_ends) {
             if (end.gate == gate && end.inner == inner) {
@@ -2041,7 +2034,7 @@ class Bot {
                     end.pearls = pearls;
                     end.heard = round;
                 }
-                return false;
+                return;
             }
         }
         // Full: the one whose gate is furthest from our head goes, or the new one if it is further still.
@@ -2053,14 +2046,13 @@ class Bot {
                 }
             }
             if (manhattan(head, position_of(gate)) >= manhattan(head, position_of(um_ends[far].gate))) {
-                return false;
+                return;
             }
             um_unmark();
             um_ends.erase(um_ends.begin() + static_cast<std::ptrdiff_t>(far));
         }
         um_ends.push_back(DeadEnd{gate, dir, inner, room, counted ? pearls : 0, counted ? round : -1000, {}});
         um_confirm();
-        return true;
     }
 
     void um_unmark() {
@@ -2256,41 +2248,17 @@ class Bot {
         return found;
     }
 
-    // Message for the child, 0 if there is no dead end to tell. A parent left in one with MIN_SIZE tiles and no
-    // step adds the refill tiles nearest the child. Those inside a dead end we know are left out: its pearl count
-    // speaks for them.
-    std::uint64_t um_compose() {
-        int gate = -1;
-        int dir = 0;
-        int room = 0;
-        int pearls = UM_PEARLS_NONE;
-        bool has_end = trail.size() > 1 && um_find_end(index_of(head), index_of(trail[1]), gate, dir, room, pearls);
-        bool const doomed = has_end && !any_enterable && length - turn_split == unswbc::Constants::MIN_SIZE;
-        Position const ref = um_child.empty() ? head : position_of(um_child.front());
-        if (has_end) {
-            um_add_end(gate, dir, room, pearls, true);
-        } else {
-            // Not in one herself: pass on the nearest dead end she knows, with its pearl count only if just heard.
-            pearls = UM_PEARLS_NONE;
-            int best = UM_END_NEAR + 1;
-            for (DeadEnd const& end : um_ends) {
-                int const gap = manhattan(ref, position_of(end.gate));
-                if (gap < best) {
-                    best = gap;
-                    gate = end.gate;
-                    dir = end.dir;
-                    room = end.room;
-                    pearls = round - end.heard <= UM_COUNT_AGE ? end.pearls : UM_PEARLS_NONE;
-                    has_end = true;
-                }
-            }
+    // Refill tiles for the child of a parent left in the dead end past `gate` with MIN_SIZE tiles and no step: the
+    // two nearest the child. Those inside a dead end we know are left out: its pearl count speaks for them.
+    std::vector<int> um_spots(int gate) const {
+        std::vector<int> spots;
+        if (any_enterable || length - turn_split != unswbc::Constants::MIN_SIZE) {
+            return spots;
         }
-        if (!has_end) {
-            return 0;
-        }
+        Position const ref = tail_index >= 0 ? trail[static_cast<std::size_t>(length - 1)] : head;
         std::vector<std::pair<int, int>> picks;
         Position const mouth = position_of(gate);
-        for (int cell = 0; doomed && cell < cells; cell++) {
+        for (int cell = 0; cell < cells; cell++) {
             if (!hot[cell] || um_mask[cell] != 0 || cell == gate) {
                 continue;
             }
@@ -2303,137 +2271,56 @@ class Bot {
             picks.emplace_back(manhattan(ref, position), cell);
         }
         std::sort(picks.begin(), picks.end());
-        std::vector<int> spots;
         for (std::size_t k = 0; k < picks.size() && k < 2; k++) {
             spots.push_back(picks[k].second);
         }
-        return pack_split(gate, dir, room, pearls, spots);
+        return spots;
     }
 
-    // Our body once this turn's action is done, head first; empty when the trail does not cover it.
-    std::vector<int> um_body() const {
-        std::vector<int> walked;
-        Position cell = head;
-        int eaten = 0;
-        for (Direction const direction : act_dirs) {
-            int const next = step_index(cell, direction);
-            if (next < 0) {
-                return {};
-            }
-            cell = position_of(next);
-            walked.push_back(next);
-            eaten += pearl_here[next] ? 1 : 0;
-        }
-        int const moved = static_cast<int>(walked.size());
-        int const last = length - turn_split - std::max(0, moved - sprint_free()) + eaten - 1;
-        if (last < 1 || last - moved >= static_cast<int>(trail.size())) {
-            return {};
-        }
-        std::vector<int> body;
-        for (int k = 0; k <= last; k++) {
-            body.push_back(k < moved ? walked[static_cast<std::size_t>(moved - 1 - k)]
-                                     : index_of(trail[static_cast<std::size_t>(k - moved)]));
-        }
-        return body;
-    }
-
-    // Will a ping in direction k land on the child (birth tiles on the split turn, a part in view later)?
-    // A ping into our own neck leaves from the tail tip, straight on.
-    bool um_aimed(std::size_t k, std::vector<int> const& body) const {
-        if (body.size() < 2) {
-            return false;
-        }
-        auto const directions = Direction::get_direction_list();
-        Position cell = position_of(body[0]);
-        Direction way = directions[k];
-        if (step_index(cell, way) == body[1]) {
-            Position const before = position_of(body[body.size() - 2]);
-            bool found = false;
-            for (Direction const direction : directions) {
-                if (step_index(before, direction) == body.back()) {
-                    way = direction;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                return false;
-            }
-            cell = position_of(body.back());
-        }
-        for (int n = 0; n < width + height; n++) {
-            int const next = step_index(cell, way);
-            if (next < 0 || std::find(body.begin(), body.end(), next) != body.end()) {
-                return false;
-            }
-            cell = position_of(next);
-            if (turn_split > 0 && std::find(um_child.begin(), um_child.end(), next) != um_child.end()) {
-                return true;
-            }
-            auto const* tile = ct.get_tile(cell);
-            auto const* part = tile ? tile->get_dragon() : nullptr;
-            if (part && part->get_id() != ct.get_id()) {
-                return turn_split == 0 && part->get_id() == um_child_id;
-            }
-            if (!tile && turn_split == 0) {
-                return false;
+    // Is `cell` inside the dead end we last announced on coming in?
+    bool um_staying(int cell) const {
+        for (std::size_t slot = 0; slot < um_ends.size(); slot++) {
+            if (um_ends[slot].gate == um_stay_gate && um_ends[slot].inner == um_stay_inner) {
+                return ((um_mask[cell] >> slot) & 1U) != 0;
             }
         }
         return false;
     }
 
-    // This turn's pings (um_out, 0 = none). Split turn: the child's message, all four. Otherwise all four carry
-    // the dead end we stand in after this turn's steps (`post`, reached from `neck`), else a dead end heard new
-    // this turn. For UM_RESEND turns after a split, while no copy was aimed at the child, the directions lined
-    // up with it carry the child's message again.
+    // This turn's ping (um_out, 0 = none): only the one into our own neck. On the turn we come to stand in a dead
+    // end (`post`, reached from `neck`) and on a turn we split in one, the message is that dead end, with refill
+    // tiles from a parent with no step left; it goes again on the UM_RESEND turns after.
     void um_plan(int post, int neck, bool ok) {
         um_out.fill(0);
-        um_aim.fill(false);
-        if (turn_split > 0) {
-            um_round = round;
-            um_landed = false;
-            um_child_id = -1;
-            um_child.clear();
-            if (tail_index >= 0) {
-                for (int k = length - 1; k >= length - turn_split; k--) {
-                    um_child.push_back(index_of(trail[static_cast<std::size_t>(k)]));
-                }
-            }
-            um_message = um_compose();
-            um_out.fill(um_message);
-        } else {
-            int gate = -1;
-            int dir = 0;
-            int room = 0;
-            int pearls = 0;
-            if (ok && um_find_end(post, neck, gate, dir, room, pearls)) {
-                um_add_end(gate, dir, room, pearls, true);
-                um_out.fill(pack_split(gate, dir, room, pearls, {}));
-            } else if (um_relay_round == round) {
-                um_out.fill(um_relay);
-            }
-            if (um_message == 0 || um_landed || round <= um_round || round - um_round > UM_RESEND) {
-                return;
-            }
-            if (um_child_id < 0) {
-                for (int const cell : um_child) {
-                    auto const* tile = ct.get_tile(position_of(cell));
-                    auto const* part = tile ? tile->get_dragon() : nullptr;
-                    if (part && part->get_team() == ct.get_team() && part->get_id() > ct.get_id()) {
-                        um_child_id = part->get_id();
-                        break;
-                    }
-                }
-            }
-        }
-        if (um_message == 0 || (turn_split == 0 && um_child_id < 0)) {
+        if (!ok) {
             return;
         }
-        std::vector<int> const body = um_body();
-        for (std::size_t k = 0; k < um_out.size(); k++) {
-            um_aim[k] = um_aimed(k, body);
-            if (um_aim[k]) {
+        auto const directions = Direction::get_direction_list();
+        int gate = -1;
+        int dir = 0;
+        int room = 0;
+        int pearls = 0;
+        bool const stayed = um_staying(post);
+        if (um_find_end(post, neck, gate, dir, room, pearls)) {
+            um_add_end(gate, dir, room, pearls, true);
+            if (!stayed) {
+                um_stay_gate = gate;
+                um_stay_inner = index_of(position_of(gate).add_dir(directions[static_cast<std::size_t>(dir)]));
+            }
+            if (!stayed || turn_split > 0) {
+                um_message = pack_split(gate, dir, room, pearls, turn_split > 0 ? um_spots(gate) : std::vector<int>{});
+                um_round = round;
+            }
+        } else if (!stayed) {
+            um_stay_gate = -1;
+        }
+        if (um_message == 0 || round - um_round > UM_RESEND) {
+            return;
+        }
+        for (std::size_t k = 0; k < directions.size(); k++) {
+            if (step_index(position_of(post), directions[k]) == neck) {
                 um_out[k] = um_message;
+                return;
             }
         }
     }
@@ -6279,14 +6166,10 @@ class Bot {
     int um_mark = 0;
     std::uint64_t um_message = 0;
     std::array<std::uint64_t, 4> um_out{};
-    std::uint64_t um_relay = 0;
-    int um_relay_round = -1000;
     std::uint16_t um_charged = 0;
     int um_round = -1000;
-    bool um_landed = false;
-    std::vector<int> um_child;
-    int um_child_id = -1;
-    std::array<bool, 4> um_aim{};
+    int um_stay_gate = -1;
+    int um_stay_inner = -1;
     std::vector<int> um_goals;
     int um_born = -1;
     bool um_pushing = false;

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Card #47 mechanism check (UPDATE_MAP), third build (Zhe's revision of 7 Oct, evening): refill tiles are sent
-only by a parent that splits while trapped in a dead end, and a newborn told such a tile heads for it when it has
-nothing else in reach, even from beyond its view and even when the parent is nearer. Build 2's dead-end alerts,
-the passing on, and the 2-length charge are unchanged and are measured again.
+"""Card #47 mechanism check (UPDATE_MAP), fourth build (Zhe's revision of 7 Oct, 23:56 KST): the dead-end message
+goes out in one direction only, into the sender's own neck (that ray leaves at her tail tip, where a baby is), on
+the turn she comes to stand in a dead end or splits in one and on the 2 turns after. Her other three pings are
+what main sends. Nobody passes a dead end on any more. The third build's refill tiles from a trapped parent, the
+newborn's push and the 2-length charge are unchanged and are measured again.
 
 usage: python3 work/card_47_check.py --replays DIR --base base --candidate candidate --output FILE
 Reads paired replays DIR/<tag>_<map>_<seed>_<side>.replay (side 0 = we are team A).
@@ -10,8 +11,20 @@ Reads paired replays DIR/<tag>_<map>_<seed>_<side>.replay (side 0 = we are team 
 Words:
   new message    our sonar message of the kind this card adds, read with our codec key. It carries a dead end (gate
                  tile, direction in, number of tiles, pearls counted inside or "not counted") plus up to two refill
-                 tiles. (The first two builds also had a form with three pearl spots and no dead end; the check
-                 still reads it so that old replays can be measured.)
+                 tiles. (The first two builds also had a form with three pearl spots and no dead end, and the
+                 second and third a "passed-on copy" mark; the check still reads both so that old replays can be
+                 measured.)
+  main message   any other message of ours: the leader report (who our longest dragon is and where), the queen
+                 ping (a hunter reporting the enemy queen), the portal-mouth warning, and the rest.
+  ray            one ping in one direction. A dragon may send one per direction per turn, so four a turn.
+  into her neck  the ping a dragon aims from its head at its own second tile. The engine lets that ray out at the
+                 tail tip, flying straight on, and the replay records where every ray starts: a ray that does not
+                 start at the sender's head is the one that went into the neck.
+  full turn      a turn on which the dragon sent a main message in all four directions (three rays from the head
+                 and the one into the neck).
+  new turn       a turn on which a dragon sent at least one new message.
+  sender inside  the dead end named in the message is true on the real map and the sender's head is in it at the
+                 end of that turn, or was at the end of one of her RESEND turns before (the repeat).
   refill tile    a tile the bot has watched refill quickly (or was told is one). In a message each named tile
                  carries a flag saying it is a refill tile; the first two builds also named pearls lying on the
                  ground, without the flag.
@@ -26,37 +39,56 @@ Words:
                  refill tiles there; counted so that Zhe can say whether it should.
   straight line  the parent's head, neck and third tile lie in one line at the split. A ping flies straight, and
                  the one sent back into her own body leaves from her tail tip, so only then can it land on the child.
-  told baby      the child of a trapped split whose split-turn message named at least one refill tile, hit by a
-                 ray carrying that message on the split turn or one of the RESEND turns after. "Not told": the same
-                 kind of child that no such ray hit. Children born standing on a named tile are left out of both.
+  told baby      (refill tiles) the child of a trapped split whose split-turn message named at least one refill
+                 tile, hit by a ray carrying that message on the split turn or one of the RESEND turns after. "Not
+                 told": the same kind of child that no such ray hit. Children born standing on a named tile are
+                 left out of both.
+  baby got it    (dead end) the child of a split in a dead end whose split-turn message carried that dead end, hit
+                 by a ray carrying that message on the split turn or one of the RESEND turns after.
   reached        the baby's head stood on a named tile within WATCH rounds of its birth. "Tiles away" is
                  straight-line steps, the short way round the map.
-  stay, wasted stay, alert, way in, told (a dead end), told-charged: as in the second build (see BUILT_AS and the
-                 notes in the output).
+  stay, wasted stay, way in, told (a dead end), told-charged: as in the second build (see BUILT_AS and the notes
+                 in the output). A stay is "announced" when the dragon sent its dead end at least once during it.
 
 Expectation, written before any game of this build with the switch on (thresholds are the constants below).
-Reference numbers come from running this same check on the second build's 16 + 16 behaviour-check games (kept in
-the card's attempt-2 folder; that build named tiles at every split and its babies had no push); they are quoted
-in build.json.
-  1. spots only when trapped: base sends no new message; at least ONLY_SHARE of the candidate's turns with a
-     message naming a tile are a trapped parent's split turn or one of the RESEND turns after it, and every named
-     tile is flagged as a refill tile.
-  2. those parents die: with at least MIN_BABIES trapped splits that named a refill tile, the parent is dead within
+Reference numbers come from running this same check on the third build's 16 + 16 behaviour-check games (kept in
+the card's attempt-3 folder; that build sent the message in all four directions and passed dead ends on); they
+are quoted in build.json.
+Sent as asked:
+  1. only into her own neck: base sends no new message; on at least BACK_SHARE of the candidate's new turns there
+     is exactly one new ray and it goes into the sender's neck.
+  2. only from inside: on at least INSIDE_SHARE of the candidate's new turns the sender is inside the dead end she
+     names (see "sender inside"). Passed-on copies and dead ends named from outside count against it.
+Main's messages are kept:
+  3. few slots taken: new rays are at most SLOT_MAX of all our rays in the candidate games.
+  4. the other three stay: with at least MIN_TURNS new turns that follow a full turn of the same dragon, on at
+     least OTHER_SHARE of them the other three directions each carry a main message.
+  5. leader reports kept: leader reports per dragon turn, candidate over base, averaged over the maps, is at least
+     LEADER_KEEP.
+  6. queen pings kept: over the maps where base sent at least QUEEN_MIN queen pings, the candidate sent at least
+     QUEEN_KEEP times as many. With no such map this is not measurable and takes no part.
+Babies get it:
+  7. the ray reaches the baby: with at least MIN_BABIES splits in a dead end whose message carried it, the baby
+     got it in at least BABY_SHARE of them.
+The unchanged part still works:
+  8. spots only when trapped: at least ONLY_SHARE of the candidate's turns with a message naming a tile are a
+     trapped parent's split turn or one of the RESEND turns after it, and every named tile is flagged as a refill
+     tile.
+  9. those parents die: with at least MIN_BABIES trapped splits that named a refill tile, the parent is dead within
      DOOMED_ROUNDS rounds in at least DOOMED_SHARE of them.
-  3. babies reach the tile: with at least MIN_BABIES told babies, at least REACH_SHARE of them reach a named tile.
-  4. told beat untold: with at least MIN_BABIES told and MIN_BABIES not-told babies, the told ones reach a named
-     tile at least TWICE as often. With fewer in either group this is not measurable and takes no part.
-  5. alerts still fire: at least ALERT_SHARE of the candidate's stays in a dead end have an alert.
-  6. true: at least TRUE_SHARE of the dead ends carried in candidate messages are true on the real map.
-  7. nothing else changes: every pair plays the same game up to the round of the candidate's first new message.
-passed = every measurable one of the seven. 1, 2, 5, 6 and 7 say "sent as specified, and the unchanged part still
-works" (fires_as_specified); target_seen says the games held the case (at least MIN_BABIES told babies); 3 and 4
-say told babies act on it (behaviour_shown).
-Reported, not part of the verdict: build 2's three behaviour points with their old limits (reach, told dragons
-stay out, fewer wasted stays; that code is unchanged), how many trapped splits were in a straight line, babies that
-got halfway or never got nearer, how many of a baby's head moves brought it nearer, whether it ate on the tile,
-deaths, stuck-outside splits, refill-tile rays that hit another teammate, and what the messages displace (leader
-reports, deaths, timeouts, CPU).
+ 10. stays are announced: at least ALERT_SHARE of the candidate's stays in a dead end are announced.
+ 11. true: at least TRUE_SHARE of the dead ends carried in candidate messages are true on the real map.
+ 12. nothing else changes: every pair plays the same game up to the round of the candidate's first new message.
+passed = every measurable one of the twelve. 1, 2 and 8 to 12 say "sent as asked, and the unchanged part still
+works" (fires_as_specified); target_seen says the games held the case (at least MIN_TURNS new turns and at least
+MIN_BABIES dead-end splits with a message); 3 to 7 say main's messages are kept and babies get the message
+(behaviour_shown).
+Reported, not part of the verdict (that code is unchanged and Zhe's reply did not touch it): build 2's three
+behaviour points and build 3's two baby points with their old limits (reach, told dragons stay out, fewer wasted
+stays; babies reach the tile, told beat untold). Also reported: how often the ray into the neck hits the child at
+a dead-end split in base (same geometry, main's message), full turns that follow a full turn when no new message
+is sent (the yardstick for point 4), the longest run of new turns by one dragon, the message mix per map, how many
+trapped splits were in a straight line, deaths, timeouts and CPU.
 """
 import argparse, concurrent.futures as cf, glob, hashlib, json, os, sys
 from collections import deque
@@ -87,39 +119,45 @@ REACH_SHARE = 0.2
 TWICE = 2.0
 SPOT_SPAN = 32
 PEARLS_NONE = 15
+BACK_SHARE = 0.99
+INSIDE_SHARE = 0.95
+SLOT_MAX = 0.01
+OTHER_SHARE = 0.95
+MIN_TURNS = 30
+LEADER_KEEP = 0.97
+QUEEN_MIN = 200
+QUEEN_KEEP = 0.75
+BABY_SHARE = 0.5
 LOG_MAX = 60
 BABY_LOG_MAX = 80
 DIRS = 'NESW'
+MAIN_KINDS = ('leader', 'mouth', 'queen', 'other')
 STEP = {'N': (0, -1), 'E': (1, 0), 'S': (0, 1), 'W': (-1, 0)}
 BUILT_AS = (
-    "How Zhe's revision (7 Oct, evening) was built on top of the second build. (1) Who sends refill tiles: only a "
-    "parent that splits while trapped. That means: she stands in a dead end she can vouch for (a shut area of at "
-    "most 31 tiles with the tile she came from as the only way out, all sides seen, no portal), she has no step she "
-    "may take this turn, and the split leaves her 2 tiles, so she cannot split again. In the second build's 32 "
-    "replays every such parent was dead within 3 rounds (270 of 270 in base, 217 of 217 in that candidate). Her "
-    "split message carries the dead end plus up to two refill tiles (tiles she has watched refill quickly, or was "
-    "told are such): the nearest to the child's head, within 32 tiles of the gate, not inside a dead end she knows. "
-    "Pearls lying on the ground are no longer sent by anyone. (2) Every other split sends no tiles. If the parent "
-    "is in a dead end, or knows one within 16 tiles of the child, the split message still carries that dead end, as "
-    "in the second build; otherwise there is no split message and the usual leader report goes out. (3) The baby: "
-    "a dragon that hears a message with refill tiles in its first three turns keeps them as goals. Each turn, if "
-    "none of the steps it can take has a pearl, a tile about to spawn, or a refill tile within the bot's usual "
-    "6-step pull that is its to take (the bot leaves a tile to a nearer teammate or enemy), and no other route is "
-    "set, the safe step that gets nearest the closest goal wins outright, the way the bot's existing route targets "
-    "do. Safe means: not a tile an enemy threatens, not beside a teammate's head, not a room it cannot fit in, and "
-    "not more than 2,500 points worse than its best step. Whether the tile is in view and who is nearer do not "
-    "matter. With free sprint steps it only runs on while each step gets nearer. A goal is dropped when the baby's "
-    "body is on the tile, or when it sees the tile and it is no spawn tile at all. A goal inside a dead end the "
-    "baby is charged for (fewer than 2 pearls known) or inside the leader's pearl zone is not followed. (4) Any "
-    "other teammate that catches the message adds the tiles to its own map as refill tiles, as before (usual pull, "
-    "usual rules); only a newborn pushes. Unchanged from the second build: the alert every turn inside a dead end, "
-    "passing a new dead end on once, the 600-point charge, the re-send to the child for 2 turns while lined up. "
-    "Our choices, not asked by Zhe: (a) 'trapped' needs a dead end by our rule: a parent with no step that is not "
-    "in one sends no tiles; (b) 'no other options' is read as no pearl, about-to-spawn tile or refill tile within "
-    "the usual pull; unexplored tiles do not count as an option; (c) only a dragon in its first three turns takes "
-    "goals; (d) a goal has no time limit; (e) the push uses the existing route-target rules, not a new score; (f) "
-    "refill tiles inside a known dead end are still left out, the pearl count speaks for them; (g) pearls on the "
-    "ground are no longer sent.")
+    "How Zhe's revision (7 Oct, 23:56 KST) was built on top of the third build. (1) Where it goes: the dead-end "
+    "message is sent in one direction only, the one from the sender's head into her own neck. The engine lets that "
+    "ray out at her tail tip, flying straight on, which is where a baby is right after a split. Her other three "
+    "pings are whatever main sends that turn (leader report, queen ping, portal warning); the new message sits "
+    "where it sat before in the bot's order of messages, so the two portal warnings still come first. (2) When: on "
+    "the turn she comes to stand in a dead end she can vouch for (a shut area of at most 31 tiles with the tile "
+    "she came from as the only way out, all sides seen, no portal) and on the 2 turns after; and again on a turn "
+    "she splits in there and the 2 turns after. The repeat is the same message as it was sent the first time. "
+    "While she stays inside that dead end without splitting, nothing more is sent, so a dragon that sits in one "
+    "for a long time loses 3 rays, not one a turn. On a turn where the step she tries fails (a trapped parent "
+    "after her split has none), nothing new is sent. (3) Who: only a dragon standing in a dead end. A hearer no "
+    "longer passes a new dead end on, and a parent that splits outside a dead end no longer hands the nearest one "
+    "she knows to her child; such a split sends main's messages in all four directions. (4) Unchanged from the "
+    "third build: a parent that splits while trapped (in a dead end, no step she may take, 2 tiles left) adds up "
+    "to two refill tiles to that message, the nearest to the child; a dragon that hears refill tiles in its first "
+    "three turns keeps them as goals and heads for the nearest when no pearl, about-to-spawn tile or refill tile "
+    "is within the usual 6-step pull; any teammate that hears a dead end adds it to its map (it keeps the 16 "
+    "nearest) and pays 600 points, the price of two pearls, to step into one with fewer than 2 pearls known. Our "
+    "readings and choices, not spelled out by Zhe: (a) '2 rounds straight, like now' is read as the turn itself "
+    "plus the 2 turns after, which is what the re-send to the child already was; (b) 'after she enters a dead "
+    "end' is read as the first turn she can vouch for it, which can be a turn or two after her head crosses the "
+    "way in; (c) a split in there starts the three turns again, because that is when a baby exists; (d) passed-on "
+    "copies and the hand-on at a split outside a dead end are dropped, because both took report slots; (e) no "
+    "repeat on a turn where her step fails.")
 
 # mybot2/sonar_codec.hpp in Python: the check reads our own messages.
 M64 = (1 << 64) - 1
@@ -418,7 +456,11 @@ STATS = (
     'alert_turns', 'split_turns_own_end', 'relay_turns', 'passon_turns', 'end_rays', 'end_rays_hit_teammate',
     'relay_rays_hit_teammate', 'first_tellings', 'inside_turns', 'inside_turns_alert', 'inside_quiet_turns',
     'inside_quiet_turns_alert', 'spot_turns', 'spot_turns_trapped', 'spots_sent', 'spots_sent_not_refill',
-    'spot_rays_hit_other_teammate')
+    'spot_rays_hit_other_teammate', 'new_rays_into_neck', 'new_turns', 'new_turns_one_into_neck',
+    'new_turns_main_rays', 'new_turns_inside', 'new_turns_inside_lately', 'new_turns_after_full',
+    'new_turns_after_full_other_three', 'plain_turns_after_full', 'plain_turns_after_full_all_four', 'full_turns',
+    'new_runs', 'new_run_max')
+MAXED = ('points_max', 'new_run_max')
 
 
 def scan(path, ours):
@@ -434,6 +476,7 @@ def scan(path, ours):
     digests, h = {}, hashlib.sha1()
     splits, by_parent, by_child = [], {}, {}
     knows, stays, done, pending, arrivals, named = {}, {}, [], {}, [], set()
+    recent, last_main, runs = {}, {}, {}
     first_new = None
     rnd = 0
     cur = None
@@ -536,12 +579,14 @@ def scan(path, ours):
         t, cur = cur, None
         did = t['id']
         body = bodies.get(did)
-        head = body[0] if body else None
+        head = body[0] if body else t['head']
         now = board.dead_end(body[0], body[1]) if body and len(body) > 1 else None
         sp = by_parent.get(did)
-        if sp is not None and sp['round'] == rnd and any(p['hit'] == sp['child'] for p in t['pings']):
-            stat['split_turn_any_ray_hit_child'] += 1
-        own = relay = passon = False
+        if sp is not None and sp['round'] == rnd:
+            sp['any_hit'] = any(p['hit'] == sp['child'] for p in t['pings'])
+            sp['neck_hit'] = any(p['hit'] == sp['child'] and p['slot'] == 'neck' for p in t['pings'])
+            stat['split_turn_any_ray_hit_child'] += sp['any_hit']
+        own = relay = passon = lately = False
         counted, spotted = set(), set()
         for p in t['pings']:
             stat['sonar'] += 1
@@ -563,9 +608,11 @@ def scan(path, ours):
             if real is not None:
                 named.add(real['id'])
                 inside = head is not None and head in real['cells']
+                was = any(cell in real['cells'] for cell in recent.get(did, ()))
                 relay = relay or msg['relay']
                 own = own or (inside and not msg['relay'])
-                passon = passon or (not inside and not msg['relay'])
+                lately = lately or (not inside and was and not msg['relay'])
+                passon = passon or (not inside and not was and not msg['relay'])
                 if inside:
                     learn(did, real, end['pearls'])
                 stat['end_rays'] += 1
@@ -597,6 +644,32 @@ def scan(path, ours):
             sp['resent'] = sp['resent'] or rnd != sp['round']
             if p['hit'] == sp['child'] and not sp['told']:
                 sp['told'], sp['told_round'] = True, rnd
+        # A ray's slot: 'neck' for the one sent into the neck, else the direction it left the head in.
+        new_slots = [p['slot'] for p in t['pings'] if p['msg']['kind'] == 'split']
+        main_slots = {p['slot'] for p in t['pings'] if p['msg']['kind'] in MAIN_KINDS}
+        full = len(main_slots) == 4
+        full_before = last_main.get(did, False)
+        stat['full_turns'] += full
+        if new_slots:
+            stat['new_turns'] += 1
+            stat['new_rays_into_neck'] += sum(slot == 'neck' for slot in new_slots)
+            stat['new_turns_one_into_neck'] += new_slots == ['neck']
+            stat['new_turns_main_rays'] += len(main_slots)
+            stat['new_turns_inside'] += own
+            stat['new_turns_inside_lately'] += lately and not own
+            if full_before:
+                stat['new_turns_after_full'] += 1
+                stat['new_turns_after_full_other_three'] += len(new_slots) == 1 and len(main_slots - set(new_slots)) == 3
+            run = runs[did][1] + 1 if did in runs and runs[did][0] == rnd - 1 else 1
+            runs[did] = (rnd, run)
+            stat['new_runs'] += run == 1
+            stat['new_run_max'] = max(stat['new_run_max'], run)
+        elif t['pings'] and full_before:
+            stat['plain_turns_after_full'] += 1
+            stat['plain_turns_after_full_all_four'] += full
+        last_main[did] = full
+        if head is not None:
+            recent.setdefault(did, deque(maxlen=RESEND)).append(head)
         quiet = not t['split']
         stat['alert_turns'] += own and quiet
         stat['split_turns_own_end'] += own and not quiet
@@ -635,7 +708,7 @@ def scan(path, ours):
             stat['points'] += points
             stat['points_max'] = max(stat['points_max'], points)
             stat['tle'] += pl.bit(32)
-            cur = {'id': did, 'pings': [], 'split': False}
+            cur = {'id': did, 'pings': [], 'split': False, 'head': None}
         elif kind == 'dragonUpdate':
             did = pl.i32(0)
             head, tail = replay.point(pl.pointer(0)), replay.point(pl.pointer(1))
@@ -673,7 +746,7 @@ def scan(path, ours):
                  'gain': 0, 'child_died': None, 'trapped': stuck and end is not None,
                  'stuck_outside': stuck and end is None, 'parent_died': None, 'child_head': bodies[child][0],
                  'gap0': None, 'gap_min': None, 'gap_now': None, 'reached': None, 'ate': False, 'moves': 0,
-                 'moves_nearer': 0}
+                 'moves_nearer': 0, 'any_hit': False, 'neck_hit': False, 'own_end_sent': False}
             splits.append(s)
             by_parent[parent] = s
             by_child[child] = s
@@ -702,7 +775,15 @@ def scan(path, ours):
             if wire not in opened:
                 plain = unseal(key, wire, streams)
                 opened[wire] = parse(plain, W, H) if plain is not None else {'kind': 'unreadable'}
-            cur['pings'].append({'msg': opened[wire], 'dir': DIRS[pl.u16(4) % 4],
+            if not cur['pings']:
+                # Where the sender's head is as it pings: its moves and split come first in the replay.
+                body = bodies.get(cur['id'])
+                cur['head'] = body[0] if body else None
+            # A ray starts at the head, except the one sent into the neck: the replay starts that one at the tail tip.
+            origin = replay.point(pl.pointer(0))
+            way = DIRS[pl.u16(4) % 4]
+            cur['pings'].append({'msg': opened[wire], 'dir': way,
+                                 'slot': 'neck' if cur['head'] is not None and origin != cur['head'] else way,
                                  'hit': pl.i32(12) if pl.u16(6) else None})
     close_turn()
     digests[rnd] = h.hexdigest()
@@ -719,7 +800,8 @@ def scan(path, ours):
         stat['child_told'] += s['told']
         stat['child_told_on_split_turn'] += s['told'] and s['told_round'] == s['round']
         real = told_end(msg['end']) if msg['end'] is not None else None
-        stat['end_splits_with_end'] += s['end'] is not None and real is not None and bool(real['cells'] & s['end']['cells'])
+        s['own_end_sent'] = s['end'] is not None and real is not None and bool(real['cells'] & s['end']['cells'])
+        stat['end_splits_with_end'] += s['own_end_sent']
         if s['told']:
             stat['spots_told'] += len(s['spots'])
             stat['spots_told_refill'] += sum(p['refill'] for p in s['spots'])
@@ -737,7 +819,8 @@ def scan(path, ours):
     children = [{'told': s['told'], 'pinged': s['msg'] is not None, 'gain': s['gain'],
                  'died': s['child_died'] is not None, 'round': s['round'], 'parent': s['parent'], 'child': s['child'],
                  'child_length': s['child_length'], 'trapped': s['trapped'], 'stuck_outside': s['stuck_outside'],
-                 'straight': s['straight'],
+                 'straight': s['straight'], 'any_hit': s['any_hit'], 'neck_hit': s['neck_hit'],
+                 'own_end_sent': s['own_end_sent'],
                  'in_dead_end': s['end'] is not None,
                  'parent_dead_after': None if s['parent_died'] is None else s['parent_died'] - s['round'],
                  'spots': [p['tile'] for p in s['spots']], 'refill_spots': sum(p['refill'] for p in s['spots']),
@@ -819,7 +902,17 @@ def split_counts(rows):
     outside = [r for r in rows if r['stuck_outside']]
     plain = [r for r in rows if not r['trapped']]
     spotted = [r for r in trapped if r['spots']]
-    return {'splits': len(rows), 'in_a_dead_end': sum(r['in_dead_end'] for r in rows),
+    inside = [r for r in rows if r['in_dead_end']]
+    sent = [r for r in inside if r['own_end_sent']]
+    return {'splits': len(rows), 'in_a_dead_end': len(inside),
+            'in_a_dead_end_in_a_straight_line': sum(r['straight'] for r in inside),
+            'in_a_dead_end_neck_ray_hit_child': sum(r['neck_hit'] for r in inside),
+            'in_a_dead_end_any_ray_hit_child': sum(r['any_hit'] for r in inside),
+            'in_a_dead_end_with_message': len(sent),
+            'in_a_dead_end_with_message_baby_got_it': sum(r['told'] for r in sent),
+            'in_a_dead_end_with_message_in_a_straight_line': sum(r['straight'] for r in sent),
+            'outside_a_dead_end': len(rows) - len(inside),
+            'outside_a_dead_end_with_new_message': sum(r['pinged'] for r in rows if not r['in_dead_end']),
             'trapped': len(trapped), 'trapped_parent_dead_soon': dead(trapped),
             'trapped_in_a_straight_line': sum(r['straight'] for r in trapped),
             'trapped_with_ping': sum(r['pinged'] for r in trapped),
@@ -935,39 +1028,14 @@ def main():
     doomed_share = ratio(ck['trapped_with_spots_parent_dead_soon'], ck['trapped_with_spots'])
     enough_told = told_kids['babies'] >= MIN_BABIES
     enough_untold = untold_kids['babies'] >= MIN_BABIES
-    checks = {
-        'spots_only_when_trapped': total('base', 'new_rays') == 0 and only_share is not None and
-                                   only_share >= ONLY_SHARE and total('candidate', 'spots_sent_not_refill') == 0,
-        'those_parents_die': ck['trapped_with_spots'] >= MIN_BABIES and doomed_share >= DOOMED_SHARE,
-        'babies_reach_the_tile': enough_told and told_kids['reach_share'] >= REACH_SHARE,
-        # None = not measurable (too few babies in one group); it then takes no part in the verdict.
-        'told_beat_untold': (told_kids['reached'] > 0 and
-                             told_kids['reach_share'] >= TWICE * untold_kids['reach_share'])
-                            if enough_told and enough_untold else None,
-        'alerts_fire': alert_share is not None and alert_share >= ALERT_SHARE,
-        'true': true_share is not None and true_share >= TRUE_SHARE,
-        'nothing_else_changes': silent == games,
-    }
-    # Build 2's three behaviour points, measured the same way and shown with their old limits. This revision does
-    # not touch that code, so they are reported and take no part in this verdict.
-    carried = {
-        'reach': told_share is not None and told_share >= TOLD_SHARE,
-        'told_stay_out': enough_arrivals and charged['walk_in_share'] <= HALF * untold['walk_in_share'],
-        'fewer_wasted_stays': enough_wasted and rate['candidate'] is not None and
-                              rate['candidate'] <= DROP * rate['base'],
-    }
-    fires_as_specified = all(checks[k] for k in ('spots_only_when_trapped', 'those_parents_die', 'alerts_fire', 'true',
-                                                 'nothing_else_changes'))
-    target_seen = enough_told
-    behaviour_shown = checks['babies_reach_the_tile'] and checks['told_beat_untold'] is not False
-    passed = all(v for v in checks.values() if v is not None)
 
+    mix = ('sonar', 'leader', 'queen', 'mouth', 'other', 'new_rays', 'new_turns', 'full_turns')
     by_map = {}
     for p in pairs:
         row = by_map.setdefault(p['map'], {})
         for t in arms:
             got = row.setdefault(t, {'games': 0, 'turns': 0, 'alert_turns': 0, 'spot_turns': 0, 'stays': [],
-                                     'arrivals': [], 'children': []})
+                                     'arrivals': [], 'children': [], **{k: 0 for k in mix}})
             got['games'] += 1
             got['turns'] += p[t]['turns']
             got['alert_turns'] += p[t]['alert_turns']
@@ -975,6 +1043,75 @@ def main():
             got['stays'] += p[t]['stays']
             got['arrivals'] += p[t]['arrivals']
             got['children'] += p[t]['children']
+            for k in mix:
+                got[k] += p[t][k]
+
+    # Main's messages. Leader reports are compared per dragon turn and map by map, because the two columns are
+    # different games after the first new message and the maps differ in how many reports a turn carries.
+    for row in by_map.values():
+        for t in arms:
+            row[t]['leader_per_turn'] = ratio(row[t]['leader'], row[t]['turns'])
+        row['leader_per_turn_ratio'] = ratio(row['candidate']['leader_per_turn'], row['base']['leader_per_turn']) \
+            if row['base']['leader_per_turn'] and row['candidate']['leader_per_turn'] is not None else None
+    leader_ratios = [row['leader_per_turn_ratio'] for row in by_map.values() if row['leader_per_turn_ratio'] is not None]
+    leader_keep = ratio(sum(leader_ratios), len(leader_ratios))
+    queen_maps = sorted(m for m, row in by_map.items() if row['base']['queen'] >= QUEEN_MIN)
+    queen_base = sum(by_map[m]['base']['queen'] for m in queen_maps)
+    queen_cand = sum(by_map[m]['candidate']['queen'] for m in queen_maps)
+    queen_keep = ratio(queen_cand, queen_base)
+    rays, new_rays, new_turns = both('sonar'), both('new_rays'), both('new_turns')
+    slot_share = ratio(new_rays['candidate'], rays['candidate'])
+    one_neck = both('new_turns_one_into_neck')
+    neck_share = ratio(one_neck['candidate'], new_turns['candidate'])
+    from_inside = total('candidate', 'new_turns_inside') + total('candidate', 'new_turns_inside_lately')
+    inside_share = ratio(from_inside, new_turns['candidate'])
+    after_full, other_three = both('new_turns_after_full'), both('new_turns_after_full_other_three')
+    other_share = ratio(other_three['candidate'], after_full['candidate'])
+    plain_full = {t: ratio(total(t, 'plain_turns_after_full_all_four'), total(t, 'plain_turns_after_full')) for t in arms}
+    baby_share = ratio(ck['in_a_dead_end_with_message_baby_got_it'], ck['in_a_dead_end_with_message'])
+    neck_hit = {t: ratio(kinds[t]['in_a_dead_end_neck_ray_hit_child'], kinds[t]['in_a_dead_end']) for t in arms}
+    announced = ratio(cand_stays['with_alert_or_split_ping'], cand_stays['stays'])
+    enough_new = new_turns['candidate'] >= MIN_TURNS
+    enough_kids = ck['in_a_dead_end_with_message'] >= MIN_BABIES
+    checks = {
+        'only_into_her_own_neck': new_rays['base'] == 0 and neck_share is not None and neck_share >= BACK_SHARE,
+        'only_from_inside': inside_share is not None and inside_share >= INSIDE_SHARE,
+        'few_slots_taken': slot_share is not None and new_rays['candidate'] > 0 and slot_share <= SLOT_MAX,
+        # None = not measurable (too few cases); it then takes no part in the verdict.
+        'the_other_three_stay': other_share >= OTHER_SHARE if after_full['candidate'] >= MIN_TURNS else None,
+        'leader_reports_kept': leader_keep is not None and leader_keep >= LEADER_KEEP,
+        'queen_pings_kept': queen_keep >= QUEEN_KEEP if queen_maps else None,
+        'the_ray_reaches_the_baby': enough_kids and baby_share >= BABY_SHARE,
+        'spots_only_when_trapped': only_share is not None and only_share >= ONLY_SHARE and
+                                   total('candidate', 'spots_sent_not_refill') == 0,
+        'those_parents_die': ck['trapped_with_spots'] >= MIN_BABIES and doomed_share >= DOOMED_SHARE,
+        'stays_are_announced': cand_stays['stays'] >= MIN_STAYS and announced >= ALERT_SHARE,
+        'true': true_share is not None and true_share >= TRUE_SHARE,
+        'nothing_else_changes': silent == games,
+    }
+    # Points of the second and third builds, measured the same way and shown with their old limits. This revision
+    # does not touch that code, so they are reported and take no part in this verdict.
+    carried = {
+        'reach': told_share is not None and told_share >= TOLD_SHARE,
+        'told_stay_out': enough_arrivals and charged['walk_in_share'] <= HALF * untold['walk_in_share'],
+        'fewer_wasted_stays': enough_wasted and rate['candidate'] is not None and
+                              rate['candidate'] <= DROP * rate['base'],
+        'babies_reach_the_tile': enough_told and told_kids['reach_share'] >= REACH_SHARE,
+        'told_beat_untold': (told_kids['reached'] > 0 and
+                             told_kids['reach_share'] >= TWICE * untold_kids['reach_share'])
+                            if enough_told and enough_untold else None,
+    }
+
+    def holds(names):
+        return all(checks[k] for k in names if checks[k] is not None)
+
+    fires_as_specified = holds(('only_into_her_own_neck', 'only_from_inside', 'spots_only_when_trapped',
+                                'those_parents_die', 'stays_are_announced', 'true', 'nothing_else_changes'))
+    target_seen = enough_new and enough_kids
+    behaviour_shown = holds(('few_slots_taken', 'the_other_three_stay', 'leader_reports_kept', 'queen_pings_kept',
+                             'the_ray_reaches_the_baby'))
+    passed = holds(checks)
+
     for row in by_map.values():
         for t in arms:
             got = row[t]
@@ -983,6 +1120,12 @@ def main():
             sorts = split_counts(born)
             named = [r for r in born if r['trapped'] and r['spots'] and r['gap0'] > 0]
             got.update(stays=counts['stays'], wasted_stays=counts['wasted'], paid_stays=counts['paid'],
+                       stays_announced=counts['with_alert_or_split_ping'],
+                       dead_end_splits=sorts['in_a_dead_end'],
+                       dead_end_splits_in_a_straight_line=sorts['in_a_dead_end_in_a_straight_line'],
+                       dead_end_splits_neck_ray_hit_child=sorts['in_a_dead_end_neck_ray_hit_child'],
+                       dead_end_splits_with_message=sorts['in_a_dead_end_with_message'],
+                       dead_end_splits_baby_got_it=sorts['in_a_dead_end_with_message_baby_got_it'],
                        wasted_per_1000_turns=counts['wasted_per_1000_turns'],
                        arrivals=ways['all']['arrivals'], arrivals_told=ways['told']['arrivals'],
                        walked_in=ways['all']['walked_in'], told_charged=ways['told_charged']['arrivals'],
@@ -1017,6 +1160,7 @@ def main():
     baby_log.sort(key=lambda r: (not r['told'], -(r['gap0'] or 0)))
     baby_log = [r for r in baby_log if r['told']][:BABY_LOG_MAX] + [r for r in baby_log if not r['told']][:BABY_LOG_MAX]
     cpu = {t: ratio(total(t, 'points'), turns[t]) if total(t, 'points') else None for t in arms}
+    longest = {t: max((p[t]['new_run_max'] for p in pairs), default=0) for t in arms}
     failed = [k for k, v in checks.items() if v is False]
     unmeasured = [k for k, v in checks.items() if v is None]
     measured = len(checks) - len(unmeasured)
@@ -1034,6 +1178,37 @@ def main():
         f"{'PASS' if passed else 'FAIL'} ("
         f"{'all ' + str(measured) + ' measured checks' if passed else 'failed: ' + ', '.join(failed)}"
         f"{'; not measurable: ' + ', '.join(unmeasured) if unmeasured else ''}). {games} paired games. "
+        f"New messages: base {new_rays['base']} rays, candidate {new_rays['candidate']} rays on "
+        f"{new_turns['candidate']} turns. Into her own neck: exactly one new ray, into the sender's neck, on "
+        f"{one_neck['candidate']} of those turns (share {neck_share}, limit {BACK_SHARE}); "
+        f"{total('candidate', 'new_rays_into_neck')} of the {new_rays['candidate']} new rays went into the neck. "
+        f"Sender inside the dead end she names on {total('candidate', 'new_turns_inside')} turns, inside it within "
+        f"the {RESEND} turns before on {total('candidate', 'new_turns_inside_lately')} more (share {inside_share}, "
+        f"limit {INSIDE_SHARE}); passed-on copies on {total('candidate', 'relay_turns')} turns, a dead end named "
+        f"from outside on {total('candidate', 'passon_turns')}. Longest run of new turns by one dragon "
+        f"{longest['candidate']}. Main's messages: new rays are {slot_share} of the candidate's "
+        f"{rays['candidate']} rays (limit {SLOT_MAX}). New turns that follow a full turn of the same dragon "
+        f"{after_full['candidate']}, the other three directions each carried a main message on "
+        f"{other_three['candidate']} (share {other_share}, limit {OTHER_SHARE}); for scale, a turn without a new "
+        f"message that follows a full turn is full again in {plain_full['base']} of base's and "
+        f"{plain_full['candidate']} of the candidate's. Leader reports per dragon turn, candidate over base, by "
+        f"map: " + ', '.join(f"{m} {r['leader_per_turn_ratio']}" for m, r in sorted(by_map.items())) +
+        f"; average {leader_keep} (limit {LEADER_KEEP}); totals {total('base', 'leader')} -> "
+        f"{total('candidate', 'leader')} on {turns['base']} -> {turns['candidate']} dragon turns. Queen pings "
+        f"{total('base', 'queen')} -> {total('candidate', 'queen')}; on the maps where base sent at least "
+        f"{QUEEN_MIN} ({', '.join(queen_maps) or 'none'}) {queen_base} -> {queen_cand} (ratio {queen_keep}, limit "
+        f"{QUEEN_KEEP}). Portal warnings {total('base', 'mouth')} -> {total('candidate', 'mouth')}. Babies: "
+        f"candidate splits in a dead end {ck['in_a_dead_end']}, with that dead end in the split message "
+        f"{ck['in_a_dead_end_with_message']}, the baby got it in {ck['in_a_dead_end_with_message_baby_got_it']} "
+        f"(share {baby_share}, limit {BABY_SHARE}); the parent's head, neck and third tile lay in a straight line "
+        f"in {ck['in_a_dead_end_with_message_in_a_straight_line']} of them. For scale, the ray into the neck hit "
+        f"the child on the split turn, whatever it carried, at {neck_hit['base']} of base's "
+        f"{kinds['base']['in_a_dead_end']} dead-end splits and {neck_hit['candidate']} of the candidate's. "
+        f"Candidate splits outside a dead end {ck['outside_a_dead_end']}, with a new message "
+        f"{ck['outside_a_dead_end_with_new_message']}. "
+        f"{'' if enough_new else 'Too few new turns to judge (need ' + str(MIN_TURNS) + '). '}"
+        f"{'' if enough_kids else 'Too few dead-end splits with a message to judge (need ' + str(MIN_BABIES) + '). '}"
+        f"Unchanged part (build 3). "
         f"Our splits: base {kinds['base']['splits']}, candidate {ck['splits']}. Trapped splits (in a dead end, "
         f"{KEEP} tiles kept, no step open): base {kinds['base']['trapped']}, candidate {ck['trapped']}; candidate "
         f"trapped splits whose message named a refill tile {ck['trapped_with_spots']}, the parent dead within "
@@ -1056,11 +1231,16 @@ def main():
         f"Splits with {KEEP} tiles kept and no step open but no dead end around the head (no refill tiles sent "
         f"there): base {kinds['base']['stuck_outside_a_dead_end']}, candidate {ck['stuck_outside_a_dead_end']}, "
         f"parent dead within {DOOMED_ROUNDS} rounds in {ck['stuck_outside_parent_dead_soon']}. "
-        f"Unchanged part (build 2). Stays in a dead end: base {stays['base']['stays']}, candidate "
-        f"{cand_stays['stays']}; candidate stays with an alert {cand_stays['with_alert']} (share {alert_share}). "
+        f"Stays in a dead end: base {stays['base']['stays']}, candidate {cand_stays['stays']}; announced (the "
+        f"dragon sent its dead end at least once during the stay) {cand_stays['with_alert_or_split_ping']} (share "
+        f"{announced}, limit {ALERT_SHARE}); a new message naming it went out on "
+        f"{total('candidate', 'inside_turns_alert')} of the candidate's {total('candidate', 'inside_turns')} turns "
+        f"inside a dead end. "
         f"Dead ends carried in messages {with_end['candidate']}, true {end_true['candidate']} (share {true_share}). "
-        f"Same game up to the first new message in {silent}/{games} pairs. Build 2's three behaviour points, "
-        f"shown with their old limits and not part of this verdict: arrivals at a way in by a told dragon "
+        f"Same game up to the first new message in {silent}/{games} pairs. Points of the second and third builds, "
+        f"shown with their old limits and not part of this verdict: told babies that stood on a named tile "
+        f"{told_kids['reached']} of {told_kids['babies']} (share {told_kids['reach_share']}, limit {REACH_SHARE}: "
+        f"{'met' if carried['babies_reach_the_tile'] else 'not met'}); arrivals at a way in by a told dragon "
         f"{cand_arrive['told']['arrivals']} of {cand_arrive['all']['arrivals']} (share {told_share}, limit "
         f"{TOLD_SHARE}: {'met' if carried['reach'] else 'not met'}); told-charged walked in "
         f"{charged['walked_in']} of {charged['arrivals']} (share {charged['walk_in_share']}) against untold "
@@ -1090,8 +1270,36 @@ def main():
         'target_seen': target_seen,
         'behaviour_shown': behaviour_shown,
         'checks': checks,
-        'carried_over_from_build_2': carried,
-        'thresholds': {'ONLY_SHARE': ONLY_SHARE, 'DOOMED_SHARE': DOOMED_SHARE, 'DOOMED_ROUNDS': DOOMED_ROUNDS,
+        'carried_over_from_builds_2_and_3': carried,
+        'new_turns': new_turns,
+        'new_turns_with_one_new_ray_into_the_neck': one_neck,
+        'into_the_neck_share_of_new_turns': neck_share,
+        'new_rays_into_the_neck': both('new_rays_into_neck'),
+        'new_turns_sender_inside': both('new_turns_inside'),
+        'new_turns_sender_inside_within_resend_turns_before': both('new_turns_inside_lately'),
+        'sender_inside_share_of_new_turns': inside_share,
+        'new_runs': both('new_runs'),
+        'longest_run_of_new_turns_by_one_dragon': longest,
+        'new_ray_share_of_our_rays': slot_share,
+        'main_rays_on_new_turns': both('new_turns_main_rays'),
+        'new_turns_after_a_full_turn': after_full,
+        'new_turns_after_a_full_turn_other_three_main': other_three,
+        'other_three_share': other_share,
+        'full_turns': both('full_turns'),
+        'plain_turns_after_a_full_turn': both('plain_turns_after_full'),
+        'plain_turns_after_a_full_turn_full_again': both('plain_turns_after_full_all_four'),
+        'plain_turns_full_again_share': plain_full,
+        'leader_reports_per_turn_ratio_mean_over_maps': leader_keep,
+        'queen_ping_maps': queen_maps,
+        'queen_pings_on_those_maps': {'base': queen_base, 'candidate': queen_cand},
+        'queen_ping_ratio': queen_keep,
+        'baby_got_it_share': baby_share,
+        'neck_ray_hit_child_share_of_dead_end_splits': neck_hit,
+        'stays_announced_share': announced,
+        'thresholds': {'BACK_SHARE': BACK_SHARE, 'INSIDE_SHARE': INSIDE_SHARE, 'SLOT_MAX': SLOT_MAX,
+                       'OTHER_SHARE': OTHER_SHARE, 'MIN_TURNS': MIN_TURNS, 'LEADER_KEEP': LEADER_KEEP,
+                       'QUEEN_MIN': QUEEN_MIN, 'QUEEN_KEEP': QUEEN_KEEP, 'BABY_SHARE': BABY_SHARE,
+                       'ONLY_SHARE': ONLY_SHARE, 'DOOMED_SHARE': DOOMED_SHARE, 'DOOMED_ROUNDS': DOOMED_ROUNDS,
                        'MIN_BABIES': MIN_BABIES, 'REACH_SHARE': REACH_SHARE, 'TWICE': TWICE, 'KEEP': KEEP,
                        'ALERT_SHARE': ALERT_SHARE, 'TRUE_SHARE': TRUE_SHARE, 'TOLD_SHARE': TOLD_SHARE, 'HALF': HALF,
                        'DROP': DROP, 'MIN_STAYS': MIN_STAYS, 'MIN_ARRIVALS': MIN_ARRIVALS, 'PAY': PAY, 'FRESH': FRESH,
@@ -1155,7 +1363,19 @@ def main():
         'cpu_points_per_turn': cpu,
         'cpu_points_max': {t: max((p[t]['points_max'] for p in pairs), default=0) for t in arms},
         'told_charged_arrivals_log': log,
-        'limits': 'Dead ends are rebuilt from the real map with the bot\'s rule, and "trapped" is the checker\'s '
+        'limits': 'This revision: "into her neck" is read from where the replay starts a ray (the tail tip instead '
+                  'of the head). What main would have sent in a direction on a given turn is not in the replay, '
+                  'so "the other three stay" is judged on new turns that follow a full turn of the same dragon, '
+                  'and the leader and queen counts compare different games (the two columns stop being the same '
+                  'game at the first new message). Queen pings come from a few hunters in a few games, so their '
+                  'count moves a lot from game to game. In the third build\'s 16 local pairs, where the message '
+                  'went out in all four directions, the queen-ping count did not drop (3,512 -> 3,657), while '
+                  'its online games had far fewer than two unpaired sets of main games (272 a game against '
+                  '1,661 and 2,381). So the local queen count may not show that problem either way; the share '
+                  'of rays taken and "the other three stay" are the direct measures. "Baby got it" means a ray '
+                  'carrying the message hit the child; whether the child then acted on it is not in the replay. '
+                  'Earlier builds: '
+                  'dead ends are rebuilt from the real map with the bot\'s rule, and "trapped" is the checker\'s '
                   'reading of the bot\'s rule (2 tiles kept, the head in a dead end, no open side without a dragon '
                   'on the next tile); what a dragon actually knew or decided is not in the replay, only where it '
                   'went and which dragon each ray hit. So no replay shows a baby heading for a tile *because* it '
