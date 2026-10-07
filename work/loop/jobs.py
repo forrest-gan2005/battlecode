@@ -386,8 +386,8 @@ def ai(spec, fds):
             write(out / spec['output'], json.loads(result))
             Path(spec['log']).write_text(json.dumps({'type': 'result', 'result': result}) + '\n')
     else:
-        # Thinking steps get more effort; the ladder review is a quick skim.
-        effort = {'ladder': 'medium', 'clarify': 'xhigh', 'build': 'xhigh', 'task': 'xhigh', 'verdict': 'xhigh'}.get(step, 'high')
+        # Builds get more effort; the ladder review is a quick skim.
+        effort = {'ladder': 'medium', 'build': 'xhigh'}.get(step, 'high')
         argv = ['claude', '-p', '--model', 'opus', '--effort', effort, '--permission-mode',
                 'bypassPermissions', '--settings', str(HERE / 'settings.json'),
                 '--output-format', 'stream-json', '--verbose']
