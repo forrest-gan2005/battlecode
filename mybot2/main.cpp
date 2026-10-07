@@ -377,13 +377,17 @@ constexpr int QH_FRESH = 20;
 constexpr int QH_SPAWN_SLACK = 2;
 constexpr std::uint64_t QH_PING_KIND = 0x2B5;
 constexpr bool SN_TAIL_MOUTH = true;
-// Card #47: a splitting dragon pings its dead end and nearby pearl spots to the child; hearers add them to their map.
+// Card #47: a dragon in a dead end pings it in all directions, a splitting one adds pearl spots for the child;
+// hearers add them to their map, pass a new dead end on once, and pay UM_ENTER_COST to enter one with < UM_PAY pearls.
 constexpr bool UPDATE_MAP = false;
 constexpr int UM_ROOM_MAX = 31;
-constexpr int UM_PEARLS_MAX = 15;
+constexpr int UM_PEARLS_NONE = 15;
+constexpr int UM_PAY = 2;
+constexpr double UM_ENTER_COST = 600.0;
+constexpr int UM_COUNT_AGE = 1;
 constexpr int UM_SPOT_SPAN = 32;
 constexpr int UM_RESEND = 2;
-constexpr int UM_ENDS_MAX = 8;
+constexpr int UM_ENDS_MAX = 16;
 constexpr int UM_END_NEAR = 16;
 constexpr double WEIGHT_UNSEEN = 0.20;
 constexpr double PENALTY_NO_TAIL = 600.0;
@@ -1910,9 +1914,8 @@ class Bot {
         }
         std::uint64_t sight = 0;
         bool const has_sight = SHARE_SIGHT && pack_sight(sight);
-        std::array<bool, 4> um_to{};
         if (UPDATE_MAP) {
-            um_plan(um_to);
+            um_plan(index_of(post), index_of(neck), ok);
         }
         for (std::size_t k = 0; k < directions.size(); k++) {
             if (QG_SAFEZONE && zone_check_dir >= 0 && static_cast<int>(k) != zone_check_dir) {
@@ -1922,9 +1925,9 @@ class Bot {
                 ct.send_sonar(directions[k], pack_mouth(index_of(post)));
             } else if (tail_cell >= 0) {
                 ct.send_sonar(directions[k], pack_mouth(tail_cell));
-            } else if (UPDATE_MAP && um_to[k]) {
-                ct.send_sonar(directions[k], um_message);
-                um_landed = um_landed || um_aim[k];
+            } else if (UPDATE_MAP && um_out[k] != 0) {
+                ct.send_sonar(directions[k], um_out[k]);
+                um_landed = um_landed || (um_aim[k] && um_out[k] == um_message);
             } else if (QG_SAFEZONE && zone_relay(k)) {
                 ct.send_sonar(directions[k], pack_zone());
             } else if (QH_SCOUT && (qh_on || (qh_notice && (round + static_cast<int>(k)) % 4 == 1))) {
@@ -1937,16 +1940,18 @@ class Bot {
         }
     }
 
-    // UPDATE_MAP wire: bit 52 = kind. Bit 51 set: gate, way in, room, pearls, two spots as offsets from the gate
-    // (0,0 = none). Bit 51 clear: three spot tiles (repeat of the first = none). Spot flag: refill tile, else a pearl.
-    std::uint64_t pack_split(bool has_end, int gate, int dir, int room, int pearls, std::vector<int> const& spots) const {
+    // UPDATE_MAP wire: bit 52 = kind. Bit 51 set: gate, way in, room, pearls (UM_PEARLS_NONE = not counted), two
+    // spots as offsets from the gate (0,0 = none; flag on an empty first spot = passed-on copy). Bit 51 clear: three
+    // spot tiles (repeat of the first = none). Spot flag: refill tile, else a pearl.
+    std::uint64_t pack_split(bool has_end, int gate, int dir, int room, int pearls, std::vector<int> const& spots,
+                             bool relay = false) const {
         std::uint64_t body = (1ULL << 52) | ((sonar_tag & 0x3) << 53);
         auto refill = [&](std::size_t k) { return static_cast<std::uint64_t>(k < spots.size() && hot[spots[k]] ? 1 : 0); };
         if (has_end) {
             Position const mouth = position_of(gate);
             body |= (1ULL << 51) | (static_cast<std::uint64_t>(gate) & 0x3FFF) | ((static_cast<std::uint64_t>(dir) & 0x3) << 14) |
-                    ((static_cast<std::uint64_t>(room) & 0x1F) << 16) |
-                    ((static_cast<std::uint64_t>(std::min(pearls, UM_PEARLS_MAX)) & 0xF) << 21);
+                    ((static_cast<std::uint64_t>(room) & 0x1F) << 16) | ((static_cast<std::uint64_t>(pearls) & 0xF) << 21) |
+                    (relay && spots.empty() ? 1ULL << 37 : 0ULL);
             for (std::size_t k = 0; k < 2; k++) {
                 Position const spot = k < spots.size() ? position_of(spots[k]) : mouth;
                 std::uint64_t const dx = static_cast<std::uint64_t>(um_shift(mouth.x, spot.x, width) + UM_SPOT_SPAN) & 0x3F;
@@ -1973,7 +1978,14 @@ class Bot {
             if (gate >= cells || room <= 0) {
                 return true;
             }
-            um_add_end(gate, static_cast<int>((body >> 14) & 0x3), room, static_cast<int>((body >> 21) & 0xF));
+            int const dir = static_cast<int>((body >> 14) & 0x3);
+            int const pearls = static_cast<int>((body >> 21) & 0xF);
+            bool const relayed = ((body >> 25) & 0x1FFF) == ((1ULL << 12) | (UM_SPOT_SPAN << 6) | UM_SPOT_SPAN);
+            // A dead end new to us goes out once more, unless this copy was already passed on.
+            if (um_add_end(gate, dir, room, pearls, pearls != UM_PEARLS_NONE) && !relayed) {
+                um_relay = pack_split(true, gate, dir, room, pearls, {}, true);
+                um_relay_round = round;
+            }
             Position const mouth = position_of(gate);
             for (int k = 0; k < 2; k++) {
                 std::uint64_t const spot = body >> (25 + 13 * k);
@@ -2016,23 +2028,36 @@ class Bot {
         }
     }
 
-    void um_add_end(int gate, int dir, int room, int pearls) {
+    // True when the dead end is new to us. `counted`: `pearls` is a count made this round.
+    bool um_add_end(int gate, int dir, int room, int pearls, bool counted) {
         int const inner = index_of(position_of(gate).add_dir(Direction::get_direction_list()[static_cast<std::size_t>(dir)]));
         for (DeadEnd& end : um_ends) {
             if (end.gate == gate && end.inner == inner) {
                 end.room = room;
-                if (pearls > 0 || round - end.heard > SONAR_STALE) {
+                if (counted) {
                     end.pearls = pearls;
                     end.heard = round;
                 }
-                return;
+                return false;
             }
         }
-        um_unmark();
+        // Full: the one whose gate is furthest from our head goes, or the new one if it is further still.
         if (static_cast<int>(um_ends.size()) >= UM_ENDS_MAX) {
-            um_ends.erase(um_ends.begin());
+            std::size_t far = 0;
+            for (std::size_t slot = 1; slot < um_ends.size(); slot++) {
+                if (manhattan(head, position_of(um_ends[slot].gate)) > manhattan(head, position_of(um_ends[far].gate))) {
+                    far = slot;
+                }
+            }
+            if (manhattan(head, position_of(gate)) >= manhattan(head, position_of(um_ends[far].gate))) {
+                return false;
+            }
+            um_unmark();
+            um_ends.erase(um_ends.begin() + static_cast<std::ptrdiff_t>(far));
         }
-        um_ends.push_back(DeadEnd{gate, dir, inner, room, pearls, round, {}});
+        um_ends.push_back(DeadEnd{gate, dir, inner, room, counted ? pearls : 0, counted ? round : -1000, {}});
+        um_confirm();
+        return true;
     }
 
     void um_unmark() {
@@ -2045,8 +2070,11 @@ class Bot {
     }
 
     // Per told dead end: the tiles our map joins to its inner tile by known-open sides. A way in seen shut drops it.
+    // Charged: we are outside it and know of fewer than UM_PAY pearls there or due inside (told while fresh, or seen).
     void um_confirm() {
         um_unmark();
+        um_charged = 0;
+        int const here = index_of(head);
         auto const directions = Direction::get_direction_list();
         um_ends.erase(std::remove_if(um_ends.begin(), um_ends.end(),
                                      [&](DeadEnd const& end) {
@@ -2074,10 +2102,36 @@ class Bot {
                     end.cells.push_back(next);
                 }
             }
+            // A fresh told count stands; our own look adds to it only where it is newer.
+            bool const fresh = round - end.heard <= SONAR_STALE;
+            bool inside = false;
+            int seen = 0;
             for (int const cell : end.cells) {
-                um_mask[cell] |= static_cast<std::uint8_t>(1U << slot);
+                um_mask[cell] |= static_cast<std::uint16_t>(1U << slot);
+                inside = inside || cell == here;
+                seen += um_due(cell, fresh ? end.heard : 0) ? 1 : 0;
+            }
+            if (!inside && std::max(seen, fresh ? end.pearls : 0) < UM_PAY) {
+                um_charged |= static_cast<std::uint16_t>(1U << slot);
             }
         }
+    }
+
+    bool um_costly(int index) const {
+        return UPDATE_MAP && um_charged != 0 && (um_mask[index] & um_charged) != 0;
+    }
+
+    // A pearl there or due, by a look of ours no older than `since`: one we saw lately, a spawn timer run
+    // down by now; a refill tile always counts.
+    bool um_due(int cell, int since) const {
+        if (hot[cell]) {
+            return true;
+        }
+        if (seen_round[cell] < since) {
+            return false;
+        }
+        int const age = round - seen_round[cell];
+        return (pearl_here[cell] && age <= SONAR_STALE) || (pearl_timer[cell] >= 0 && pearl_timer[cell] - age <= SOON_SLACK);
     }
 
     bool um_told(int index) const {
@@ -2125,16 +2179,26 @@ class Bot {
         return tail;
     }
 
-    // Dead end around the head: the tile it came from is the gate, moved outwards while the gate is a plain
-    // corridor tile (one more way on, all sides known).
-    bool um_find_end(int& gate, int& dir, int& room, int& pearls) {
-        if (trail.size() < 2) {
+    // Dead end around `start`, reached from `from`: that tile is the gate, moved outwards while the gate is a plain
+    // corridor tile (one more way on, all sides known); the area may touch its gate on one side only. `pearls`
+    // counts the tiles with a pearl there or due (um_due), bar this turn's own steps.
+    bool um_find_end(int start, int from, int& gate, int& dir, int& room, int& pearls) {
+        if (start == from) {
             return false;
         }
         auto const directions = Direction::get_direction_list();
-        int const start = index_of(head);
+        std::vector<int> walked(1, start);
+        Position step = head;
+        for (Direction const direction : act_dirs) {
+            int const next = step_index(step, direction);
+            if (next < 0) {
+                break;
+            }
+            walked.push_back(next);
+            step = position_of(next);
+        }
         int inside = start;
-        int at = index_of(trail[1]);
+        int at = from;
         bool found = false;
         for (int guard = 0; guard <= UM_ROOM_MAX; guard++) {
             int const size = um_closed(start, at);
@@ -2146,6 +2210,7 @@ class Bot {
             int out = -1;
             int outs = 0;
             bool plain = true;
+            bool ring = false;
             for (std::size_t k = 0; k < directions.size(); k++) {
                 std::uint8_t const edge = edge_at(mouth, directions[k]);
                 if (edge == EDGE_KELP) {
@@ -2161,9 +2226,12 @@ class Bot {
                 } else if (um_stamp[next] != um_mark) {
                     outs++;
                     out = next;
+                } else {
+                    ring = true;
                 }
             }
-            if (way < 0) {
+            // A gate the area reaches from a second side is on a loop, not a way in.
+            if (way < 0 || ring) {
                 break;
             }
             gate = at;
@@ -2171,8 +2239,10 @@ class Bot {
             room = size;
             pearls = 0;
             for (int k = 0; k < size; k++) {
-                pearls += pearl_here[um_queue[static_cast<std::size_t>(k)]] ? 1 : 0;
+                int const cell = um_queue[static_cast<std::size_t>(k)];
+                pearls += um_due(cell, 0) && std::find(walked.begin(), walked.end(), cell) == walked.end() ? 1 : 0;
             }
+            pearls = std::min(pearls, UM_PEARLS_NONE - 1);
             found = true;
             if (!plain || outs != 1) {
                 break;
@@ -2184,20 +2254,22 @@ class Bot {
     }
 
     // Message for the child, 0 if nothing to tell. Spots: refill tiles, then pearls outside the child's view,
-    // nearest to the child first; the parent keeps her own nearest spot when she is the nearer one.
+    // nearest to the child first; the parent keeps her own nearest spot when she is the nearer one. Spots inside
+    // a dead end we know are left out: its pearl count speaks for them.
     std::uint64_t um_compose() {
         int gate = -1;
         int dir = 0;
         int room = 0;
-        int pearls = 0;
-        bool has_end = um_find_end(gate, dir, room, pearls);
+        int pearls = UM_PEARLS_NONE;
+        bool has_end = trail.size() > 1 && um_find_end(index_of(head), index_of(trail[1]), gate, dir, room, pearls);
         bool const child_known = !um_child.empty();
         Position const ref = child_known ? position_of(um_child.front()) : head;
         int const radius = unswbc::Constants::VISION_RADIUS;
         if (has_end) {
-            um_add_end(gate, dir, room, pearls);
+            um_add_end(gate, dir, room, pearls, true);
         } else {
-            // Not in one herself: pass on the nearest dead end she knows, without a pearl count.
+            // Not in one herself: pass on the nearest dead end she knows, with its pearl count only if just heard.
+            pearls = UM_PEARLS_NONE;
             int best = UM_END_NEAR + 1;
             for (DeadEnd const& end : um_ends) {
                 int const gap = manhattan(ref, position_of(end.gate));
@@ -2206,6 +2278,7 @@ class Bot {
                     gate = end.gate;
                     dir = end.dir;
                     room = end.room;
+                    pearls = round - end.heard <= UM_COUNT_AGE ? end.pearls : UM_PEARLS_NONE;
                     has_end = true;
                 }
             }
@@ -2216,6 +2289,9 @@ class Bot {
         for (int cell = 0; cell < cells; cell++) {
             bool const refill = hot[cell] != 0;
             if (!refill && !(pearl_here[cell] && seen_round[cell] >= 0 && round - seen_round[cell] <= SONAR_STALE)) {
+                continue;
+            }
+            if (um_mask[cell] != 0) {
                 continue;
             }
             Position const position = position_of(cell);
@@ -2326,9 +2402,12 @@ class Bot {
         return false;
     }
 
-    // Directions for the split ping: all four on the split turn; for UM_RESEND more turns, while none was
-    // aimed at the child, the ones lined up with it.
-    void um_plan(std::array<bool, 4>& to) {
+    // This turn's pings (um_out, 0 = none). Split turn: the child's message, all four. Otherwise all four carry
+    // the dead end we stand in after this turn's steps (`post`, reached from `neck`), else a dead end heard new
+    // this turn. For UM_RESEND turns after a split, while no copy was aimed at the child, the directions lined
+    // up with it carry the child's message again.
+    void um_plan(int post, int neck, bool ok) {
+        um_out.fill(0);
         um_aim.fill(false);
         if (turn_split > 0) {
             um_round = round;
@@ -2341,15 +2420,29 @@ class Bot {
                 }
             }
             um_message = um_compose();
-        } else if (um_message == 0 || um_landed || round <= um_round || round - um_round > UM_RESEND) {
-            return;
-        } else if (um_child_id < 0) {
-            for (int const cell : um_child) {
-                auto const* tile = ct.get_tile(position_of(cell));
-                auto const* part = tile ? tile->get_dragon() : nullptr;
-                if (part && part->get_team() == ct.get_team() && part->get_id() > ct.get_id()) {
-                    um_child_id = part->get_id();
-                    break;
+            um_out.fill(um_message);
+        } else {
+            int gate = -1;
+            int dir = 0;
+            int room = 0;
+            int pearls = 0;
+            if (ok && um_find_end(post, neck, gate, dir, room, pearls)) {
+                um_add_end(gate, dir, room, pearls, true);
+                um_out.fill(pack_split(true, gate, dir, room, pearls, {}));
+            } else if (um_relay_round == round) {
+                um_out.fill(um_relay);
+            }
+            if (um_message == 0 || um_landed || round <= um_round || round - um_round > UM_RESEND) {
+                return;
+            }
+            if (um_child_id < 0) {
+                for (int const cell : um_child) {
+                    auto const* tile = ct.get_tile(position_of(cell));
+                    auto const* part = tile ? tile->get_dragon() : nullptr;
+                    if (part && part->get_team() == ct.get_team() && part->get_id() > ct.get_id()) {
+                        um_child_id = part->get_id();
+                        break;
+                    }
                 }
             }
         }
@@ -2357,9 +2450,11 @@ class Bot {
             return;
         }
         std::vector<int> const body = um_body();
-        for (std::size_t k = 0; k < to.size(); k++) {
+        for (std::size_t k = 0; k < um_out.size(); k++) {
             um_aim[k] = um_aimed(k, body);
-            to[k] = turn_split > 0 || um_aim[k];
+            if (um_aim[k]) {
+                um_out[k] = um_message;
+            }
         }
     }
 
@@ -3383,7 +3478,7 @@ class Bot {
 
         bool const scouting = can_scout_portals();
         bool const guard = portal_guarded();
-        std::uint8_t um_open = 0;
+        std::uint16_t um_open = 0;
         while (queue_head < queue_tail) {
             if ((SURVEY_CAP > 0 && queue_head >= SURVEY_CAP) || (survey_cap_now > 0 && queue_head >= survey_cap_now)) {
                 break;
@@ -3427,15 +3522,17 @@ class Bot {
                                      (CORPSE_SLACK > 0 && corpse_round[index] >= 0 &&
                                       round - corpse_round[index] <= CORPSE_FRESH && steps <= theirs + CORPSE_SLACK &&
                                       ally_race_steps(index) >= steps);
+                // Nothing inside a charged dead end is a target.
+                bool const costly = um_costly(index);
                 if ((share >= 1.0 || contest) && result.dist_pearl < 0 && pearl_here[index] &&
-                    !in_leader_pearl_zone(index)) {
+                    !in_leader_pearl_zone(index) && !costly) {
                     result.dist_pearl = steps;
                 }
                 if (share > 0.0 && pearl_here[index] && !in_leader_pearl_zone(index)) {
                     result.pearls++;
                 }
                 if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
-                    !in_leader_pearl_zone(index)) {
+                    !in_leader_pearl_zone(index) && !costly) {
                     int const spawns_in = pearl_timer[index] - (round - seen_round[index]);
                     if (spawns_in <= steps + SOON_SLACK) {
                     
@@ -3443,7 +3540,7 @@ class Bot {
                     }
                 }
                 if (hot[index] && result.dist_hot < 0 && ally_race_steps(index) >= steps &&
-                    steps <= theirs + HOT_ENEMY_SLACK && !in_leader_pearl_zone(index)) {
+                    steps <= theirs + HOT_ENEMY_SLACK && !in_leader_pearl_zone(index) && !costly) {
                     int const spawns_in = pearl_here[index] ? 0 : pearl_timer[index] - (round - seen_round[index]);
                     result.dist_hot = steps + std::max(0, spawns_in - steps);
                 }
@@ -3713,7 +3810,7 @@ class Bot {
                 found = LOOK_SOON;
             }
         }
-        if (found <= 0.0 || in_leader_pearl_zone(cell)) {
+        if (found <= 0.0 || in_leader_pearl_zone(cell) || um_costly(cell)) {
             return 0.0;
         }
         int const theirs = rival_steps(cell);
@@ -5569,6 +5666,9 @@ class Bot {
         if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
             score -= ZONE_PEARL_PENALTY;
         }
+        if (um_costly(index_of(destination))) {
+            score -= UM_ENTER_COST;
+        }
         if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
             static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
             std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
@@ -6144,11 +6244,15 @@ class Bot {
     std::vector<std::uint8_t> beyond_portal;
     int visit_mark = 0;
     std::vector<DeadEnd> um_ends;
-    std::vector<std::uint8_t> um_mask;
+    std::vector<std::uint16_t> um_mask;
     std::vector<int> um_stamp;
     std::vector<int> um_queue;
     int um_mark = 0;
     std::uint64_t um_message = 0;
+    std::array<std::uint64_t, 4> um_out{};
+    std::uint64_t um_relay = 0;
+    int um_relay_round = -1000;
+    std::uint16_t um_charged = 0;
     int um_round = -1000;
     bool um_landed = false;
     std::vector<int> um_child;

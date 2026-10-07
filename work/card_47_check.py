@@ -1,54 +1,61 @@
 #!/usr/bin/env python3
-"""Card #47 mechanism check (UPDATE_MAP): a dragon that splits pings the dead end it stands in and pearl spots near
-its child back at the child; any teammate that hears the ping adds both to its map.
+"""Card #47 mechanism check (UPDATE_MAP), second build: a dragon that finds itself in a dead end pings it in all
+four directions every turn, a teammate that hears a dead end new to it passes it on once, and a dragon that knows a
+dead end with fewer than 2 pearls inside stops treating what is in there as a target and pays 2 lengths to step in.
+The first build's split ping (dead end plus pearl spots for the child) is still sent.
 
 usage: python3 work/card_47_check.py --replays DIR --base base --candidate candidate --output FILE
 Reads paired replays DIR/<tag>_<map>_<seed>_<side>.replay (side 0 = we are team A).
 
 Words:
-  split ping     our sonar message of the new kind, read with our codec key. It carries either a dead end (gate
-                 tile, direction in, number of tiles, pearls inside) plus up to two pearl spots, or up to three
-                 pearl spots. A spot is marked "refill" (a tile the sender watched refill quickly) or "pearl" (a
-                 pearl lying there when the sender last looked).
-  dead end       seen from the splitting dragon's head on the real map: the tile it came from is the first gate;
+  new message    our sonar message of the kind this card adds, read with our codec key. It carries either a dead
+                 end (gate tile, direction in, number of tiles, pearls counted inside or "not counted") plus up to
+                 two pearl spots, or up to three pearl spots. The count is the sender's "pearls there or due":
+                 pearls lying inside, refill tiles, and tiles whose spawn timer is about to run out.
+  dead end       on the real map, from a dragon's head and the tile it came from: that tile is the first gate;
                  everything reachable from the head without stepping on the gate must be at most ROOM_MAX tiles
-                 with no portal. The gate then moves outwards while it is itself a plain corridor tile (exactly
-                 one more way on). This is the bot's own rule run with the whole map known, so the bot (which
-                 only knows what it has seen) can report a smaller dead end or none.
-  dead-end split one of our splits where such a dead end exists.
-  told           the split has a split ping (sent on the split turn, or re-sent by the parent in the next
-                 RESEND rounds) and one of those rays hit the child (the replay records which dragon a ray hits).
-  true dead end  a dead end in a ping checked against the real map: past the gate in the stated direction lie
-                 exactly the stated number of tiles, shut by kelp, no portal.
-  passed on      a ping whose (true) dead end does not hold the parent's head: one she knew, not one she is in.
-  repeat         a dead-end split in a dead end our side has already split in earlier in the same game.
-  unpaid         the splitting dragon ate fewer than PAID pearls on that stay (since its head last came into the
-                 dead end, or since it was born inside). PAID is Zhe's rule of thumb: a visit pays when the pearls
-                 eaten outweigh the 2 tiles left behind by the split.
-  walked back in the child's head stands inside the split's dead end again, after having been outside it (or
-                 from birth outside it), within WATCH rounds of the split. "Same mistake": it then died or had to
-                 split while still inside, within WATCH + STUCK rounds of the split.
+                 with no portal, and may touch the gate on that one side only (a dragon circling in a sealed box
+                 is not in a dead end). The gate then moves outwards while it is itself a plain corridor tile
+                 (exactly one more way on). This is the bot's own rule run with the whole map known, so the bot
+                 (which only knows what it has seen) can report a smaller dead end, or none yet. A shut room big
+                 enough to turn around in counts too, as in the first build.
+  true dead end  a dead end in a message checked against the real map: past the gate in the stated direction lie
+                 exactly the stated number of tiles, shut by kelp, no portal, touching the gate on one side only.
+                 "Whole": it is one of the dead ends the rule above finds on the real map (not just the inner
+                 part of one).
+  stay           one visit: from the step that puts one of our dragons inside a dead end, heading in, until its
+                 head leaves that area or it dies.
+  wasted stay    the dragon ate fewer than PAY pearls on that stay and split or died inside. PAY is Zhe's line:
+                 2 pearls make up for the 2 lengths a dead end costs.
+  alert          a new message naming a true dead end that holds the sender's head, on a turn it does not split.
+  passed-on copy a new message marked as passed on: a teammate heard a dead end new to it and sent it on.
+  way in         one of our dragons steps onto the gate tile of a whole dead end, coming from outside it. It
+                 "walked in" when its next step goes inside.
+  told           before that step the dragon was hit by a ray carrying exactly that dead end (the replay records
+                 which dragon a ray hits), or had sent it itself.
+  told, charged  told, and the last pearl count it was given is under PAY, older than FRESH rounds, or missing.
+                 These are the arrivals the charge is aimed at. Pearls the dragon sees itself are not in the
+                 replay, so some of these were in fact not charged.
 
-Expectation, written before any switch-on game was played (thresholds are the constants below). The base numbers
-quoted in the build notes come from the switch-off identity games (old 10 maps), which is also how the mechanism
-maps were picked: old maps where base often splits in a dead end (trauma, prisoners_dilemma_v0, schooltime,
-portals_v0). slithery_fight_v0 has more such splits but was left out: a team splits about 1,500 times a game
-there, which would be over half of all splits in the run and decide every share on its own.
-  1. fires: at least FIRE_SHARE of the candidate's splits send a split ping on the split turn; base sends none.
-  2. reach: of the candidate's splits with a split ping, at least REACH_SHARE are told (a ray hit the child).
-  3. true: at least TRUE_SHARE of the dead ends carried in pings are true dead ends.
-  4. dead ends seen: the candidate games hold at least MIN_ENDS dead-end splits, and at least END_SHARE of them
-     carry a dead end in their ping.
-  5. nothing else changes: every pair plays the same game up to the round of the candidate's first split ping.
-  6. behaviour: with at least MIN_ENDS unpaid repeats in base, unpaid repeats as a share of our splits are lower
-     in the candidate than in base.
-passed = all six. 1, 2, 3 and 5 say "the ping is sent, arrives and is right" (fires_as_specified); 4 says the
-games held the case the card is about (target_seen); 6 says dragons act on it (behaviour_shown).
-Reported, not part of the verdict: paid repeats (a dead end worth visiting should still be visited), dead-end
-splits by a dragon that had been told that very dead end, children that walked back in, what told children did
-with pearl spots (stepped on the tile, grew there), child growth and deaths in the first WATCH rounds, how many
-other teammates a ping reached, how often any split-turn ray hits the child (the ceiling for "told" without
-re-sends), and what the ping displaces (leader messages, deaths, timeouts, CPU).
+Expectation, written before any game of this build with the switch on (thresholds are the constants below).
+Reference numbers come from running this same check on the first build's 16 + 16 behaviour-check games (same
+four maps, kept in the card's attempt-1 folder); they are quoted in build.json.
+  1. alerts fire: base sends no new message; at least ALERT_SHARE of the candidate's stays have an alert.
+  2. true: at least TRUE_SHARE of the dead ends carried in candidate messages are true.
+  3. reach: at least TOLD_SHARE of the candidate's arrivals at a way in are by a dragon that had been told.
+  4. told dragons stay out: with at least MIN_ARRIVALS told-charged and MIN_ARRIVALS untold arrivals, the
+     told-charged ones walk in at most HALF as often as the untold ones.
+  5. fewer wasted stays: with at least MIN_STAYS wasted stays in base, the candidate has at most DROP times
+     base's wasted stays per 1,000 of our dragon turns.
+  6. nothing else changes: every pair plays the same game up to the round of the candidate's first new message.
+passed = all six. 1, 2 and 6 say "sent, right, and nothing else moved" (fires_as_specified); target_seen says the
+games held the case (at least MIN_STAYS stays and MIN_ARRIVALS told-charged arrivals); 3, 4 and 5 say more dragons
+know and act on it (behaviour_shown).
+Reported, not part of the verdict: alerts per turn inside, passed-on copies and whom they reached, walk-ins by
+told-charged dragons with an enemy head near the gate ("dangerous outside"), told dragons with a fresh count of
+PAY or more, paid stays (a dead end worth visiting should still be visited), pearls eaten and lengths lost inside,
+the split ping of the first build (sent, child told, spots used), and what the messages displace (leader reports,
+deaths, timeouts, CPU).
 """
 import argparse, concurrent.futures as cf, glob, hashlib, json, os, sys
 from collections import deque
@@ -57,41 +64,50 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 import replay
 
-FIRE_SHARE = 0.5
-REACH_SHARE = 0.5
+ALERT_SHARE = 0.6
 TRUE_SHARE = 0.9
-MIN_ENDS = 10
-END_SHARE = 0.7
-PAID = 3
+TOLD_SHARE = 0.15
+HALF = 0.5
+DROP = 0.9
+MIN_STAYS = 10
+MIN_ARRIVALS = 30
+PAY = 2
+FRESH = 25
 ROOM_MAX = 31
 RESEND = 2
 WATCH = 30
-STUCK = 15
+NEAR = 3
 SPOT_SPAN = 32
-LOG_MAX = 40
+PEARLS_NONE = 15
+LOG_MAX = 60
 DIRS = 'NESW'
 STEP = {'N': (0, -1), 'E': (1, 0), 'S': (0, 1), 'W': (-1, 0)}
 BUILT_AS = (
-    "How Zhe's answers were built. On the turn a dragon splits it sends one message in all four directions (the "
-    "copy sent into its own neck leaves from its tail tip, which is where the child is when the body is straight "
-    "there). Dead end first: if the tile the parent came from is the only way out of a shut area of at most 31 "
-    "tiles around her head, she sends the gate tile, the direction in, the number of tiles and the number of pearls "
-    "she knows inside, and two pearl spots; with no dead end she sends three spots. Spots are refill tiles first, "
-    "then pearls on the ground the child cannot see from its own head, nearest to the child first; she keeps the "
-    "spot nearest to her own head when she is nearer to it than the child. The leader report is back the turn "
-    "after. If no copy was aimed at the child on the split turn, she re-sends for 2 more turns, only in a direction "
-    "that is lined up with the child. Whoever hears it (child or any teammate) adds the spots to its map and lets "
-    "the normal scoring choose; a told pearl on the ground is ignored where the hearer looked itself in the last 25 "
-    "rounds. A told dead end is treated like one the hearer sees: past the gate there are only that many tiles, so "
-    "the usual too-little-room penalties apply, and the usual harvest rule (enough pearls inside to pay for a "
-    "split) can still send a small dragon in; the told pearl count is used for 25 rounds. Our choices, not asked "
-    "by Zhe: (a) a portal-mouth warning keeps its direction on a split turn; (b) with a dead end, spots are sent as "
-    "offsets from the gate, so only spots within 32 tiles of it fit; (c) a dragon keeps the last 8 dead ends it "
-    "found or was told; (d) a newborn that does not know its whole body yet sends the ping without aiming or "
-    "re-sending; (e) passing it on: a dragon that splits outside any dead end sends the nearest dead end it knows "
-    "(within 16 tiles of the child, no pearl count) in the dead-end slot. (e) was added because in base games the "
-    "child itself rarely walks back in, while most dead-end splits happen in a dead end our side already split in, "
-    "by later dragons the first ping never reaches.")
+    "How Zhe's revision (7 Oct) was built on top of the first build. (1) Alert: after its move every dragon checks "
+    "whether the tile it came from is the only way out of a shut area of at most 31 tiles around its head (all "
+    "sides seen, no portal). If so, all four pings that turn carry the dead end: gate tile, direction in, number of "
+    "tiles, and the pearls it counts inside. It does this every turn it is in there, whether or not it can split, "
+    "and the leader report waits. It has to see the shut end first, so in a long corridor the first alert goes out "
+    "a few tiles in. (2) Cost: a dragon that knows a dead end (told, or found by itself) and is outside it counts "
+    "the pearls it knows inside. A count is 'pearls there or due': pearls lying on the tiles, refill tiles (tiles "
+    "the bot has watched refill quickly), and tiles whose spawn timer runs out within 6 rounds, so a corridor that "
+    "keeps regrowing pearls is not mistaken for an empty one just after somebody ate there. The count it was told "
+    "holds for 25 rounds; its own look adds to that only where it is newer, and once the told count is old it goes "
+    "by its own look alone. With fewer than 2, nothing inside is a target and a step into it "
+    "costs 600 points, the price the bot puts on two pearls eaten, on top of the usual too-little-room penalties. "
+    "It is a cost, not a wall: with no better step the dragon still goes in. With 2 or more nothing is added and "
+    "the first build's rules decide. Unchanged from the first build: the split ping to the child (dead end first, "
+    "then pearl spots), the re-send for 2 turns, and a told dead end being treated as a shut room. Our choices, not "
+    "asked by Zhe: (a) passing it on once: a dragon that hears a dead end new to it sends it on that same turn in "
+    "all four directions, marked so that the next hearer does not pass it on again; added because in the first "
+    "build few dragons reaching a way in had been told; (b) pearl counts: 15 in the count field now means 'not "
+    "counted' (a dead end passed on at a split by a dragon that is not looking at it), and such a dead end is "
+    "charged unless the hearer sees 2 pearls itself; (c) pearl spots inside a dead end the sender knows are no "
+    "longer sent, the count speaks for them; (d) a dragon keeps the 16 dead ends nearest to it (first build: the "
+    "last 8 it heard); (e) the dead end may touch its gate on one side only, so a dragon going round in a sealed "
+    "box is not 'in a dead end' (in the first build it was, which only mattered on a split turn); (f) counting "
+    "pearls that are due, not only pearls lying there; (g) a shut room big enough to turn around in still counts "
+    "as a dead end, as in the first build.")
 
 # mybot2/sonar_codec.hpp in Python: the check reads our own messages.
 M64 = (1 << 64) - 1
@@ -169,12 +185,17 @@ def shift(a, b, size):
     return raw - size if raw > size // 2 else raw
 
 
-def pack_split(tag, W, H, end=None, spots=()):
-    """end: (gate tile, direction letter, room, pearls) or None. spots: [(tile, refill)], two with an end, else three."""
+def pack_split(tag, W, H, end=None, spots=(), relay=False):
+    """end: (gate tile, direction letter, room, pearls or None = not counted) or None. spots: [(tile, refill)], two
+    with an end, else three. relay: a passed-on copy (dead end only, no spots)."""
     body = (1 << 52) | ((tag & 0x3) << 53) | (1 << 63)
     if end is not None:
         (gx, gy), way, room, pearls = end
-        body |= (1 << 51) | (gy * W + gx) | (DIRS.index(way) << 14) | ((room & 0x1F) << 16) | ((pearls & 0xF) << 21)
+        pearls = PEARLS_NONE if pearls is None else min(pearls, PEARLS_NONE - 1)
+        body |= (1 << 51) | (gy * W + gx) | (DIRS.index(way) << 14) | ((room & 0x1F) << 16) | (pearls << 21)
+        if relay:
+            assert not spots, 'a passed-on copy carries no spots'
+            body |= 1 << 37
         for k in range(2):
             (x, y), refill = spots[k] if k < len(spots) else ((gx, gy), False)
             dx, dy = shift(gx, x, W) + SPOT_SPAN, shift(gy, y, H) + SPOT_SPAN
@@ -189,7 +210,8 @@ def pack_split(tag, W, H, end=None, spots=()):
 
 
 def parse(plain, W, H):
-    """{'kind': 'split', 'end': {...} or None, 'spots': [(tile, refill)]} for the new kind; else the kind only."""
+    """{'kind': 'split', 'end': {...} or None, 'spots': [(tile, refill)], 'relay': bool} for the new kind; else the
+    kind only. In a dead end 'pearls' is None when the sender did not count."""
     body = plain & ((1 << 55) - 1)
     if plain >> 63 == 0:
         return {'kind': 'leader'}
@@ -203,16 +225,18 @@ def parse(plain, W, H):
                 dx, dy = (s & 0x3F) - SPOT_SPAN, ((s >> 6) & 0x3F) - SPOT_SPAN
                 if dx or dy:
                     spots.append((((gx + dx) % W, (gy + dy) % H), bool((s >> 12) & 1)))
+            pearls = (body >> 21) & 0xF
             return {'kind': 'split', 'spots': spots,
+                    'relay': (body >> 25) & 0x1FFF == (1 << 12) | (SPOT_SPAN << 6) | SPOT_SPAN,
                     'end': {'gate': (gx, gy), 'dir': DIRS[(body >> 14) & 3], 'room': (body >> 16) & 0x1F,
-                            'pearls': (body >> 21) & 0xF, 'on_map': gate < W * H}}
+                            'pearls': None if pearls == PEARLS_NONE else pearls, 'on_map': gate < W * H}}
         first = body & 0x3FFF
         for k in range(3):
             s = body >> (15 * k)
             cell = s & 0x3FFF
             if (k == 0 or cell != first) and cell < W * H:
                 spots.append(((cell % W, cell // W), bool((s >> 14) & 1)))
-        return {'kind': 'split', 'end': None, 'spots': spots}
+        return {'kind': 'split', 'end': None, 'spots': spots, 'relay': False}
     if (body >> 38) & 0x7FFF == MOUTH_KIND and (body >> 23) & 0x7FFF == 0:
         return {'kind': 'mouth'}
     if (body >> 42) & 0x7FF == PING_KIND:
@@ -247,8 +271,20 @@ def read_map(text):
 
 
 class Board:
+    """The real map, and every dead end on it: `gates` maps a gate tile to the whole dead ends behind it."""
+
     def __init__(self, W, H, kinds):
         self.W, self.H, self.kinds = W, H, kinds
+        self.sides, self.memo, self.by_cells = {}, {}, {}
+        for y in range(H):
+            for x in range(W):
+                for _, kind, nxt in self.around((x, y)):
+                    if kind == 0:
+                        self.dead_end((x, y), nxt)
+        self.gates = {}
+        for end in self.by_cells.values():
+            end['whole'] = True
+            self.gates.setdefault(end['gate'], []).append(end)
 
     def side(self, cell, ch):
         x, y = cell
@@ -258,18 +294,21 @@ class Board:
     def beside(self, cell, ch):
         return (cell[0] + STEP[ch][0]) % self.W, (cell[1] + STEP[ch][1]) % self.H
 
+    def around(self, cell):
+        got = self.sides.get(cell)
+        if got is None:
+            got = self.sides[cell] = tuple((ch, self.side(cell, ch), self.beside(cell, ch)) for ch in DIRS)
+        return got
+
     def shut_area(self, start, gate):
         """Tiles reachable from `start` without stepping on `gate`; None when there are more than ROOM_MAX or a portal."""
-        seen, todo = {start}, deque([start])
-        while todo:
-            cell = todo.popleft()
-            for ch in DIRS:
-                kind = self.side(cell, ch)
+        seen, todo = {start}, [start]
+        for cell in todo:
+            for _, kind, nxt in self.around(cell):
                 if kind == 1:
                     continue
                 if kind == 2:
                     return None
-                nxt = self.beside(cell, ch)
                 if nxt == gate or nxt in seen:
                     continue
                 if len(seen) >= ROOM_MAX:
@@ -278,160 +317,256 @@ class Board:
                 todo.append(nxt)
         return seen
 
+    def intern(self, gate, way, cells):
+        end = self.by_cells.get(cells)
+        if end is None:
+            end = self.by_cells[cells] = {'id': len(self.by_cells), 'gate': gate, 'dir': way, 'cells': cells,
+                                          'whole': False}
+        return end
+
     def dead_end(self, head, came_from):
-        """The bot's dead-end rule with the whole map known: {'gate', 'dir', 'cells'} or None."""
+        """The bot's dead-end rule with the whole map known: the dead end's record, or None."""
+        key = (head, came_from)
+        if key in self.memo:
+            return self.memo[key]
         inside, at, best = head, came_from, None
         for _ in range(ROOM_MAX + 1):
             cells = self.shut_area(head, at)
             if cells is None:
                 break
-            way, outs, plain = None, [], True
-            for ch in DIRS:
-                kind = self.side(at, ch)
+            way, outs, plain, ring = None, [], True, False
+            for ch, kind, nxt in self.around(at):
                 if kind == 1:
                     continue
                 if kind == 2:
                     plain = False
                     continue
-                nxt = self.beside(at, ch)
                 if nxt == inside:
                     way = ch
                 elif nxt not in cells:
                     outs.append(nxt)
-            if way is None:
+                else:
+                    ring = True
+            if way is None or ring:
                 break
-            best = {'gate': at, 'dir': way, 'cells': cells}
+            best = (at, way, cells)
             if not plain or len(outs) != 1:
                 break
             inside, at = at, outs[0]
+        if best is not None:
+            best = self.intern(best[0], best[1], frozenset(best[2]))
+        self.memo[key] = best
         return best
 
-    def told_true(self, end):
-        """A dead end from a ping against the real map."""
+    def told(self, end):
+        """A dead end from a message against the real map: its record when true, else None."""
         if not end['on_map'] or end['room'] <= 0 or self.side(end['gate'], end['dir']) != 0:
-            return False
-        cells = self.shut_area(self.beside(end['gate'], end['dir']), end['gate'])
-        return cells is not None and len(cells) == end['room']
+            return None
+        inner = self.beside(end['gate'], end['dir'])
+        cells = self.shut_area(inner, end['gate'])
+        if cells is None or len(cells) != end['room']:
+            return None
+        if any(kind == 0 and nxt != inner and nxt in cells for _, kind, nxt in self.around(end['gate'])):
+            return None
+        return self.intern(end['gate'], end['dir'], frozenset(cells))
 
 
-def draw(path, row):
-    """A dead end from a scan's log as text: # inside, G gate, H the parent's head, C the child's head; | and - are kelp."""
-    W, H, _, _, kinds = read_map(replay.load(path).root().text(0))
-    board = Board(W, H, kinds)
-    gate, head, child = tuple(row['gate']), tuple(row['head']), tuple(row['child_head'])
-    cells = board.shut_area(head, gate) or set()
+BOARDS = {}
+
+
+def board_for(text):
+    key = hashlib.sha1(text.encode()).hexdigest()
+    if key not in BOARDS:
+        W, H, _, _, kinds = read_map(text)
+        BOARDS[key] = Board(W, H, kinds)
+    return BOARDS[key]
+
+
+def draw(board, end, marks=None):
+    """A dead end as text: # inside, G gate, other letters from `marks` {tile: letter}; | and - are kelp."""
+    marks = marks or {}
+    gate, W, H = end['gate'], board.W, board.H
     lines = []
     for y in range(gate[1] - 6, gate[1] + 7):
         top, mid = '', ''
         for x in range(gate[0] - 9, gate[0] + 10):
             cell = (x % W, y % H)
             top += '+' + ('-' if board.side(cell, 'N') == 1 else ':' if board.side(cell, 'N') == 2 else ' ')
-            mark = 'H' if cell == head else 'G' if cell == gate else 'C' if cell == child else '#' if cell in cells else '.'
+            mark = marks.get(cell) or ('G' if cell == gate else '#' if cell in end['cells'] else '.')
             mid += ('|' if board.side(cell, 'W') == 1 else ':' if board.side(cell, 'W') == 2 else ' ') + mark
         lines += [top, mid]
     return '\n'.join(lines)
 
 
+STATS = (
+    'sonar', 'unreadable', 'leader', 'mouth', 'queen', 'other', 'new_rays', 'turns', 'points', 'points_max', 'tle',
+    'deaths', 'splits', 'splits_with_ping', 'splits_resent', 'child_told', 'child_told_on_split_turn',
+    'split_turn_any_ray_hit_child', 'end_splits', 'end_splits_with_end', 'spots_told', 'spots_told_refill',
+    'spots_stepped', 'spots_grew', 'msgs_with_end', 'msgs_end_true', 'msgs_end_whole', 'msgs_end_counted',
+    'alert_turns', 'split_turns_own_end', 'relay_turns', 'passon_turns', 'end_rays', 'end_rays_hit_teammate',
+    'relay_rays_hit_teammate', 'first_tellings', 'inside_turns', 'inside_turns_alert', 'inside_quiet_turns',
+    'inside_quiet_turns_alert')
+
+
 def scan(path, ours):
     """One pass over a replay for our side."""
     root = replay.load(path).root()
-    W, H, bodies, team_of, kinds = read_map(root.text(0))
-    board = Board(W, H, kinds)
+    text = root.text(0)
+    W, H, bodies, team_of, _ = read_map(text)
+    board = board_for(text)
     tag = team_tag(ours)
-    key, streams, opened = make_key(W, H, tag), {}, {}
+    key, streams, opened, shut = make_key(W, H, tag), {}, {}, {}
 
-    stat = {k: 0 for k in (
-        'sonar', 'unreadable', 'leader', 'mouth', 'queen', 'other', 'split_rays', 'turns', 'points', 'points_max',
-        'tle', 'deaths', 'splits', 'splits_with_ping', 'splits_resent', 'told', 'told_on_split_turn',
-        'rays_hit_child', 'rays_hit_other_ally', 'pings_with_end', 'pings_end_true', 'pings_spots',
-        'pings_spots_refill', 'end_splits', 'end_splits_with_end', 'end_splits_told', 'stray_split_rays',
-        'split_turn_any_ray_hit_child', 'pings_end_passed_on')}
+    stat = {k: 0 for k in STATS}
     digests, h = {}, hashlib.sha1()
-    splits, by_parent, by_child, log = [], {}, {}, []
-    born, steps, visits, knows, shut = {}, {}, {}, {}, {}
-    first_ping = None
+    splits, by_parent, by_child = [], {}, {}
+    knows, stays, done, pending, arrivals, named = {}, {}, [], {}, [], set()
+    first_new = None
     rnd = 0
     cur = None
 
-    def told_cells(end):
-        """Tiles of a dead end named in a ping (None when it is not a true one)."""
-        key = (end['gate'], end['dir'], end['room'])
-        if key not in shut:
-            shut[key] = (frozenset(board.shut_area(board.beside(end['gate'], end['dir']), end['gate']))
-                         if board.told_true(end) else None)
-        return shut[key]
+    def told_end(end):
+        k = (end['gate'], end['dir'], end['room'])
+        if k not in shut:
+            shut[k] = board.told(end)
+        return shut[k]
 
-    def watch(did, grew):
-        """Follow a child after one of its head moves (or its death / own split when grew is None)."""
-        s = by_child.get(did)
-        if s is None or rnd - s['round'] > WATCH + STUCK:
-            return
-        body = bodies.get(did)
-        if grew is None:
-            if s['back_in'] and s['inside'] and not s['stuck']:
-                s['stuck'] = True
-            return
+    def learn(did, end, count):
+        """Dragon `did` now knows `end`; a pearl count, when given, is dated this round."""
+        known = knows.setdefault(did, {})
+        if end['id'] not in known:
+            known[end['id']] = [rnd, None, None]
+            stat['first_tellings'] += 1
+        if count is not None:
+            known[end['id']][1:] = [count, rnd]
+
+    def view(did, end):
+        """(told, the pearl count it holds while fresh else None)."""
+        row = knows.get(did, {}).get(end['id'])
+        if row is None:
+            return False, None
+        return True, row[1] if row[2] is not None and rnd - row[2] <= FRESH else None
+
+    def foe_near(cell):
+        for did, body in bodies.items():
+            if team_of.get(did) != ours and body and abs(shift(cell[0], body[0][0], W)) <= NEAR and \
+                    abs(shift(cell[1], body[0][1], H)) <= NEAR:
+                return True
+        return False
+
+    def finish(did, how, lost=0):
+        s = stays.pop(did)
+        s.update(how=how, lost=lost, last_round=rnd)
+        done.append(s)
+
+    def on_step(did, grew):
+        """After one head move of one of our dragons."""
+        body = bodies[did]
         head = body[0]
-        if rnd - s['round'] <= WATCH:
+        prev = body[1] if len(body) > 1 else None
+        for a in pending.pop(did, ()):
+            a['walked_in'] = head in a['end']['cells']
+        s = stays.get(did)
+        if s is not None:
+            if head in s['end']['cells']:
+                s['pearls'] += grew
+            else:
+                finish(did, 'left')
+                s = None
+        if prev is not None:
+            if s is None:
+                end = board.dead_end(head, prev)
+                if end is not None:
+                    told, count = view(did, end)
+                    stays[did] = {'end': end, 'round': rnd, 'dragon': did, 'length': len(body) - grew,
+                                  'pearls': int(grew), 'turns': 0, 'alert': False, 'alert_quiet': False, 'splits': 0,
+                                  'told': told, 'count': count}
+            for end in board.gates.get(head, ()):
+                if prev not in end['cells']:
+                    told, count = view(did, end)
+                    a = {'round': rnd, 'dragon': did, 'end': end, 'told': told, 'count': count,
+                         'charged': told and not (count is not None and count >= PAY), 'named': end['id'] in named,
+                         'walked_in': False, 'died': False, 'foe_near': foe_near(head), 'length': len(body)}
+                    arrivals.append(a)
+                    pending.setdefault(did, []).append(a)
+        s = by_child.get(did)
+        if s is not None and rnd - s['round'] <= WATCH:
             s['gain'] = len(body) - s['child_length']
             for spot in s['spots']:
                 if spot['tile'] == head and not spot['stepped']:
-                    spot['stepped'] = True
-                    spot['grew'] = grew
-        if s['cells'] is None:
-            return
-        inside = head in s['cells']
-        if not inside:
-            s['was_out'] = True
-        elif s['was_out'] and not s['back_in'] and rnd - s['round'] <= WATCH:
-            s['back_in'] = True
-            s['back_round'] = rnd
-        if inside and s['back_in'] and grew:
-            s['grew_inside'] += 1
-        s['inside'] = inside
+                    spot['stepped'], spot['grew'] = True, grew
 
     def close_turn():
-        nonlocal cur, first_ping
+        nonlocal cur, first_new
         if cur is None:
             return
         t, cur = cur, None
         did = t['id']
-        mine = by_parent.get(did)
-        if mine is not None and mine['round'] == rnd and any(p['hit'] == mine['child'] for p in t['pings']):
+        body = bodies.get(did)
+        head = body[0] if body else None
+        now = board.dead_end(body[0], body[1]) if body and len(body) > 1 else None
+        sp = by_parent.get(did)
+        if sp is not None and sp['round'] == rnd and any(p['hit'] == sp['child'] for p in t['pings']):
             stat['split_turn_any_ray_hit_child'] += 1
+        own = relay = passon = False
+        counted = set()
         for p in t['pings']:
             stat['sonar'] += 1
-            kind = p['msg']['kind']
-            if kind != 'split':
-                stat[kind] += 1
+            msg = p['msg']
+            if msg['kind'] != 'split':
+                stat[msg['kind']] += 1
                 continue
-            stat['split_rays'] += 1
-            if first_ping is None:
-                first_ping = rnd
-            s = by_parent.get(did)
-            if s is None or rnd - s['round'] > RESEND:
-                stat['stray_split_rays'] += 1
+            stat['new_rays'] += 1
+            if first_new is None:
+                first_new = rnd
+            end = msg['end']
+            real = told_end(end) if end is not None else None
+            if end is not None and id(msg) not in counted:
+                counted.add(id(msg))
+                stat['msgs_with_end'] += 1
+                stat['msgs_end_true'] += real is not None
+                stat['msgs_end_whole'] += real is not None and real['whole']
+                stat['msgs_end_counted'] += end['pearls'] is not None
+            if real is not None:
+                named.add(real['id'])
+                inside = head is not None and head in real['cells']
+                relay = relay or msg['relay']
+                own = own or (inside and not msg['relay'])
+                passon = passon or (not inside and not msg['relay'])
+                if inside:
+                    learn(did, real, end['pearls'])
+                stat['end_rays'] += 1
+                hit = p['hit']
+                if hit is not None and hit != did and team_of.get(hit) == ours:
+                    learn(hit, real, end['pearls'])
+                    stat['end_rays_hit_teammate'] += 1
+                    stat['relay_rays_hit_teammate'] += msg['relay']
+            if sp is None or rnd - sp['round'] > RESEND:
                 continue
-            if s['msg'] is None:
-                s['msg'] = p['msg']
-                s['spots'] = [{'tile': tile, 'refill': refill, 'stepped': False, 'grew': False}
-                              for tile, refill in p['msg']['spots']]
-            s['rays'].append({'round': rnd, 'dir': p['dir'], 'hit': p['hit']})
-            if p['hit'] is not None and team_of.get(p['hit']) == ours and p['msg']['end'] is not None:
-                cells = told_cells(p['msg']['end'])
-                if cells is not None:
-                    knows.setdefault(p['hit'], set()).add(cells)
-            if rnd == s['round']:
-                s['sent_on_split_turn'] = True
-            else:
-                s['resent'] = True
-            if p['hit'] == s['child']:
-                stat['rays_hit_child'] += 1
-                if not s['told']:
-                    s['told'] = True
-                    s['told_round'] = rnd
-            elif p['hit'] is not None and team_of.get(p['hit']) == ours:
-                stat['rays_hit_other_ally'] += 1
+            if rnd == sp['round'] and sp['msg'] is None:
+                sp['msg'] = msg
+                sp['spots'] = [{'tile': tile, 'refill': refill, 'stepped': False, 'grew': False}
+                               for tile, refill in msg['spots']]
+            if msg is not sp['msg']:
+                continue
+            sp['resent'] = sp['resent'] or rnd != sp['round']
+            if p['hit'] == sp['child'] and not sp['told']:
+                sp['told'], sp['told_round'] = True, rnd
+        quiet = not t['split']
+        stat['alert_turns'] += own and quiet
+        stat['split_turns_own_end'] += own and not quiet
+        stat['relay_turns'] += relay
+        stat['passon_turns'] += passon
+        if now is not None:
+            stat['inside_turns'] += 1
+            stat['inside_turns_alert'] += own
+            stat['inside_quiet_turns'] += quiet
+            stat['inside_quiet_turns_alert'] += own and quiet
+        s = stays.get(did)
+        if s is not None:
+            s['turns'] += 1
+            s['alert'] = s['alert'] or own
+            s['alert_quiet'] = s['alert_quiet'] or (own and quiet)
 
     for ev in root.pointer(3):
         which = ev.u16(0)
@@ -455,7 +590,7 @@ def scan(path, ours):
             stat['points'] += points
             stat['points_max'] = max(stat['points_max'], points)
             stat['tle'] += pl.bit(32)
-            cur = {'id': did, 'pings': []}
+            cur = {'id': did, 'pings': [], 'split': False}
         elif kind == 'dragonUpdate':
             did = pl.i32(0)
             head, tail = replay.point(pl.pointer(0)), replay.point(pl.pointer(1))
@@ -468,46 +603,26 @@ def scan(path, ours):
             while len(body) > 1 and body[-1] != tail:
                 body.pop()
             if moved and team_of.get(did) == ours:
-                steps.setdefault(did, deque(maxlen=4 * ROOM_MAX)).append((head, len(body) > before))
-                watch(did, len(body) > before)
+                on_step(did, len(body) > before)
         elif kind == 'dragonSplit':
             parent, child = pl.i32(0), pl.i32(4)
             h.update(f's{parent}{child}'.encode())
             team = ('A', 'B')[pl.u16(8)]
             old = bodies.get(parent, deque())
-            if team == ours:
-                watch(parent, None)
             bodies[parent] = deque(replay.point(p) for p in pl.pointer(0))
             bodies[child] = deque(replay.point(p) for p in pl.pointer(1))
             team_of[parent] = team_of[child] = team
             if team != ours:
                 continue
             stat['splits'] += 1
+            if cur is not None and cur['id'] == parent:
+                cur['split'] = True
+            if parent in stays:
+                stays[parent]['splits'] += 1
             end = board.dead_end(old[0], old[1]) if len(old) > 1 else None
-            s = {'round': rnd, 'parent': parent, 'child': child, 'parent_length': len(old),
-                 'child_length': len(bodies[child]), 'head': old[0], 'child_head': bodies[child][0],
-                 'cells': end['cells'] if end else None, 'gate': end['gate'] if end else None,
-                 'dir': end['dir'] if end else None, 'room': len(end['cells']) if end else None,
-                 'msg': None, 'rays': [], 'sent_on_split_turn': False, 'resent': False, 'told': False,
-                 'told_round': None, 'spots': [], 'gain': 0, 'child_died': None,
-                 'was_out': False, 'inside': False, 'back_in': False, 'back_round': None, 'stuck': False,
-                 'grew_inside': 0}
-            if end:
-                s['inside'] = s['born_inside'] = bodies[child][0] in end['cells']
-                s['was_out'] = not s['inside']
-                # This stay in the dead end: steps and pearls since the head last came in (or since birth inside).
-                stay = pearls = 0
-                for cell, grew in reversed(steps.get(parent, ())):
-                    if cell not in end['cells']:
-                        break
-                    stay += 1
-                    pearls += grew
-                area = frozenset(end['cells'])
-                s.update(stay=stay, stay_pearls=pearls, earlier_here=visits.get(area, 0), kept=len(bodies[parent]),
-                         parent_knew=any(old[0] in cells for cells in knows.get(parent, ())),
-                         parent_born=born.get(parent))
-                visits[area] = visits.get(area, 0) + 1
-            born[child] = (rnd, parent)
+            s = {'round': rnd, 'parent': parent, 'child': child, 'child_length': len(bodies[child]),
+                 'end': end, 'msg': None, 'spots': [], 'resent': False, 'told': False, 'told_round': None,
+                 'gain': 0, 'child_died': None}
             splits.append(s)
             by_parent[parent] = s
             by_child[child] = s
@@ -516,7 +631,10 @@ def scan(path, ours):
             h.update(f'd{did}{reason}'.encode())
             if team_of.get(did) == ours:
                 stat['deaths'] += 1
-                watch(did, None)
+                for a in pending.pop(did, ()):
+                    a['died'] = True
+                if did in stays:
+                    finish(did, 'died', len(bodies.get(did, ())))
                 s = by_child.get(did)
                 if s is not None and rnd - s['round'] <= WATCH:
                     s['child_died'] = rnd
@@ -534,42 +652,39 @@ def scan(path, ours):
                                  'hit': pl.i32(12) if pl.u16(6) else None})
     close_turn()
     digests[rnd] = h.hexdigest()
+    for did in list(stays):
+        finish(did, 'game over')
 
     for s in splits:
         msg = s['msg']
-        has_end = s['cells'] is not None
-        stat['end_splits'] += has_end
-        if msg is not None:
-            stat['splits_with_ping'] += s['sent_on_split_turn']
-            stat['splits_resent'] += s['resent']
-            stat['told'] += s['told']
-            stat['told_on_split_turn'] += s['told'] and s['told_round'] == s['round']
-            stat['pings_spots'] += len(msg['spots'])
-            stat['pings_spots_refill'] += sum(1 for _, refill in msg['spots'] if refill)
-            if msg['end'] is not None:
-                stat['pings_with_end'] += 1
-                cells = told_cells(msg['end'])
-                s['end_true'] = cells is not None
-                s['end_passed_on'] = cells is not None and s['head'] not in cells
-                stat['pings_end_true'] += s['end_true']
-                stat['pings_end_passed_on'] += s['end_passed_on']
-                stat['end_splits_with_end'] += has_end
-        stat['end_splits_told'] += has_end and s['told']
-        s['cells'] = sorted(s['cells']) if has_end else None
-        if len(log) < LOG_MAX and (has_end or (msg is not None and msg['end'] is not None)):
-            log.append({k: s.get(k) for k in (
-                'round', 'parent', 'child', 'parent_length', 'child_length', 'head', 'child_head', 'gate', 'dir',
-                'room', 'msg', 'end_true', 'end_passed_on', 'rays', 'told', 'born_inside', 'back_in', 'back_round', 'stuck',
-                'grew_inside', 'gain', 'child_died', 'stay', 'stay_pearls', 'earlier_here', 'kept', 'parent_knew',
-                'parent_born')})
-    rows = [{k: s.get(k) for k in ('round', 'child_length', 'told', 'gain', 'child_died', 'back_in', 'stuck',
-                                    'grew_inside', 'born_inside', 'stay_pearls', 'earlier_here', 'kept',
-                                    'parent_knew')} |
-            {'dead_end': s['cells'] is not None, 'pinged': s['msg'] is not None,
-             'spots': [{'refill': p['refill'], 'stepped': p['stepped'], 'grew': p['grew']} for p in s['spots']]}
-            for s in splits]
-    return {'digests': digests, 'first_ping_round': first_ping, 'rounds': rnd, **stat, 'splits_rows': rows,
-            'dead_end_log': log}
+        stat['end_splits'] += s['end'] is not None
+        if msg is None:
+            continue
+        stat['splits_with_ping'] += 1
+        stat['splits_resent'] += s['resent']
+        stat['child_told'] += s['told']
+        stat['child_told_on_split_turn'] += s['told'] and s['told_round'] == s['round']
+        real = told_end(msg['end']) if msg['end'] is not None else None
+        stat['end_splits_with_end'] += s['end'] is not None and real is not None and bool(real['cells'] & s['end']['cells'])
+        if s['told']:
+            stat['spots_told'] += len(s['spots'])
+            stat['spots_told_refill'] += sum(p['refill'] for p in s['spots'])
+            stat['spots_stepped'] += sum(p['stepped'] for p in s['spots'])
+            stat['spots_grew'] += sum(bool(p['grew']) for p in s['spots'])
+    stay_rows = [{'round': s['round'], 'dragon': s['dragon'], 'gate': s['end']['gate'], 'dir': s['end']['dir'],
+                  'room': len(s['end']['cells']), 'length': s['length'], 'pearls': s['pearls'], 'turns': s['turns'],
+                  'alert': s['alert'], 'alert_quiet': s['alert_quiet'], 'splits': s['splits'], 'how': s['how'],
+                  'lost': s['lost'], 'told': s['told'], 'count': s['count'], 'last_round': s['last_round']}
+                 for s in done]
+    arrival_rows = [{'round': a['round'], 'dragon': a['dragon'], 'gate': a['end']['gate'], 'dir': a['end']['dir'],
+                     'room': len(a['end']['cells']), 'told': a['told'], 'count': a['count'], 'charged': a['charged'],
+                     'named': a['named'], 'walked_in': a['walked_in'], 'died': a['died'], 'foe_near': a['foe_near'],
+                     'length': a['length']} for a in arrivals]
+    children = [{'told': s['told'], 'pinged': s['msg'] is not None, 'gain': s['gain'],
+                 'died': s['child_died'] is not None} for s in splits]
+    return {'digests': digests, 'first_new_round': first_new, 'rounds': rnd, **stat,
+            'dead_ends_on_map': sum(len(v) for v in board.gates.values()),
+            'dead_ends_named': len(named), 'stays': stay_rows, 'arrivals': arrival_rows, 'children': children}
 
 
 def job(args):
@@ -596,36 +711,63 @@ def ratio(a, b):
     return round(a / b, 3) if b else None
 
 
+def wasted(s):
+    return s['pearls'] < PAY and (s['splits'] > 0 or s['how'] == 'died')
+
+
+def stay_counts(rows, turns):
+    bad = [s for s in rows if wasted(s)]
+    return {'stays': len(rows), 'with_alert': sum(s['alert_quiet'] for s in rows),
+            'with_alert_or_split_ping': sum(s['alert'] for s in rows),
+            'wasted': len(bad), 'wasted_per_1000_turns': round(1000 * len(bad) / turns, 3) if turns else None,
+            'wasted_by_a_told_dragon': sum(s['told'] for s in bad),
+            'paid': sum(s['pearls'] >= PAY for s in rows),
+            'under_pay_but_walked_out': sum(s['pearls'] < PAY and not wasted(s) for s in rows),
+            'pearls_eaten': sum(s['pearls'] for s in rows), 'splits_inside': sum(s['splits'] for s in rows),
+            'died_inside': sum(s['how'] == 'died' for s in rows), 'length_lost_inside': sum(s['lost'] for s in rows),
+            'entered_by_a_told_dragon': sum(s['told'] for s in rows)}
+
+
+def arrival_counts(rows):
+    def cut(keep):
+        picked = [a for a in rows if keep(a)]
+        near = [a for a in picked if a['foe_near']]
+        return {'arrivals': len(picked), 'walked_in': sum(a['walked_in'] for a in picked),
+                'walk_in_share': ratio(sum(a['walked_in'] for a in picked), len(picked)),
+                'enemy_head_near': len(near), 'walked_in_with_enemy_near': sum(a['walked_in'] for a in near)}
+
+    return {'all': cut(lambda a: True), 'told': cut(lambda a: a['told']),
+            'told_charged': cut(lambda a: a['charged']),
+            'told_count_pays': cut(lambda a: a['told'] and not a['charged']),
+            'untold': cut(lambda a: not a['told']),
+            'untold_named_earlier': cut(lambda a: not a['told'] and a['named']),
+            'at_dead_ends_named_earlier': cut(lambda a: a['named'])}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--replays')
     ap.add_argument('--base')
     ap.add_argument('--candidate')
     ap.add_argument('--output')
-    ap.add_argument('--scan', nargs='+', help='instead: print one line of counts per replay (no verdict)')
+    ap.add_argument('--scan', nargs='+', help='instead: print the counts of each replay (no verdict)')
     ap.add_argument('--team', default='A', help='our side for --scan')
-    ap.add_argument('--draw', type=int, default=0,
-                    help='with --scan: draw this many dead-end splits per replay (negative: list them without a drawing)')
+    ap.add_argument('--draw', type=int, default=0, help='with --scan: draw this many stays per replay')
     a = ap.parse_args()
     if a.scan:
         for path in a.scan:
             s = scan(path, a.team)
-            walked = [r for r in s['splits_rows'] if r['dead_end']]
-            print(os.path.basename(path), {k: s[k] for k in ('rounds', 'splits', 'split_turn_any_ray_hit_child',
-                                                             'end_splits', 'split_rays', 'sonar', 'leader', 'mouth',
-                                                             'queen', 'other', 'unreadable')},
-                  'dead-end children walked back in', sum(r['back_in'] for r in walked), 'stuck again',
-                  sum(r['stuck'] for r in walked), 'born inside', sum(bool(r['born_inside']) for r in walked),
-                  'in a dead end split in before', sum(r['earlier_here'] > 0 for r in walked),
-                  'ate 3+ on that stay', sum(r['stay_pearls'] >= 3 for r in walked),
-                  'parent kept 2', sum(r['kept'] == 2 for r in walked))
-            for row in s['dead_end_log'][:abs(a.draw)]:
-                if row['gate'] is not None:
-                    print({k: row[k] for k in ('round', 'parent', 'child', 'parent_length', 'child_length', 'room',
-                                               'gate', 'dir', 'born_inside', 'back_in', 'stuck', 'told', 'stay',
-                                               'stay_pearls', 'earlier_here', 'kept', 'parent_knew', 'parent_born')})
-                    if a.draw > 0:
-                        print(draw(path, row))
+            print(os.path.basename(path), {k: s[k] for k in ('rounds', 'turns', 'splits', 'new_rays', 'alert_turns',
+                                                             'relay_turns', 'passon_turns', 'inside_turns',
+                                                             'inside_turns_alert', 'msgs_with_end', 'msgs_end_true',
+                                                             'dead_ends_on_map', 'dead_ends_named')})
+            print('  stays', stay_counts(s['stays'], s['turns']))
+            print('  arrivals', {k: (v['arrivals'], v['walked_in']) for k, v in arrival_counts(s['arrivals']).items()})
+            board = board_for(replay.load(path).root().text(0))
+            for row in s['stays'][:a.draw]:
+                print(row)
+                end = next(e for e in board.gates[tuple(row['gate'])] if e['dir'] == row['dir'])
+                print(draw(board, end))
         return
     if not (a.replays and a.base and a.candidate and a.output):
         ap.error('--replays, --base, --candidate and --output are required')
@@ -638,185 +780,187 @@ def main():
     with cf.ProcessPoolExecutor(int(os.environ.get('WORKERS', '4'))) as pool:
         scans = list(pool.map(job, jobs))
 
+    arms = ('base', 'candidate')
     pairs = []
     for n, k in enumerate(keys):
         b, c = scans[2 * n], scans[2 * n + 1]
         diff = first_diff(b.pop('digests'), c.pop('digests'))
         pairs.append({'map': k[0], 'seed': k[1], 'side': k[2], 'first_diff_round': diff,
-                      'silent_ok': diff is None or (c['first_ping_round'] is not None and
-                                                    diff >= c['first_ping_round']),
+                      'silent_ok': diff is None or (c['first_new_round'] is not None and
+                                                    diff >= c['first_new_round']),
                       'base': b, 'candidate': c})
 
-    def total(tag, field):
-        return sum(int(p[tag][field] or 0) for p in pairs)
+    def total(arm, field):
+        return sum(int(p[arm][field] or 0) for p in pairs)
 
     def both(field):
-        return {t: total(t, field) for t in ('base', 'candidate')}
+        return {t: total(t, field) for t in arms}
 
-    def rows(tag, keep=lambda r: True):
-        return [r for p in pairs for r in p[tag]['splits_rows'] if keep(r)]
-
-    def walked(tag, keep):
-        picked = rows(tag, lambda r: r['dead_end'] and keep(r))
-        return {'children': len(picked), 'walked_back_in': sum(r['back_in'] for r in picked),
-                'same_mistake': sum(r['stuck'] for r in picked),
-                'pearls_eaten_inside_after': sum(r['grew_inside'] for r in picked),
-                'born_inside': sum(bool(r['born_inside']) for r in picked)}
-
-    def growth(tag, keep=lambda r: True):
-        picked = rows(tag, keep)
-        return {'children': len(picked), 'mean_gain': ratio(sum(r['gain'] for r in picked), len(picked)),
-                'died': sum(r['child_died'] is not None for r in picked)}
-
-    def visits(tag):
-        picked = rows(tag, lambda r: r['dead_end'])
-        again = [r for r in picked if r['earlier_here'] > 0]
-        knew = [r for r in picked if r['parent_knew']]
-        return {'dead_end_splits': len(picked), 'repeat': len(again),
-                'repeat_unpaid': sum(r['stay_pearls'] < PAID for r in again),
-                'repeat_paid': sum(r['stay_pearls'] >= PAID for r in again),
-                'first_time_unpaid': sum(r['stay_pearls'] < PAID for r in picked if r['earlier_here'] == 0),
-                'parent_kept_2': sum(r['kept'] == 2 for r in picked),
-                'pearls_eaten_on_those_stays': sum(r['stay_pearls'] for r in picked),
-                'parent_had_been_told_this_dead_end': len(knew),
-                'parent_had_been_told_unpaid': sum(r['stay_pearls'] < PAID for r in knew)}
+    def rows(arm, field, keep=lambda p: True):
+        return [r for p in pairs if keep(p) for r in p[arm][field]]
 
     games = len(pairs)
-    n_splits, pinged, told = both('splits'), both('splits_with_ping'), both('told')
-    ends, ends_with_end = both('end_splits'), both('end_splits_with_end')
-    with_end, end_true = both('pings_with_end'), both('pings_end_true')
-    fire_share = ratio(pinged['candidate'], n_splits['candidate'])
-    reach_share = ratio(told['candidate'], pinged['candidate'])
+    turns = both('turns')
+    stays = {t: stay_counts(rows(t, 'stays'), turns[t]) for t in arms}
+    arrive = {t: arrival_counts(rows(t, 'arrivals')) for t in arms}
+    cand_stays, cand_arrive = stays['candidate'], arrive['candidate']
+    alert_share = ratio(cand_stays['with_alert'], cand_stays['stays'])
+    with_end, end_true = both('msgs_with_end'), both('msgs_end_true')
     true_share = ratio(end_true['candidate'], with_end['candidate'])
-    end_share = ratio(ends_with_end['candidate'], ends['candidate'])
+    told_share = ratio(cand_arrive['told']['arrivals'], cand_arrive['all']['arrivals'])
+    charged, untold = cand_arrive['told_charged'], cand_arrive['untold']
+    enough_arrivals = charged['arrivals'] >= MIN_ARRIVALS and untold['arrivals'] >= MIN_ARRIVALS
+    enough_wasted = stays['base']['wasted'] >= MIN_STAYS
+    rate = {t: stays[t]['wasted_per_1000_turns'] for t in arms}
     silent = sum(1 for p in pairs if p['silent_ok'])
-    base_walk = walked('base', lambda r: True)
-    told_walk = walked('candidate', lambda r: r['told'])
-    untold_walk = walked('candidate', lambda r: not r['told'])
-    base_rate = ratio(base_walk['walked_back_in'], base_walk['children'])
-    told_rate = ratio(told_walk['walked_back_in'], told_walk['children'])
-    seen = {t: visits(t) for t in ('base', 'candidate')}
-    unpaid = {t: ratio(seen[t]['repeat_unpaid'], n_splits[t]) for t in ('base', 'candidate')}
-    enough = seen['base']['repeat_unpaid'] >= MIN_ENDS and unpaid['candidate'] is not None
     checks = {
-        'fires': fire_share is not None and fire_share >= FIRE_SHARE and total('base', 'split_rays') == 0,
-        'reach': reach_share is not None and reach_share >= REACH_SHARE,
+        'alerts_fire': total('base', 'new_rays') == 0 and alert_share is not None and alert_share >= ALERT_SHARE,
         'true': true_share is not None and true_share >= TRUE_SHARE,
-        'dead_ends_seen': ends['candidate'] >= MIN_ENDS and end_share is not None and end_share >= END_SHARE,
+        'reach': told_share is not None and told_share >= TOLD_SHARE,
+        'told_stay_out': enough_arrivals and charged['walk_in_share'] <= HALF * untold['walk_in_share'],
+        'fewer_wasted_stays': enough_wasted and rate['candidate'] is not None and
+                              rate['candidate'] <= DROP * rate['base'],
         'nothing_else_changes': silent == games,
-        'behaviour': enough and unpaid['candidate'] < unpaid['base'],
     }
-    fires_as_specified = all(checks[k] for k in ('fires', 'reach', 'true', 'nothing_else_changes'))
-    target_seen = ends['candidate'] >= MIN_ENDS
+    fires_as_specified = all(checks[k] for k in ('alerts_fire', 'true', 'nothing_else_changes'))
+    target_seen = cand_stays['stays'] >= MIN_STAYS and charged['arrivals'] >= MIN_ARRIVALS
+    behaviour_shown = all(checks[k] for k in ('reach', 'told_stay_out', 'fewer_wasted_stays'))
     passed = all(checks.values())
 
     by_map = {}
     for p in pairs:
-        row = by_map.setdefault(p['map'], {t: {'games': 0, 'splits': 0, 'split_ping': 0, 'child_told': 0,
-                                               'dead_end_splits': 0, 'repeat_unpaid': 0, 'repeat_paid': 0}
-                                           for t in ('base', 'candidate')})
-        for t in ('base', 'candidate'):
-            ends_here = [r for r in p[t]['splits_rows'] if r['dead_end']]
-            row[t]['games'] += 1
-            row[t]['splits'] += p[t]['splits']
-            row[t]['split_ping'] += p[t]['splits_with_ping']
-            row[t]['child_told'] += p[t]['told']
-            row[t]['dead_end_splits'] += len(ends_here)
-            row[t]['repeat_unpaid'] += sum(r['earlier_here'] > 0 and r['stay_pearls'] < PAID for r in ends_here)
-            row[t]['repeat_paid'] += sum(r['earlier_here'] > 0 and r['stay_pearls'] >= PAID for r in ends_here)
+        row = by_map.setdefault(p['map'], {})
+        for t in arms:
+            got = row.setdefault(t, {'games': 0, 'turns': 0, 'alert_turns': 0, 'stays': [], 'arrivals': []})
+            got['games'] += 1
+            got['turns'] += p[t]['turns']
+            got['alert_turns'] += p[t]['alert_turns']
+            got['stays'] += p[t]['stays']
+            got['arrivals'] += p[t]['arrivals']
+    for row in by_map.values():
+        for t in arms:
+            got = row[t]
+            counts, ways = stay_counts(got.pop('stays'), got['turns']), arrival_counts(got.pop('arrivals'))
+            got.update(stays=counts['stays'], wasted_stays=counts['wasted'], paid_stays=counts['paid'],
+                       wasted_per_1000_turns=counts['wasted_per_1000_turns'],
+                       arrivals=ways['all']['arrivals'], arrivals_told=ways['told']['arrivals'],
+                       walked_in=ways['all']['walked_in'], told_charged=ways['told_charged']['arrivals'],
+                       told_charged_walked_in=ways['told_charged']['walked_in'])
 
-    spots = [s for r in rows('candidate', lambda r: r['told']) for s in r['spots']]
+    def growth(arm, keep=lambda r: True):
+        picked = [r for r in rows(arm, 'children') if keep(r)]
+        return {'children': len(picked), 'mean_gain': ratio(sum(r['gain'] for r in picked), len(picked)),
+                'died': sum(r['died'] for r in picked)}
 
-    def used(refill):
-        picked = [s for s in spots if s['refill'] == refill]
-        return {'told': len(picked), 'stepped_on': sum(s['stepped'] for s in picked),
-                'grew_there': sum(s['grew'] for s in picked)}
-
-    cpu = {t: ratio(total(t, 'points'), total(t, 'turns')) if total(t, 'points') else None
-           for t in ('base', 'candidate')}
+    child_rounds = {'base': growth('base'), 'candidate_told': growth('candidate', lambda r: r['told']),
+                    'candidate_not_told': growth('candidate', lambda r: not r['told'])}
+    log = []
+    for p in pairs:
+        name = f"candidate_{p['map']}_{p['seed']}_{p['side']}.replay"
+        for arow in p['candidate']['arrivals']:
+            if arow['charged'] and len(log) < LOG_MAX:
+                log.append({'replay': name, 'what': 'told-charged dragon at a way in', **arow})
+    cpu = {t: ratio(total(t, 'points'), turns[t]) if total(t, 'points') else None for t in arms}
     failed = [k for k, v in checks.items() if not v]
     note = (
         f"{'PASS' if passed else 'FAIL'} ({'all six checks' if passed else 'failed: ' + ', '.join(failed)}). "
-        f"{games} paired games. Our splits: candidate {n_splits['candidate']}, base {n_splits['base']}. Split ping "
-        f"on the split turn: candidate {pinged['candidate']} (share {fire_share}); base split-ping rays "
-        f"{total('base', 'split_rays')}. A ray hit the child on {told['candidate']} of those (share {reach_share}; "
-        f"{total('candidate', 'told_on_split_turn')} on the split turn itself, "
-        f"{total('candidate', 'splits_resent')} splits were re-sent); rays that hit another teammate "
-        f"{total('candidate', 'rays_hit_other_ally')}. Any split-turn ray (whatever it carries) hit the child on "
-        f"{total('base', 'split_turn_any_ray_hit_child')}/{n_splits['base']} base splits and "
-        f"{total('candidate', 'split_turn_any_ray_hit_child')}/{n_splits['candidate']} candidate splits. Dead ends "
-        f"carried in pings {with_end['candidate']}, true on the real map {end_true['candidate']} (share "
-        f"{true_share}), passed on from an earlier ping {total('candidate', 'pings_end_passed_on')}. Dead-end "
-        f"splits (real map): candidate {ends['candidate']}, base {ends['base']}; with a dead end in the ping "
-        f"{ends_with_end['candidate']} (share {end_share}), child told {total('candidate', 'end_splits_told')}. "
-        f"Same game up to the first split ping in {silent}/{games} pairs. Repeats (dead-end split in a dead end we "
-        f"already split in) with fewer than {PAID} pearls eaten on that stay: base {seen['base']['repeat_unpaid']} "
-        f"(share of our splits {unpaid['base']}), candidate {seen['candidate']['repeat_unpaid']} (share "
-        f"{unpaid['candidate']})"
-        f"{'' if enough else ' (too few in base to compare: need ' + str(MIN_ENDS) + ')'}; repeats with {PAID} or "
-        f"more pearls: base {seen['base']['repeat_paid']}, candidate {seen['candidate']['repeat_paid']}; dead-end "
-        f"splits by a dragon that had been told that dead end: "
-        f"{seen['candidate']['parent_had_been_told_this_dead_end']} "
-        f"({seen['candidate']['parent_had_been_told_unpaid']} unpaid). Children of dead-end splits that walked back "
-        f"in within {WATCH} rounds: base {base_walk['walked_back_in']}/{base_walk['children']} (share {base_rate}), "
-        f"candidate told {told_walk['walked_back_in']}/{told_walk['children']} (share {told_rate}), candidate not "
-        f"told {untold_walk['walked_back_in']}/{untold_walk['children']}; of those, died or split again inside: "
-        f"base {base_walk['same_mistake']}, told {told_walk['same_mistake']}, not told "
-        f"{untold_walk['same_mistake']}. Pearl spots told to a child: refill "
-        f"{used(True)}, pearl on the ground {used(False)}. Child gain in its first {WATCH} rounds: base "
-        f"{growth('base')}, candidate told {growth('candidate', lambda r: r['told'])}, candidate not told "
-        f"{growth('candidate', lambda r: not r['told'])}. Cost: leader messages {total('base', 'leader')} -> "
+        f"{games} paired games. Stays in a dead end: base {stays['base']['stays']}, candidate "
+        f"{cand_stays['stays']}; candidate stays with an alert {cand_stays['with_alert']} (share {alert_share}); "
+        f"base rays of the new kind {total('base', 'new_rays')}. Turns inside a dead end without a split: "
+        f"{total('candidate', 'inside_quiet_turns')}, with an alert "
+        f"{total('candidate', 'inside_quiet_turns_alert')}. Candidate turns with an alert "
+        f"{total('candidate', 'alert_turns')}, with a passed-on copy {total('candidate', 'relay_turns')}, with a "
+        f"dead end handed on at a split {total('candidate', 'passon_turns')}. Dead ends carried in messages "
+        f"{with_end['candidate']}, true {end_true['candidate']} (share {true_share}), whole "
+        f"{total('candidate', 'msgs_end_whole')}, with a pearl count {total('candidate', 'msgs_end_counted')}. Rays "
+        f"with a true dead end {total('candidate', 'end_rays')}, hit a teammate "
+        f"{total('candidate', 'end_rays_hit_teammate')} ({total('candidate', 'relay_rays_hit_teammate')} of them "
+        f"passed-on copies); dragons told a dead end for the first time {total('candidate', 'first_tellings')}. "
+        f"Arrivals at a way in: base {arrive['base']['all']['arrivals']} (walked in "
+        f"{arrive['base']['all']['walked_in']}, share {arrive['base']['all']['walk_in_share']}), candidate "
+        f"{cand_arrive['all']['arrivals']} (walked in {cand_arrive['all']['walked_in']}, share "
+        f"{cand_arrive['all']['walk_in_share']}). Candidate arrivals by a told dragon "
+        f"{cand_arrive['told']['arrivals']} (share {told_share}). Told and charged: {charged['arrivals']} arrivals, "
+        f"walked in {charged['walked_in']} (share {charged['walk_in_share']}), "
+        f"{charged['walked_in_with_enemy_near']} of those with an enemy head within {NEAR} tiles of the gate; "
+        f"untold: {untold['arrivals']} arrivals, walked in {untold['walked_in']} (share "
+        f"{untold['walk_in_share']}); told with a fresh count of {PAY} or more: "
+        f"{cand_arrive['told_count_pays']['arrivals']} arrivals, walked in "
+        f"{cand_arrive['told_count_pays']['walked_in']}"
+        f"{'' if enough_arrivals else ' (too few arrivals to compare: need ' + str(MIN_ARRIVALS) + ' of each)'}. "
+        f"Wasted stays (fewer than {PAY} pearls eaten, then split or died inside): base "
+        f"{stays['base']['wasted']} ({rate['base']} per 1,000 of our dragon turns), candidate "
+        f"{cand_stays['wasted']} ({rate['candidate']}), {cand_stays['wasted_by_a_told_dragon']} of the "
+        f"candidate's by a dragon that had been told"
+        f"{'' if enough_wasted else ' (too few in base to compare: need ' + str(MIN_STAYS) + ')'}; paid stays: "
+        f"base {stays['base']['paid']}, candidate {cand_stays['paid']}; pearls eaten on stays "
+        f"{stays['base']['pearls_eaten']} -> {cand_stays['pearls_eaten']}, lengths lost inside "
+        f"{stays['base']['length_lost_inside']} -> {cand_stays['length_lost_inside']}. Same game up to the first "
+        f"new message in {silent}/{games} pairs. Split ping of the first build: our splits "
+        f"{total('candidate', 'splits')}, with a ping on the split turn {total('candidate', 'splits_with_ping')}, "
+        f"child told {total('candidate', 'child_told')}; pearl spots told to a child "
+        f"{total('candidate', 'spots_told')}, stepped on {total('candidate', 'spots_stepped')}, eaten at "
+        f"{total('candidate', 'spots_grew')}. Cost: leader reports {total('base', 'leader')} -> "
         f"{total('candidate', 'leader')}, our deaths {total('base', 'deaths')} -> {total('candidate', 'deaths')}, "
-        f"timeouts {total('base', 'tle')} -> {total('candidate', 'tle')}, CPU points per turn {cpu['base']} -> "
-        f"{cpu['candidate']} (None = not metered). Per map, candidate (splits / with ping / child told / dead-end "
-        f"splits / unpaid repeats, base unpaid repeats in brackets): " +
-        '; '.join(f"{m} {r['candidate']['splits']} / {r['candidate']['split_ping']} / {r['candidate']['child_told']}"
-                  f" / {r['candidate']['dead_end_splits']} / {r['candidate']['repeat_unpaid']} "
-                  f"[{r['base']['repeat_unpaid']}]" for m, r in sorted(by_map.items())) + '.')
+        f"our dragon turns {turns['base']} -> {turns['candidate']}, timeouts {total('base', 'tle')} -> "
+        f"{total('candidate', 'tle')}, CPU points per turn {cpu['base']} -> {cpu['candidate']} (None = not "
+        f"metered). Per map, candidate (stays / wasted / arrivals / told / told-charged walked in of told-charged, "
+        f"base wasted in brackets): " +
+        '; '.join(f"{m} {r['candidate']['stays']} / {r['candidate']['wasted_stays']} / "
+                  f"{r['candidate']['arrivals']} / {r['candidate']['arrivals_told']} / "
+                  f"{r['candidate']['told_charged_walked_in']} of {r['candidate']['told_charged']} "
+                  f"[{r['base']['wasted_stays']}]" for m, r in sorted(by_map.items())) + '.')
+    for p in pairs:
+        for t in arms:
+            for field in ('stays', 'arrivals', 'children'):
+                p[t][field + '_count'] = len(p[t].pop(field))
     result = {
         'passed': passed,
         'note': note,
         'fires_as_specified': fires_as_specified,
         'target_seen': target_seen,
-        'behaviour_shown': checks['behaviour'],
+        'behaviour_shown': behaviour_shown,
         'checks': checks,
-        'thresholds': {'FIRE_SHARE': FIRE_SHARE, 'REACH_SHARE': REACH_SHARE, 'TRUE_SHARE': TRUE_SHARE,
-                       'MIN_ENDS': MIN_ENDS, 'END_SHARE': END_SHARE, 'PAID': PAID, 'ROOM_MAX': ROOM_MAX,
-                       'RESEND': RESEND, 'WATCH': WATCH, 'STUCK': STUCK},
+        'thresholds': {'ALERT_SHARE': ALERT_SHARE, 'TRUE_SHARE': TRUE_SHARE, 'TOLD_SHARE': TOLD_SHARE, 'HALF': HALF,
+                       'DROP': DROP, 'MIN_STAYS': MIN_STAYS, 'MIN_ARRIVALS': MIN_ARRIVALS, 'PAY': PAY, 'FRESH': FRESH,
+                       'ROOM_MAX': ROOM_MAX, 'RESEND': RESEND, 'WATCH': WATCH, 'NEAR': NEAR},
         'built_as': BUILT_AS,
         'games': games,
-        'our_splits': n_splits,
-        'splits_with_split_ping': pinged,
-        'fire_share': fire_share,
-        'splits_child_told': told,
-        'splits_child_told_on_split_turn': both('told_on_split_turn'),
-        'splits_resent': both('splits_resent'),
-        'reach_share': reach_share,
-        'split_ping_rays': both('split_rays'),
-        'split_ping_rays_hit_child': both('rays_hit_child'),
-        'split_ping_rays_hit_other_teammate': both('rays_hit_other_ally'),
-        'split_ping_rays_outside_a_split_window': both('stray_split_rays'),
-        'pings_with_dead_end': with_end,
-        'pings_dead_end_true': end_true,
+        'our_dragon_turns': turns,
+        'stays': stays,
+        'alert_share_of_stays': alert_share,
+        'turns_inside_a_dead_end': both('inside_turns'),
+        'turns_inside_with_own_dead_end_sent': both('inside_turns_alert'),
+        'turns_inside_without_split': both('inside_quiet_turns'),
+        'turns_inside_without_split_with_alert': both('inside_quiet_turns_alert'),
+        'alert_turns': both('alert_turns'),
+        'split_turns_with_own_dead_end': both('split_turns_own_end'),
+        'passed_on_copy_turns': both('relay_turns'),
+        'handed_on_at_split_turns': both('passon_turns'),
+        'new_rays': both('new_rays'),
+        'messages_with_dead_end': with_end,
+        'messages_dead_end_true': end_true,
+        'messages_dead_end_whole': both('msgs_end_whole'),
+        'messages_dead_end_with_count': both('msgs_end_counted'),
         'true_share': true_share,
-        'dead_end_splits': ends,
-        'dead_end_splits_with_dead_end_in_ping': ends_with_end,
-        'dead_end_splits_child_told': both('end_splits_told'),
-        'dead_end_share': end_share,
-        'pairs_same_until_first_split_ping': silent,
-        'pings_dead_end_passed_on': both('pings_end_passed_on'),
-        'splits_any_split_turn_ray_hit_child': both('split_turn_any_ray_hit_child'),
-        'dead_end_visits': seen,
+        'rays_with_true_dead_end': both('end_rays'),
+        'rays_with_true_dead_end_hit_teammate': both('end_rays_hit_teammate'),
+        'passed_on_rays_hit_teammate': both('relay_rays_hit_teammate'),
+        'dragons_told_a_dead_end_first_time': both('first_tellings'),
+        'arrivals_at_a_way_in': arrive,
+        'told_share_of_arrivals': told_share,
+        'wasted_stays_per_1000_turns': rate,
+        'pairs_same_until_first_new_message': silent,
         'by_map': by_map,
-        'unpaid_repeat_share_of_our_splits': unpaid,
-        'enough_unpaid_repeats_in_base': enough,
-        'walk_back_in': {'base': base_walk, 'candidate_told': told_walk, 'candidate_not_told': untold_walk,
-                         'base_share': base_rate, 'candidate_told_share': told_rate},
-        'pearl_spots_in_pings': both('pings_spots'),
-        'pearl_spots_in_pings_refill': both('pings_spots_refill'),
-        'pearl_spots_told_to_child': {'refill': used(True), 'pearl_on_ground': used(False)},
-        'child_first_rounds': {'base': growth('base'), 'candidate_told': growth('candidate', lambda r: r['told']),
-                               'candidate_not_told': growth('candidate', lambda r: not r['told'])},
+        'split_ping': {'our_splits': both('splits'), 'with_ping_on_split_turn': both('splits_with_ping'),
+                       'resent': both('splits_resent'), 'child_told': both('child_told'),
+                       'child_told_on_split_turn': both('child_told_on_split_turn'),
+                       'any_split_turn_ray_hit_child': both('split_turn_any_ray_hit_child'),
+                       'dead_end_splits': both('end_splits'),
+                       'dead_end_splits_with_dead_end_in_ping': both('end_splits_with_end'),
+                       'spots_told_to_child': both('spots_told'), 'of_them_refill': both('spots_told_refill'),
+                       'spots_stepped_on': both('spots_stepped'), 'spots_eaten_at': both('spots_grew'),
+                       'child_first_rounds': child_rounds},
         'our_deaths': both('deaths'),
         'sonar_messages': both('sonar'),
         'leader_messages': both('leader'),
@@ -826,15 +970,18 @@ def main():
         'unreadable_own_sonar': both('unreadable'),
         'timeouts': both('tle'),
         'cpu_points_per_turn': cpu,
-        'cpu_points_max': {t: max((p[t]['points_max'] for p in pairs), default=0) for t in ('base', 'candidate')},
-        'limits': 'The dead end is rebuilt from the real map with the bot\'s rule; what a dragon actually knew or '
-                  'decided is not in the replay, only where it went. "Told" is the replay\'s record of which dragon '
-                  'a ray hit. Pearls on the ground are not read from the replay, only growth, so "unpaid" is what a '
-                  'dragon ate on that stay, not what lay there. A lower unpaid-repeat share does not say the game '
-                  'went better: a dragon kept out of a dead end also misses the pearls in it, which is why paid '
-                  'repeats are shown next to it. Pairs stop being the same game after the first ping, so the two '
-                  'columns are totals over different games, not turn-by-turn pairs. Base has no told spots, so spot '
-                  'use has no base number. Small counts say little.',
+        'cpu_points_max': {t: max((p[t]['points_max'] for p in pairs), default=0) for t in arms},
+        'told_charged_arrivals_log': log,
+        'limits': 'Dead ends are rebuilt from the real map with the bot\'s rule; what a dragon actually knew or '
+                  'decided is not in the replay, only where it went and which dragon each ray hit. "Told" does not '
+                  'mean it still remembers (a dragon keeps 8 dead ends). Pearls on the ground are not read from the '
+                  'replay, only growth: "told, charged" is judged from the count in the messages, so a dragon that '
+                  'saw 2 pearls itself and was not charged is still counted there, and "wasted" is what a dragon '
+                  'ate, not what lay there. Told and untold dragons are different dragons in different places, so '
+                  'their walk-in shares are a comparison, not an experiment. Base and candidate stop being the '
+                  'same game after the first new message, so the two columns are totals over different games. A '
+                  'dragon kept out of a dead end also misses the pearls in it, which is why paid stays and pearls '
+                  'eaten are shown next to the wasted ones. Small counts say little.',
         'pairs': pairs,
     }
     with open(a.output, 'w') as f:

@@ -32,8 +32,8 @@ def line(head, direction, length):
     return [((head[0] - k * dx) % W, (head[1] - k * dy) % H) for k in range(length)]
 
 
-def wire(end=None, spots=()):
-    return codec.seal(KEY, codec.pack_split(TAG, W, H, end, spots))
+def wire(end=None, spots=(), relay=False):
+    return codec.seal(KEY, codec.pack_split(TAG, W, H, end, spots, relay))
 
 
 class Board:
@@ -54,21 +54,32 @@ def corridor(y, x0, x1):
     return Board(north={(x, y) for x in xs} | {(x, y + 1) for x in xs}, west={(x0, y)})
 
 
+def pen():
+    """A shut room (x 10-13, y 10-14, 20 tiles) whose only door leads east from (13, 12) into a hall
+    (x 14-19, y 8-16, 54 tiles: too big to be a dead end itself). The room is a dead end with gate (14, 12)."""
+    north = ({(x, 10) for x in range(10, 14)} | {(x, 15) for x in range(10, 14)} |
+             {(x, 8) for x in range(14, 20)} | {(x, 17) for x in range(14, 20)})
+    west = ({(10, y) for y in range(10, 15)} | {(14, y) for y in range(8, 17) if y != 12} |
+            {(20, y) for y in range(8, 17)})
+    return Board(north=north, west=west)
+
+
 class Dragon:
     def __init__(self, binary, did, body, board=None, units=6):
         self.id, self.body, self.units, self.board = did, list(body), units, board or Board()
         self.proc = subprocess.Popen([binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         self.proc.stdin.write(f'ID {did}\nTEAM A\nMAP {W} {H}\nUNIT_LIMIT 100\n')
 
-    def turn(self, rnd, others=None, pearls=None, wires=()):
-        """others: {id: (team, body)}; pearls: a set, eaten ones are removed. Applies our action to our body."""
-        others, pearls = others or {}, pearls if pearls is not None else set()
+    def turn(self, rnd, others=None, pearls=None, wires=(), timers=None):
+        """others: {id: (team, body)}; pearls: a set, eaten ones are removed; timers: {tile: rounds until a pearl
+        spawns there}, other tiles never spawn. Applies our action to our body."""
+        others, pearls, timers = others or {}, pearls if pearls is not None else set(), timers or {}
         hx, hy = self.body[0]
         heading = facing(self.body[1], self.body[0]) if len(self.body) > 1 else 'N'
         out = [f'ROUND {rnd}', f'DIR {heading}', f'LENGTH {len(self.body)}', f'UNIT_COUNT {self.units}',
                f'NUM_MSGS {len(wires)}'] + [str(w) for w in wires]
         window = [((hx + lx - 3) % W, (hy + ly - 3) % H) for ly in range(7) for lx in range(7)]
-        out += [f'{x} {y} {int((x, y) in pearls)} -1' for x, y in window]
+        out += [f'{x} {y} {int((x, y) in pearls)} {timers.get((x, y), -1)}' for x, y in window]
         parts = []
         for did, (team, body) in {**others, self.id: ('A', self.body)}.items():
             for k, cell in enumerate(body):
@@ -124,11 +135,11 @@ class Dragon:
         self.proc.stdout.close()
 
 
-def walk(binary, body, turns, board=None, pearls=(), wires=(), did=9, start=40):
-    """A fresh dragon handed `wires` on its first turn; returns its turns."""
+def walk(binary, body, turns, board=None, pearls=(), wires=(), did=9, start=40, timers=None):
+    """A fresh dragon handed `wires` on its first turn; returns its turns. `timers` are held still (not counted down)."""
     me = Dragon(binary, did, body, board=board)
     lying = set(pearls)
-    log = [me.turn(start + k, pearls=lying, wires=wires if k == 0 else ()) for k in range(turns)]
+    log = [me.turn(start + k, pearls=lying, wires=wires if k == 0 else (), timers=timers) for k in range(turns)]
     me.close()
     return log
 
@@ -198,16 +209,31 @@ def cases(binary):
     check('nothing to tell: split without a split ping', t['split'] == 2 and not t['split_pings'], t)
     me.close()
 
-    # 4b. Passing it on. A dragon that was told a dead end and then splits in the open sends that dead end to its own
-    # child (no pearl count: it is not looking at it), with two spots. One further than 16 tiles away is left out.
+    # 4b. Passing it on at a split. A dragon that was told a dead end and then splits in the open sends that dead end
+    # to its own child with two spots; the pearl count goes along only when it was heard this turn or the one before.
+    # One further than 16 tiles away is left out.
     for name, gate, sent in (('near', (26, 15), True), ('far', (2, 2), False)):
         me = Dragon(binary, 7, bent)
         t = me.turn(30, pearls={(17, 13), (23, 12)}, wires=[wire((gate, 'E', 5, 3))])
         msg = t['split_pings'][0][1] if t['split_pings'] else {}
-        want = {'gate': gate, 'dir': 'E', 'room': 5, 'pearls': 0, 'on_map': True} if sent else None
+        want = {'gate': gate, 'dir': 'E', 'room': 5, 'pearls': 3, 'on_map': True} if sent else None
         check(f'pass on: a told dead end {name} the child is {"sent on" if sent else "left out"}',
               t['split'] == 2 and msg.get('end', 0) == want and msg.get('spots') == [((23, 12), False)], t)
         me.close()
+    # Told three turns before it splits (it first walks two tiles to a pearl): the dead end goes on without a count.
+    old = walk(binary, line((20, 15), 'W', 3), 4, pearls={(18, 15)}, wires=[wire(((26, 15), 'E', 5, 3))], start=30)
+    at = next((k for k, x in enumerate(old) if x['split']), None)
+    msg = old[at]['split_pings'][0][1] if at is not None and old[at]['split_pings'] else {}
+    check('pass on: an older pearl count is not sent on', at is not None and at >= 2 and
+          msg.get('end') == {'gate': (26, 15), 'dir': 'E', 'room': 5, 'pearls': None, 'on_map': True},
+          [(x['move'], x['split'], x['split_pings'][:1]) for x in old])
+    # A spot inside a dead end she knows is left out: the pearl at (23, 12) is that dead end's first tile.
+    me = Dragon(binary, 7, bent)
+    t = me.turn(30, pearls={(17, 13), (23, 12)}, wires=[wire(((22, 12), 'E', 5, 3))])
+    msg = t['split_pings'][0][1] if t['split_pings'] else {}
+    check('pass on: a spot inside the dead end is left out',
+          t['split'] == 2 and msg.get('end', {}) and msg['end']['gate'] == (22, 12) and msg.get('spots') == [], t)
+    me.close()
 
     # 5. Hearing a dead end. A length-3 dragon stands on the gate (16, 10) of the same passage, with one pearl two
     # tiles in. Not told, it goes in for the pearl. Told "6 tiles, 1 pearl", it stays out: one pearl does not pay.
@@ -249,6 +275,102 @@ def cases(binary):
     odd = walk(binary, body, 5, pearls={(15, 15)}, wires=[junk])
     check('off-map tiles are ignored', [x['move'] for x in odd] == [x['move'] for x in plain],
           [x['move'] for x in odd])
+
+    # 10. Alert. A length-3 dragon walks into the passage (gate (16, 10), shut at x 10) with nobody to tell it. Until
+    # it has seen the shut end it sends nothing new. From then on, every turn, all four pings carry the dead end and
+    # the pearls it counts inside, split or no split. One pearl lies two tiles in, one on the last tile.
+    me = Dragon(binary, 9, line((16, 10), 'W', 3), board=hall)
+    lying = {(14, 10), (10, 10)}
+    log = [me.turn(40 + k, pearls=lying) for k in range(7)]
+    me.close()
+    first = next((k for k, x in enumerate(log) if x['split_pings']), None)
+    alerts = log[first:] if first is not None else []
+    ends = [m.get('end') or {} for x in alerts for _, m in x['split_pings']]
+    quiet = [x for x in alerts if not x['split']]
+    # The shut end (x 10) comes into view with the head on x 13; the alert goes out with the step to x 12.
+    check('alert: nothing new before the shut end is in view', first is not None and log[first]['head'] == (12, 10),
+          [(x['move'], x['split'], x['head'], len(x['split_pings'])) for x in log])
+    check('alert: all four directions, every turn from then on',
+          bool(alerts) and all(sorted(d for d, _ in x['split_pings']) == sorted('NESW') for x in alerts),
+          [(x['move'], x['split'], [d for d, _ in x['split_pings']]) for x in log])
+    check('alert: the same dead end each time', bool(ends) and all(
+        (e.get('gate'), e.get('dir'), e.get('room')) == ((16, 10), 'W', 6) for e in ends), ends[:8])
+    check('alert: sent on turns without a split, with no spots and not marked passed-on',
+          len(quiet) >= 2 and all(not m['spots'] and not m['relay'] for x in quiet for _, m in x['split_pings']),
+          [(x['move'], x['split']) for x in alerts])
+    check('alert: pearl count follows what is left inside',
+          [x['split_pings'][0][1]['end']['pearls'] for x in quiet][:3] == [1, 1, 0],
+          [(x['move'], x['split_pings'][0][1]['end']['pearls']) for x in alerts])
+    check('alert: no leader report on an alert turn', bool(alerts) and not any(x['leaders'] for x in alerts),
+          [x['sonar'] for x in alerts][:2])
+    # The count is "pearls there or due": a tile whose spawn timer is about to run out counts, a slow one does not.
+    for name, wait, want in (('about to spawn', 3, 2), ('far from spawning', 30, 1)):
+        due = walk(binary, line((16, 10), 'W', 3), 5, board=hall, pearls={(14, 10), (10, 10)}, timers={(11, 10): wait})
+        got = [x['split_pings'][0][1]['end']['pearls'] for x in due if x['split_pings'] and not x['split']][:1]
+        check(f'alert: a tile {name} {"counts" if want == 2 else "does not count"} as a pearl', got == [want],
+              [(x['move'], x['split'], [m['end'] for _, m in x['split_pings'][:1]]) for x in due])
+    # A dragon going round and round in a sealed 2x2 box is not in a dead end: the tile behind it is no gate.
+    box = Board(north={(10, 10), (11, 10), (10, 12), (11, 12)}, west={(10, 10), (10, 11), (12, 10), (12, 11)})
+    laps = walk(binary, [(10, 10), (11, 10)], 6, board=box)
+    check('alert: none from a dragon circling in a sealed box', not any(x['split_pings'] for x in laps) and
+          all(x['legal'] and x['move'] for x in laps), [(x['move'], x['head'], len(x['split_pings'])) for x in laps])
+
+    # 11. Passing it on once. A dragon in the open that hears a dead end new to it sends it on that same turn in all
+    # four directions, marked as a passed-on copy, with the pearl count and no spots. Hearing it again, or hearing a
+    # copy that was already passed on, sends nothing.
+    body = line((20, 15), 'W', 3)
+    want = {'gate': (5, 5), 'dir': 'N', 'room': 4, 'pearls': 1, 'on_map': True}
+    heard = walk(binary, body, 3, wires=[wire(((5, 5), 'N', 4, 1))])
+    sent = heard[0]['split_pings']
+    check('relay: a new dead end goes out once, all four directions', sorted(d for d, _ in sent) == sorted('NESW') and
+          all(m['relay'] and m['end'] == want and not m['spots'] for _, m in sent) and
+          not any(x['split_pings'] for x in heard[1:]), [x['sonar'] for x in heard])
+    me = Dragon(binary, 9, body)
+    again = [me.turn(40 + k, wires=[wire(((5, 5), 'N', 4, 1))]) for k in range(2)]
+    me.close()
+    check('relay: heard a second time, not sent again', len(again[0]['split_pings']) == 4 and not again[1]['split_pings'],
+          [x['sonar'] for x in again])
+    copy = walk(binary, body, 2, wires=[wire(((5, 5), 'N', 4, 1), relay=True)])
+    check('relay: a passed-on copy is not passed on again', not any(x['split_pings'] for x in copy),
+          [x['sonar'] for x in copy])
+    # A dragon keeps the 16 dead ends nearest to it. Told 16 nearby ones and then one far away in the same turn,
+    # the far one is not kept, so the copy it sends on is the last nearby one.
+    near = [((10 + k, 20), 'N', 3, 0) for k in range(16)]
+    many = walk(binary, body, 1, wires=[wire(end) for end in near + [((0, 0), 'N', 3, 0)]])
+    sent = {m['end']['gate'] for _, m in many[0]['split_pings'] if m['end']}
+    check('memory: a 17th dead end further away than the 16 it holds is not kept', sent == {(25, 20)}, sent)
+
+    # 12. The charge. A length-3 dragon stands on the gate of the 20-tile room in pen(), a pearl on the room's first
+    # tile. Not told, it goes in. Told the room is a dead end with one pearl (or told without a count, seeing the
+    # one pearl), it stays out and does not come back to the gate: with fewer than 2 pearls nothing in there is a
+    # target. With two pearls, told or seen, no charge: it still stays out here (a 20-tile room is not one the
+    # harvest rule sends it into) but the pearls keep pulling it back to the gate, as before this change.
+    yard = pen()
+    body = line((14, 12), 'W', 3)
+    room = lambda cell: 10 <= cell[0] <= 13 and 10 <= cell[1] <= 14
+    one, two = {(13, 12)}, {(13, 12), (12, 12)}
+    gate = ((14, 12), 'W', 20)
+    back = lambda log: any(x['head'] == (14, 12) for x in log[1:])
+    steps = lambda log: [(x['move'], x['head']) for x in log]
+    plain = walk(binary, body, 1, board=yard, pearls=one)
+    check('charge: not told, one pearl inside, it goes in', plain[0]['move'][:1] == 'W', plain[0])
+    soon, late = {(12, 12): 2}, {(12, 12): 30}
+    for name, lying, count, pulled, clocks in (
+            ('told one pearl', one, 1, False, None), ('told without a count, sees one', one, None, False, None),
+            ('told two pearls', two, 2, True, None), ('told without a count, sees two', two, None, True, None),
+            ('told one pearl, sees two', two, 1, True, None),
+            ('told without a count, sees one and a tile about to spawn', one, None, True, soon),
+            ('told without a count, sees one and a tile far from spawning', one, None, False, late)):
+        log = walk(binary, body, 4, board=yard, pearls=lying, wires=[wire(gate + (count,))], timers=clocks)
+        check(f'charge: {name}, it stays out', not any(room(x['head']) for x in log) and all(x['legal'] for x in log),
+              steps(log))
+        check(f'charge: {name}, {"the pearls still pull it back to the gate" if pulled else "it does not come back to the gate"}',
+              back(log) == pulled, steps(log))
+    # A cost, not a wall: on the gate of the passage with no other step (kelp both sides, its own body behind),
+    # told "6 tiles, no pearls", it still goes in rather than stand still.
+    long_hall = corridor(10, 10, 18)
+    only = walk(binary, line((16, 10), 'W', 3), 1, board=long_hall, wires=[wire(((16, 10), 'W', 6, 0))])
+    check('charge: no other step, it still goes in', only[0]['move'][:1] == 'W' and only[0]['legal'], only[0])
     return results
 
 
@@ -264,6 +386,17 @@ def off_cases(binary):
     told = walk(binary, body, 5, pearls={(15, 15)}, wires=[wire(None, [((15, 15), False)])])
     results.append(('switch off: a handed ping changes no step',
                     [x['move'] for x in plain] == [x['move'] for x in told], str([x['move'] for x in told])))
+    hall = corridor(10, 10, 15)
+    me = Dragon(binary, 9, line((16, 10), 'W', 3), board=hall)
+    lying = {(14, 10), (10, 10)}
+    log = [me.turn(40 + k, pearls=lying) for k in range(6)]
+    me.close()
+    results.append(('switch off: walking into a dead end sends no alert', not any(x['split_pings'] for x in log),
+                    str([x['sonar'] for x in log])[:600]))
+    bare = walk(binary, body, 2)
+    heard = walk(binary, body, 2, wires=[wire(((5, 5), 'N', 4, 1))])
+    results.append(('switch off: a handed dead end is not passed on', not any(x['split_pings'] for x in heard) and
+                    [x['move'] for x in heard] == [x['move'] for x in bare], str([x['sonar'] for x in heard])[:600]))
     return results
 
 
