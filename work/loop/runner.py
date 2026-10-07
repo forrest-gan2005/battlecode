@@ -25,7 +25,7 @@ ZHE_LOGIN = 'zhex0121'
 QWQ_LOGIN = 'forrest-gan2005'
 SWARM = REPO.parent / 'unsw-swarm'
 KST = dt.timezone(dt.timedelta(hours=9))
-FREEZE = dt.datetime(2026, 10, 8, 20, tzinfo=KST)
+FREEZE = dt.datetime(2026, 10, 9, 15, tzinfo=KST)
 ACTIVE = {'ready', 'needs-info', 'building', 'needs-look', 'testing', 'candidate'}
 MARK = re.compile(r'<!-- card-loop (\{.*?\}) -->', re.S)
 # meowbot's copied Discord answer names the speaker.
