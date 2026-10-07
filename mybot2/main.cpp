@@ -151,6 +151,8 @@ constexpr int QUEEN_SAFE_ROUND = 300;
 constexpr int QUEEN_SAFE_SPAN = 0;
 constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
+// Card #48: the queen takes no feeding role on any map (feeder, local drop, rally, assassin, endgame hunt).
+constexpr bool QUEEN_NO_FEED = true;
 constexpr int QUEEN_HUNT_MAX_LEN = 0;
 constexpr int HOME_CHECK_ROUND = 200;
 constexpr double HOME_MAX_FRAC = 0.5;
@@ -2300,7 +2302,7 @@ class Bot {
             return;
         }
         bool const early = FEED_EARLY_ROUND > 0 && round > FEED_EARLY_ROUND && length <= FEED_EARLY_MAX;
-        if ((!feeding_phase() && !early) || is_queen() || known_leader_id < 0 ||
+        if ((!feeding_phase() && !early) || is_queen() || queen_aloof() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_len < 2 ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return;
@@ -2584,7 +2586,7 @@ class Bot {
             }
         }
         hunt_queen = false;
-        if (END_HUNT_MIN_PARTS > 0 && feeding_phase() && !is_leader() && known_leader_id >= 0 &&
+        if (END_HUNT_MIN_PARTS > 0 && feeding_phase() && !is_leader() && !queen_aloof() && known_leader_id >= 0 &&
             known_leader_id != ct.get_id() && length < known_leader_len) {
             for (std::size_t k = 0; k < enemy_heads.size(); k++) {
                 int const parts = visible_parts(enemy_head_ids[k]);
@@ -3672,7 +3674,7 @@ class Bot {
     }
 
     bool is_assassin() const {
-        return ASSASSIN_MOD > 0 && feeding_phase() && !is_leader() && !is_queen() && length >= ASSASSIN_MIN &&
+        return ASSASSIN_MOD > 0 && feeding_phase() && !is_leader() && !is_queen() && !queen_aloof() && length >= ASSASSIN_MIN &&
                length <= ASSASSIN_MAX && ct.get_id() % ASSASSIN_MOD == 0 && big_enemy_round >= 0 &&
                round - big_enemy_round <= ASSASSIN_FRESH;
     }
@@ -3723,6 +3725,10 @@ class Bot {
 
     bool real_queen() const {
         return QUEEN_MODE && ct.get_id() == queen_id;
+    }
+
+    bool queen_aloof() const {
+        return QUEEN_NO_FEED && real_queen();
     }
 
     // Queen threat handling: with QUEEN_SAFETY on every map, except on a turn she is trapped.
@@ -4901,7 +4907,7 @@ class Bot {
     }
 
     bool rally_ready() const {
-        if ((QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || known_leader_id < 0 ||
+        if ((QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || queen_aloof() || known_leader_id < 0 ||
             known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
@@ -4935,7 +4941,7 @@ class Bot {
     }
 
     bool local_die() const {
-        if (!feeding_phase() || is_leader() || is_queen() || is_feeder() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
+        if (!feeding_phase() || is_leader() || is_queen() || queen_aloof() || is_feeder() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
         for (Position const& enemy : enemy_heads) {
