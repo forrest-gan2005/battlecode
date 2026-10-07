@@ -365,6 +365,10 @@ constexpr int CENTER_SMALL_CELLS = 700;
 constexpr int CENTER_SMALL_ROUNDS = 30;
 constexpr int CENTER_OUTNUMBER_MARGIN = 0;
 constexpr bool TR_CENTER_ORIENT = false;
+constexpr bool TR_STALL_RELEASE = true;
+constexpr int TR_STALL_ROUNDS = 12;
+constexpr int TR_STALL_ROOM = 6;
+constexpr int TR_STALL_SEEK = 30;
 constexpr bool QH_SCOUT = true;
 constexpr int QH_MAX_LEN = 4;
 constexpr int QH_REVENGE_ROUND = 100;
@@ -1521,6 +1525,13 @@ class Bot {
         }
 
         tail_index = static_cast<int>(trail.size()) == length ? index_of(trail.back()) : -1;
+        if (TR_STALL_RELEASE) {
+            int const gap = center_distance(head);
+            if (stall_best < 0 || gap < stall_best) {
+                stall_best = gap;
+                stall_round = round;
+            }
+        }
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
             hear_sighting(ally_head_ids[k], visible_parts(ally_head_ids[k]), ally_heads[k], ally_head_dirs[k]);
         }
@@ -3080,6 +3091,17 @@ class Bot {
         }
         int const dist = center_dist[index_of(destination)];
         return dist >= 0 ? dist : manhattan(destination, center);
+    }
+
+    // Card #51: the centre rule is on for this dragon, but it has set no new nearest-to-centre mark for a while.
+    bool stall_released() const {
+        return TR_STALL_RELEASE && CENTER_PULL > 0.0 && center_map && round < center_rounds &&
+               length <= CENTER_MAX_LENGTH && round - stall_round >= TR_STALL_ROUNDS;
+    }
+
+    // Card #51: a released dragon is pulled along real paths to the nearest unseen tile instead of to the centre.
+    int stall_seek(int dist_unseen) const {
+        return dist_unseen >= 0 ? std::min(dist_unseen, TR_STALL_SEEK) : TR_STALL_SEEK;
     }
 
     bool portal_into_pocket(Position position, Direction direction) {
@@ -4990,7 +5012,9 @@ class Bot {
         if (avail < length + 2.0) {
             cramped += PENALTY_TRAPPED * (length + 2.0 - avail);
         }
-        if (tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0)) {
+        bool const released = stall_released();
+        if (tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0) &&
+            !(released && avail >= TR_STALL_ROOM * length + 8.0)) {
             cramped += PENALTY_NO_TAIL;
         }
         last_space = space;
@@ -5067,7 +5091,7 @@ class Bot {
         if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
             static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
             std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
-            score -= CENTER_PULL * center_distance(destination);
+            score -= CENTER_PULL * (released ? stall_seek(survey.dist_unseen) : center_distance(destination));
         }
         if (can_step_to(ally_heads, destination)) {
             score -= PENALTY_ENEMY_HEAD;
@@ -5457,6 +5481,8 @@ class Bot {
     int center_rounds = CENTER_ROUNDS;
     int center_margin = CENTER_OUTNUMBER_MARGIN;
     bool center_map = false;
+    int stall_best = -1;
+    int stall_round = 0;
     int feeder_approach = FEEDER_APPROACH;
     int rally_fresh = RALLY_FRESH;
     Position known_leader_pos{};

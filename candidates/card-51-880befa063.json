@@ -1,0 +1,21 @@
+{
+  "version": "card-51-880befa063",
+  "workflow": 3,
+  "changes": [
+    "[Idea] Let a short dragon go when the centre pull has stopped moving it (card 51, second build)"
+  ],
+  "results": {
+    "held": "Local paired test stopped at about three quarters at the team's request: held-out 160 pairs 80 wins with the switch off, 79 with it on (4 flips to a win, 5 to a loss), 137 pairs the same game.",
+    "transposed": "137 pairs played: 69 against 68 (3 flips to a win, 4 to a loss), 118 the same game. The old 10 maps were not played.",
+    "mechanism": "Second build check PASS (6 of 6): on the walled-start layout a head is outside the start room by round 23 to 25 in 4 of 4 local games (126 to 265 with the switch off); pearls by round 100 there 49, 61, 46, 55 against 6, 4, 2, 5.",
+    "online": "15 online games vs Big Bobs Bots (8 Oct 00:15 KST): 6 of 15, against 4 of 15 for current main and 7 of 15 for main before card 48 on the same maps earlier that night. Walled-start game: first head out at round 28 (169 to 362 in the other sets), 14 pearls by round 100 (2 to 4), lost 14 to 80.",
+    "cpu": "Not separately measured; no release approval implied."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    51
+  ],
+  "pr": null,
+  "base_commit": "42c3b2c70ed4e1d68792dd9c5bdcb355a554eae0",
+  "candidate_commit": "880befa063cd547acfb4698483b680d785b82449"
+}
