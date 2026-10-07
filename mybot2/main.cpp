@@ -368,6 +368,8 @@ constexpr int QH_MAX_LEN = 4;
 constexpr int QH_REVENGE_ROUND = 100;
 constexpr int QH_QUIET = 20;
 constexpr int QH_FRESH = 20;
+constexpr bool QH_REVENGE_LONG = false;
+constexpr int QH_REVENGE_FRESH = 60;
 constexpr int QH_SPAWN_SLACK = 2;
 constexpr std::uint64_t QH_PING_KIND = 0x2B5;
 constexpr bool SN_TAIL_MOUTH = true;
@@ -1991,12 +1993,14 @@ class Bot {
         }
         bool const foe_dead = qh_foe_dead();
         bool const small = ct.get_id() > 1 && !is_leader() && length <= QH_MAX_LEN;
-        bool const fresh = qh_round >= 0 && round - qh_round <= QH_FRESH;
+        bool const revenge = qh_queen_dead() && round >= QH_REVENGE_ROUND;
+        // QH_REVENGE_LONG: with our queen dead a sighting stays usable for QH_REVENGE_FRESH rounds.
+        int const window = QH_REVENGE_LONG && revenge ? QH_REVENGE_FRESH : QH_FRESH;
+        bool const fresh = qh_round >= 0 && round - qh_round <= window;
         // Reached her last cell and she is not in view: wait for a newer sighting.
         if (fresh && !qh_in_view && manhattan(head, qh_pos) <= 1) {
             qh_miss_round = std::max(qh_miss_round, qh_round);
         }
-        bool const revenge = qh_queen_dead() && round >= QH_REVENGE_ROUND;
         bool const target = small && fresh && !foe_dead && qh_round > qh_miss_round;
         // First finder: sees her and has heard no other hunter for QH_QUIET rounds.
         if (target && qh_in_view && round > QH_QUIET && round - qh_heard_round > QH_QUIET) {
