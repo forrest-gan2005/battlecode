@@ -130,6 +130,11 @@ constexpr double QS_HIT_PENALTY = 3e8;
 constexpr double QS_PAY_PENALTY = 2e8;
 constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
+// Card #54: dragons of LS_MIN_LENGTH+ take the queen's ring veto; an enemy reaches its free steps plus LS_PAY_STEPS paid.
+constexpr bool LONG_SAFETY = false;
+constexpr int LS_MIN_LENGTH = 31;
+constexpr int LS_PAY_STEPS = 1;
+constexpr int LS_ESCAPE_COST = 2;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool STRIDE_SAFE_END = true;
@@ -394,6 +399,7 @@ struct Ghost {
     int round = -1;
     int parts = 0;
     bool shared = false;
+    char face = 0;
 };
 
 struct StrideEnd {
@@ -612,7 +618,11 @@ class Bot {
             return;
         }
 
-        if (hit_blocked && chosen_scored && chosen_index >= 0) {
+        if (hit_blocked && chosen_scored && chosen_index >= 0 && long_wary()) {
+            if (long_stuck(path)) {
+                return;
+            }
+        } else if (hit_blocked && chosen_scored && chosen_index >= 0) {
             int const keep = unswbc::Constants::MIN_SIZE;
             bool const exposed = hit_head || pay_head;
             if (hit_escape(path, false, 0)) {
@@ -1037,7 +1047,7 @@ class Bot {
         if (QH_SCOUT && qh_on && qh_in_view) {
             return 0;
         }
-        if (QUEEN_SAFETY && queen_wary() && (hit_head || pay_head)) {
+        if (ring_wary() && (hit_head || pay_head)) {
             return 0;
         }
         if (round > grow_round && length > SPLIT_MIN_LENGTH) {
@@ -1417,6 +1427,7 @@ class Bot {
         edge_ids.clear();
         enemy_heads.clear();
         enemy_head_ids.clear();
+        enemy_head_dirs.clear();
         own_parts.clear();
         expire_leader();
         if (QUEEN_MODE && ct.get_id() <= 1) {
@@ -1500,6 +1511,7 @@ class Bot {
                 } else {
                     enemy_heads.push_back(position);
                     enemy_head_ids.push_back(part->get_id());
+                    enemy_head_dirs.push_back(part->get_dir());
                 }
             }
         }
@@ -1544,7 +1556,7 @@ class Bot {
         refresh_leader_zone();
         map_rivals();
         map_threats();
-        if (QUEEN_SAFETY && real_queen()) {
+        if ((QUEEN_SAFETY && real_queen()) || long_wary()) {
             map_hits();
         }
         mark_trade_targets();
@@ -2435,11 +2447,12 @@ class Bot {
             int const id = enemy_head_ids[k];
             auto found = std::find_if(ghosts.begin(), ghosts.end(), [id](Ghost const& g) { return g.id == id; });
             if (found == ghosts.end()) {
-                ghosts.push_back(Ghost{id, enemy_heads[k], round, visible_parts(id)});
+                ghosts.push_back(Ghost{id, enemy_heads[k], round, visible_parts(id), false, static_cast<char>(enemy_head_dirs[k].value)});
             } else {
                 found->pos = enemy_heads[k];
                 found->round = round;
                 found->parts = std::max(found->parts, visible_parts(id));
+                found->face = static_cast<char>(enemy_head_dirs[k].value);
             }
         }
         ghosts.erase(std::remove_if(ghosts.begin(), ghosts.end(),
@@ -2858,7 +2871,7 @@ class Bot {
                         continue;
                     }
                     if (steps == 2) {
-                        if (threat_at(c2) > 0) {
+                        if (threat_at(c2) > 0 || (long_wary() && risk_at(c2) > 0)) {
                             continue;
                         }
                         if (evals++ >= max_evals || (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET)) {
@@ -2881,7 +2894,7 @@ class Bot {
                             continue;
                         }
                         int const c3 = step_index(p2, third);
-                        if (c3 < 0 || c3 == start || c3 == c1 || threat_at(c3) > 0) {
+                        if (c3 < 0 || c3 == start || c3 == c1 || threat_at(c3) > 0 || (long_wary() && risk_at(c3) > 0)) {
                             continue;
                         }
                         int const free3 = enter_time[c3];
@@ -3758,6 +3771,37 @@ class Bot {
         return QUEEN_SAFETY ? real_queen() && !qs_plain : is_queen();
     }
 
+    // Card #54: a long dragon under the ring veto; the queen keeps her own rules.
+    bool long_wary() const {
+        return LONG_SAFETY && length >= LS_MIN_LENGTH && !real_queen();
+    }
+
+    bool ring_wary() const {
+        return (QUEEN_SAFETY && queen_wary()) || long_wary();
+    }
+
+    // Card #54: no clean step left: a free stride, then a sprint paying at most LS_ESCAPE_COST, then a 2-child and stay.
+    bool long_stuck(std::vector<Direction>& path) {
+        int const keep = unswbc::Constants::MIN_SIZE;
+        if (hit_escape(path, false, 0) || hit_escape(path, true, 0)) {
+            ct.make_moves(path);
+            act_dirs = path;
+            remember_path(path);
+            return true;
+        }
+        // Cornered on a tile in reach: the tail split main already does saves the body.
+        if ((hit_head || pay_head) && cornered && tail_index >= 0 && threat_at(tail_index) == 0 &&
+            ct.can_split(length - keep) && tail_room() >= CHILD_MIN_ROOM) {
+            split_off(length - keep);
+            return true;
+        }
+        if (ct.can_split(keep)) {
+            split_off(keep);
+            return true;
+        }
+        return false;
+    }
+
     bool on_view_edge(Position position) const {
         int const radius = unswbc::Constants::VISION_RADIUS;
         return torus_gap(position.x, head.x, width) == radius || torus_gap(position.y, head.y, height) == radius;
@@ -3774,6 +3818,7 @@ class Bot {
         hit_head = false;
         pay_head = false;
         int const keep = unswbc::Constants::MIN_SIZE;
+        bool const longs = long_wary();
         for (std::size_t k = 0; k < enemy_heads.size(); k++) {
             if (enemy_head_ids[k] == enemy_queen_id) {
                 continue;
@@ -3790,38 +3835,104 @@ class Bot {
             bool const cut = std::find(edge_ids.begin(), edge_ids.end(), enemy_head_ids[k]) != edge_ids.end();
             int const size = cut ? std::max({parts, seen + 1, static_cast<int>(unswbc::Constants::INITIAL_LENGTH)}) : parts;
             int const full = (SPRINT_FREE_DIV > 0 ? (size + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV : 1) + size - keep;
-            int const reach = std::max(free, std::min(full, QS_PAY_REACH));
+            int const reach = longs ? std::min(full, free + LS_PAY_STEPS) : std::max(free, std::min(full, QS_PAY_REACH));
             visit_mark++;
-            int queue_head = 0;
-            int queue_tail = 0;
             int const origin = index_of(enemy_heads[k]);
             visit_stamp[origin] = visit_mark;
             step_count[origin] = 0;
-            bfs_queue[queue_tail++] = enemy_heads[k];
-            while (queue_head < queue_tail) {
-                Position const position = bfs_queue[queue_head++];
-                int const steps = step_count[index_of(position)];
-                if (steps >= reach) {
+            bfs_queue[0] = enemy_heads[k];
+            spread_hits(1, free, reach);
+        }
+        if (!longs) {
+            return;
+        }
+        // Card #54: a head seen in the last rounds but not now rings the tiles around where it may stand.
+        for (Ghost const& ghost : ghosts) {
+            if (ghost.round == round || ghost.id == enemy_queen_id) {
+                continue;
+            }
+            int const free = SPRINT_FREE_DIV > 0 ? std::max(1, (ghost.parts + SPRINT_FREE_DIV - 1) / SPRINT_FREE_DIV) : 1;
+            int const spots = ghost_spots(ghost);
+            visit_mark++;
+            for (int k = 0; k < spots; k++) {
+                int const spot = index_of(bfs_queue[k]);
+                visit_stamp[spot] = visit_mark;
+                step_count[spot] = 0;
+                hit_stamp[spot] = hit_mark;
+                pay_stamp[spot] = hit_mark;
+            }
+            spread_hits(spots, free, free + LS_PAY_STEPS);
+        }
+    }
+
+    // Floods the rings from the heads at bfs_queue[0, queue_tail), already stamped at step 0.
+    void spread_hits(int queue_tail, int free, int reach) {
+        int queue_head = 0;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const steps = step_count[index_of(position)];
+            if (steps >= reach) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next == index_of(head)) {
+                    (steps < free ? hit_head : pay_head) = true;
+                }
+                if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2)) {
                     continue;
                 }
-                for (Direction const direction : Direction::get_direction_list()) {
-                    int const next = step_index(position, direction);
-                    if (next == index_of(head)) {
-                        (steps < free ? hit_head : pay_head) = true;
-                    }
-                    if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2)) {
-                        continue;
-                    }
-                    visit_stamp[next] = visit_mark;
-                    step_count[next] = steps + 1;
-                    if (steps < free) {
-                        hit_stamp[next] = hit_mark;
-                    }
-                    pay_stamp[next] = hit_mark;
-                    bfs_queue[queue_tail++] = position_of(next);
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                if (steps < free) {
+                    hit_stamp[next] = hit_mark;
                 }
+                pay_stamp[next] = hit_mark;
+                bfs_queue[queue_tail++] = position_of(next);
             }
         }
+    }
+
+    // Card #54: tiles a remembered head may stand on now, left at the front of bfs_queue: one step per round out of
+    // view, not behind where it was heading, not on a tile in sight.
+    int ghost_spots(Ghost const& ghost) {
+        visit_mark++;
+        int queue_head = 0;
+        int queue_tail = 0;
+        visit_stamp[index_of(ghost.pos)] = visit_mark;
+        step_count[index_of(ghost.pos)] = 0;
+        bfs_queue[queue_tail++] = ghost.pos;
+        int const age = round - ghost.round;
+        while (queue_head < queue_tail) {
+            Position const position = bfs_queue[queue_head++];
+            int const steps = step_count[index_of(position)];
+            if (steps >= age) {
+                continue;
+            }
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(position, direction);
+                if (next < 0 || visit_stamp[next] == visit_mark || (enter_time[next] != 0 && enter_time[next] != 2)) {
+                    continue;
+                }
+                visit_stamp[next] = visit_mark;
+                step_count[next] = steps + 1;
+                bfs_queue[queue_tail++] = position_of(next);
+            }
+        }
+        auto const [face_x, face_y] = ghost.face != 0 ? Direction(ghost.face).get_offset() : std::pair<int, int>{0, 0};
+        auto signed_gap = [](int from, int to, int size) {
+            int const gap = ((to - from) % size + size) % size;
+            return 2 * gap > size ? gap - size : gap;
+        };
+        int spots = 0;
+        for (int k = 0; k < queue_tail; k++) {
+            Position const position = bfs_queue[k];
+            int const ahead = signed_gap(ghost.pos.x, position.x, width) * face_x + signed_gap(ghost.pos.y, position.y, height) * face_y;
+            if (seen_round[index_of(position)] != round && ahead >= 0) {
+                bfs_queue[spots++] = position;
+            }
+        }
+        return spots;
     }
 
     // 2 = an enemy head hits the tile for free, 1 = only by paying length, 0 = out of reach.
@@ -3834,7 +3945,11 @@ class Bot {
 
     // Sprint to the best seen tile of at most this risk, on free steps or, with paid, on length too.
     bool hit_escape(std::vector<Direction>& path, bool paid, int risk) {
-        int const limit = std::min(paid ? sprint_reach() : sprint_free(), STRIDE_MAX);
+        // Card #54: a long dragon pays at most LS_ESCAPE_COST, and its paid run only adds tiles past the free one.
+        bool const far = long_wary() && paid;
+        int const limit = far ? std::min(sprint_reach(), sprint_free() + LS_ESCAPE_COST)
+                              : std::min(paid ? sprint_reach() : sprint_free(), STRIDE_MAX);
+        int const first = far ? std::min(sprint_free(), STRIDE_MAX) + 1 : 2;
         struct Node {
             int cell;
             int parent;
@@ -3868,7 +3983,7 @@ class Bot {
                 }
                 visit_stamp[next] = visit_mark;
                 nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
-                if (node.depth + 1 >= 2 && risk_at(next) <= risk) {
+                if (node.depth + 1 >= first && risk_at(next) <= risk) {
                     safe.push_back(static_cast<int>(nodes.size()) - 1);
                 }
             }
@@ -5315,7 +5430,7 @@ class Bot {
 
         hit_blocked = false;
         pay_open = false;
-        if (QUEEN_SAFETY && queen_wary()) {
+        if (ring_wary()) {
             bool risky = false;
             std::array<bool, 2> open{};
             for (std::size_t k = 0; k < directions.size(); k++) {
@@ -5649,6 +5764,7 @@ class Bot {
     int hit_round = -1;
     std::vector<int> pay_stamp;
     std::vector<int> edge_ids;
+    std::vector<Direction> enemy_head_dirs;
     bool hit_blocked = false;
     bool pay_open = false;
     bool hit_head = false;
