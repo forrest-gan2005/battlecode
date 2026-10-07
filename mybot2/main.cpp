@@ -44,6 +44,9 @@ constexpr int SPLIT_SOFT_LIMIT = 60;
 constexpr int ENDGAME_ROUND = 400;
 constexpr int LEADER_GROW_ROUND = 300;
 constexpr int LEADER_GROW_ROUND_BIG = 150;
+// LEADER_WAIT: before feeding, leader rules and pearl zone wait until the leader is LEADER_MIN_LEN long.
+constexpr bool LEADER_WAIT = false;
+constexpr int LEADER_MIN_LEN = 10;
 constexpr int FEEDER_KEEP_UNITS = 3;
 constexpr int FEEDER_APPROACH = 15;
 constexpr bool FD_APPROACH_SCALE = false;
@@ -2342,6 +2345,9 @@ class Bot {
             known_leader_id == ct.get_id()) {
             return;
         }
+        if (LEADER_WAIT && known_leader_len < LEADER_MIN_LEN && !feeding_phase()) {
+            return;
+        }
         for (std::size_t k = 0; k < ally_head_ids.size(); k++) {
             if (ally_head_ids[k] == known_leader_id) {
                 zone_head = ally_heads[k];
@@ -3326,6 +3332,9 @@ class Bot {
     }
 
     bool is_leader() const {
+        if (LEADER_WAIT && length < LEADER_MIN_LEN && !feeding_phase()) {
+            return false;
+        }
         return round > grow_round && known_leader_id == ct.get_id();
     }
 
