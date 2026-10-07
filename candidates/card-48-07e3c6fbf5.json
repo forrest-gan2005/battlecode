@@ -1,0 +1,21 @@
+{
+  "version": "card-48-07e3c6fbf5",
+  "workflow": 1,
+  "changes": [
+    "[Idea] Queen takes no feeding role (card 48, first build, at Zhe's request)"
+  ],
+  "results": {
+    "held": "No outcome A/B was run on the first build. The third build of the same card: 391 of 400 paired local games identical with the switch on.",
+    "main": "First build, 16 paired local games on maps of 600 tiles or fewer: 14 identical move for move, 2 differ from our queen's own turn after round 200.",
+    "mechanism": "First build check PASS (4 of 4): queen drops to feed the leader, base 2 in our games, switch on 0.",
+    "online": "30 online games vs Big Bobs Bots, same 15 maps, same hour (7 Oct 21:23 KST): 4 of 15 with the switch on against 7 of 15 for main; about 4 wins either way is luck.",
+    "cpu": "Not separately measured; no release approval implied."
+  },
+  "bot_dir": "mybot2",
+  "issues": [
+    48
+  ],
+  "pr": null,
+  "base_commit": "7c42d92dd08e84f9e42caed7c38d1bdf9ee5ea39",
+  "candidate_commit": "07e3c6fbf5d76414aa0a05d3c08d078fbb3ad26d"
+}

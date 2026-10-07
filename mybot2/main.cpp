@@ -152,7 +152,7 @@ constexpr int QUEEN_SAFE_SPAN = 0;
 constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
 // Card #48: the queen takes no feeding role on any map (feeder, local drop, rally, assassin, endgame hunt).
-constexpr bool QUEEN_NO_FEED = false;
+constexpr bool QUEEN_NO_FEED = true;
 constexpr int QUEEN_HUNT_MAX_LEN = 0;
 constexpr int HOME_CHECK_ROUND = 200;
 constexpr double HOME_MAX_FRAC = 0.5;
