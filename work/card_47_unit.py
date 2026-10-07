@@ -3,9 +3,10 @@
 
 usage: python3 work/card_47_unit.py --out DIR [--source mybot2] [--off BINARY]
 No engine and no games: the script writes the turn input a dragon would get and reads its MOVE/SPLIT/SONAR lines.
-It builds DIR/um-on (the source with the switch on) and checks what a splitting dragon sends, when it re-sends,
-and what a dragon that hears the ping does next to one that does not. With --off it also checks that a
-switch-off build sends no split ping and takes the same steps whether or not it is handed one.
+It builds DIR/um-on (the source with the switch on) and checks what a splitting dragon sends (refill tiles only
+when it is trapped in a dead end), when it re-sends, what a newborn told a refill tile does next to one that was
+not, and the dead-end alerts and charge of the second build. With --off it also checks that a switch-off build
+sends no split ping and takes the same steps whether or not it is handed one.
 Exit code 0 when every case holds.
 """
 import argparse, os, re, shutil, subprocess, sys
@@ -150,75 +151,80 @@ def cases(binary):
     def check(name, ok, detail=''):
         results.append((name, bool(ok), str(detail)))
 
-    # 1. A dragon at the shut end of a passage (x 10-15 on row 10) has no step left and splits. It has seen the
-    # passage up to x 13 and the open side of that tile, so the gate it can vouch for is (14, 10): 4 tiles behind
-    # it. Two pearls lie outside the child's view; the one nearer to the parent stays hers.
+    # A refill tile is one the bot has watched refill quickly; the scripted dragons learn theirs from a message
+    # handed to them (a far-off dead end with the tile attached), as any hearer does.
+    far_end = ((30, 20), 'N', 3, 0)
+
+    # 1. Trapped split. A dragon at the shut end of a passage (x 10-15 on row 10) has no step left and splits,
+    # keeping 2 tiles. It has seen the passage up to x 13 and the open side of that tile, so the gate it can vouch
+    # for is (14, 10): 4 tiles behind it. It knows refill tiles at (20, 12), (17, 6) and (5, 14): the two nearest
+    # the child go out with the dead end. Pearls lying on the ground are not sent any more.
     hall = corridor(10, 10, 15)
     me = Dragon(binary, 7, line((10, 10), 'W', 4), board=hall)
     lying = {(9, 12), (8, 8)}
-    t = me.turn(30, pearls=lying)
+    knows = [wire(far_end, [((20, 12), True), ((5, 14), True)]), wire(far_end, [((17, 6), True)])]
+    t = me.turn(30, pearls=lying, wires=knows)
     pings = t['split_pings']
     msg = pings[0][1] if pings else {}
-    check('dead end: it splits', t['split'] == 2, t)
-    check('dead end: split ping in all four directions', sorted(d for d, _ in pings) == sorted('NESW'), t['sonar'])
-    check('dead end: every copy is the same message', all(m == msg for _, m in pings), pings)
-    check('dead end: gate, direction in and size', msg.get('end') == {'gate': (14, 10), 'dir': 'W', 'room': 4,
-                                                                      'pearls': 0, 'on_map': True}, msg)
-    check('dead end: the pearl spot nearer to the parent stays hers', msg.get('spots') == [((8, 8), False)], msg)
-    check('dead end: no leader report on the split turn', not t['leaders'], t['sonar'])
+    check('trapped split: it splits and keeps 2', t['split'] == 2 and len(me.body) == 2, t)
+    check('trapped split: split ping in all four directions', sorted(d for d, _ in pings) == sorted('NESW'), t['sonar'])
+    check('trapped split: every copy is the same message', all(m == msg for _, m in pings), pings)
+    check('trapped split: gate, direction in and size', msg.get('end') == {'gate': (14, 10), 'dir': 'W', 'room': 4,
+                                                                           'pearls': 0, 'on_map': True}, msg)
+    check('trapped split: the two refill tiles nearest the child, no ground pearls',
+          msg.get('spots') == [((17, 6), True), ((20, 12), True)], msg)
+    check('trapped split: no leader report on the split turn', not t['leaders'], t['sonar'])
     # The copy into her own neck leaves from her tail tip onto the child, so nothing is re-sent.
     kid = {8: ('A', t['child'])}
     later = [me.turn(rnd, others=kid, pearls=lying) for rnd in (31, 32)]
-    check('dead end: ping aimed at the child, no re-send', not any(x['split_pings'] for x in later),
+    check('trapped split: ping aimed at the child, no re-send', not any(x['split_pings'] for x in later),
           [x['sonar'] for x in later])
     me.close()
 
-    # 2. With the only pearl being the parent's own nearest, the dead end goes out alone.
+    # 2. Trapped, no refill tile known: the dead end goes out alone, whatever pearls lie about.
     me = Dragon(binary, 7, line((10, 10), 'W', 4), board=hall)
-    t = me.turn(30, pearls={(8, 8)})
+    t = me.turn(30, pearls={(9, 12), (8, 8)})
     msg = t['split_pings'][0][1] if t['split_pings'] else {}
-    check('dead end: sent even with no spot to tell', t['split'] == 2 and msg.get('end', {}) and
+    check('trapped split: no refill tile known, the dead end alone', t['split'] == 2 and msg.get('end', {}) and
           msg['end']['room'] == 4 and msg['spots'] == [], t)
     me.close()
+    # A refill tile inside a dead end she knows (here her own, under her body) is left out.
+    me = Dragon(binary, 7, line((10, 10), 'W', 4), board=hall)
+    t = me.turn(30, wires=[wire(far_end, [((12, 10), True), ((20, 12), True)])])
+    msg = t['split_pings'][0][1] if t['split_pings'] else {}
+    check('trapped split: a refill tile inside the dead end is left out',
+          t['split'] == 2 and msg.get('spots') == [((20, 12), True)], msg)
+    me.close()
 
-    # 3. Open country, a growth split with a bend in the body: no copy can reach the child on the split turn.
-    # Three spots, no dead end. Next turn the parent steps south onto a pearl and is lined up: one re-send, east.
+    # 3. Ordinary split. Open country, a growth split: refill tiles and pearls are known, there is no dead end to
+    # tell, so no split ping goes out at all and the usual messages do.
     bent = [(20, 15), (21, 15), (21, 16), (21, 17)]
     me = Dragon(binary, 7, bent)
     lying = {(20, 16), (17, 13), (23, 12)}
-    t = me.turn(30, pearls=lying)
-    pings = t['split_pings']
-    msg = pings[0][1] if pings else {}
-    check('open split: it splits off 2', t['split'] == 2, t)
-    check('open split: split ping in all four directions', sorted(d for d, _ in pings) == sorted('NESW'), t['sonar'])
-    check('open split: no dead end, the far pearl is the spot',
-          msg.get('end', 0) is None and msg.get('spots') == [((23, 12), False)], msg)
+    t = me.turn(30, pearls=lying, wires=[wire(((2, 2), 'N', 3, 0), [((24, 15), True), ((17, 17), True)])])
+    check('ordinary split: it splits off 2', t['split'] == 2, t)
+    check('ordinary split: no spots, no split ping', not t['split_pings'], t['sonar'])
     kid = {8: ('A', t['child'])}
     t1 = me.turn(31, others=kid, pearls=lying)
-    t2 = me.turn(32, others=kid, pearls=lying)
-    check('open split: parent steps south', t1['move'] == 'S', t1)
-    check('open split: re-sent once, towards the child only', [d for d, _ in t1['split_pings']] == ['E'] and
-          t1['split_pings'][0][1] == msg, t1['sonar'])
-    check('open split: other directions carry the leader report again', len(t1['leaders']) == 3, t1['sonar'])
-    check('open split: nothing more once a copy was aimed', not t2['split_pings'], t2['sonar'])
+    check('ordinary split: nothing sent afterwards either', not t1['split_pings'], t1['sonar'])
     me.close()
 
-    # 4. Nothing to tell (no dead end, no pearl, no refill tile): the usual messages go out.
+    # 4. Nothing known at all: the usual messages go out.
     me = Dragon(binary, 7, bent)
     t = me.turn(30)
     check('nothing to tell: split without a split ping', t['split'] == 2 and not t['split_pings'], t)
     me.close()
 
-    # 4b. Passing it on at a split. A dragon that was told a dead end and then splits in the open sends that dead end
-    # to its own child with two spots; the pearl count goes along only when it was heard this turn or the one before.
-    # One further than 16 tiles away is left out.
+    # 4b. Passing a dead end on at an ordinary split. A dragon that was told a dead end and then splits in the open
+    # sends that dead end to its own child, without spots; the pearl count goes along only when it was heard this
+    # turn or the one before. One further than 16 tiles away is left out.
     for name, gate, sent in (('near', (26, 15), True), ('far', (2, 2), False)):
         me = Dragon(binary, 7, bent)
-        t = me.turn(30, pearls={(17, 13), (23, 12)}, wires=[wire((gate, 'E', 5, 3))])
+        t = me.turn(30, pearls={(17, 13), (23, 12)}, wires=[wire((gate, 'E', 5, 3), [((24, 17), True)])])
         msg = t['split_pings'][0][1] if t['split_pings'] else {}
-        want = {'gate': gate, 'dir': 'E', 'room': 5, 'pearls': 3, 'on_map': True} if sent else None
-        check(f'pass on: a told dead end {name} the child is {"sent on" if sent else "left out"}',
-              t['split'] == 2 and msg.get('end', 0) == want and msg.get('spots') == [((23, 12), False)], t)
+        want = {'end': {'gate': gate, 'dir': 'E', 'room': 5, 'pearls': 3, 'on_map': True}, 'spots': []} if sent else {}
+        check(f'pass on: a told dead end {name} the child is {"sent on, without spots" if sent else "left out"}',
+              t['split'] == 2 and {k: msg.get(k) for k in want} == want and bool(t['split_pings']) == sent, t)
         me.close()
     # Told three turns before it splits (it first walks two tiles to a pearl): the dead end goes on without a count.
     old = walk(binary, line((20, 15), 'W', 3), 4, pearls={(18, 15)}, wires=[wire(((26, 15), 'E', 5, 3))], start=30)
@@ -227,13 +233,6 @@ def cases(binary):
     check('pass on: an older pearl count is not sent on', at is not None and at >= 2 and
           msg.get('end') == {'gate': (26, 15), 'dir': 'E', 'room': 5, 'pearls': None, 'on_map': True},
           [(x['move'], x['split'], x['split_pings'][:1]) for x in old])
-    # A spot inside a dead end she knows is left out: the pearl at (23, 12) is that dead end's first tile.
-    me = Dragon(binary, 7, bent)
-    t = me.turn(30, pearls={(17, 13), (23, 12)}, wires=[wire(((22, 12), 'E', 5, 3))])
-    msg = t['split_pings'][0][1] if t['split_pings'] else {}
-    check('pass on: a spot inside the dead end is left out',
-          t['split'] == 2 and msg.get('end', {}) and msg['end']['gate'] == (22, 12) and msg.get('spots') == [], t)
-    me.close()
 
     # 5. Hearing a dead end. A length-3 dragon stands on the gate (16, 10) of the same passage, with one pearl two
     # tiles in. Not told, it goes in for the pearl. Told "6 tiles, 1 pearl", it stays out: one pearl does not pay.
@@ -254,27 +253,77 @@ def cases(binary):
     check('hear dead end: told while inside, it walks out', out[-1]['head'][0] >= 16 and all(x['legal'] for x in out),
           [(x['move'], x['head']) for x in out])
 
-    # 7. Hearing pearl spots in open country. Not told, the dragon does not go west; told a pearl five tiles west
-    # (outside its view), it walks there and eats it. A refill tile four tiles west pulls it the same way.
+    # 7. The newborn's push. A fresh length-3 dragon in open country is handed its parent's message on its first
+    # turn: a far-off dead end plus a refill tile ten tiles west, well outside its view. With nothing else in reach
+    # it walks straight there, a step nearer every turn. Not told, it does not.
     body = line((20, 15), 'W', 3)
-    plain = walk(binary, body, 5, pearls={(15, 15)})
-    told = walk(binary, body, 5, pearls={(15, 15)}, wires=[wire(None, [((15, 15), False)])])
-    hot = walk(binary, body, 1, wires=[wire(None, [((16, 15), True)])])
-    check('hear spot: not told, it does not head west', plain[0]['move'][:1] != 'W', [x['move'] for x in plain])
-    check('hear spot: told a pearl, it walks there', any(x['head'] == (15, 15) for x in told),
-          [(x['move'], x['head']) for x in told])
-    check('hear spot: told a refill tile, it heads there', hot[0]['move'][:1] == 'W', hot[0])
+    goal = (10, 15)
+    spot = [wire(far_end, [(goal, True)])]
+    clock = {goal: 12}
+    gap = lambda cell: abs(codec.shift(cell[0], goal[0], W)) + abs(codec.shift(cell[1], goal[1], H))
+    path = lambda log: [(x['move'], x['head']) for x in log]
+    plain = walk(binary, body, 10, timers=clock)
+    told = walk(binary, body, 10, wires=spot, timers=clock)
+    check('push: not told, it does not go to the tile', not any(x['head'] == goal for x in plain), path(plain))
+    check('push: told, it reaches the tile ten tiles away', any(x['head'] == goal for x in told), path(told))
+    gaps = [gap(x['head']) for x in told]
+    upto = gaps.index(0) + 1 if 0 in gaps else len(gaps)
+    check('push: every step on the way is a step nearer', gaps[:upto] == list(range(9, 9 - upto, -1)), gaps)
+    check('push: every step is legal', all(x['legal'] and x['move'] for x in told), path(told))
+    # Another option first: with a pearl two tiles south it eats that, then heads for the told tile.
+    fed = walk(binary, body, 20, pearls={(20, 17)}, wires=spot, timers=clock)
+    ate = next((k for k, x in enumerate(fed) if x['head'] == (20, 17)), None)
+    check('push: a pearl in reach comes first', fed[0]['move'][:1] == 'S' and ate == 1, path(fed))
+    check('push: then it goes to the told tile', ate is not None and any(x['head'] == goal for x in fed[ate:]), path(fed))
+    # The parent nearer. A refill tile three tiles west with a teammate's head two tiles from it: the bot's usual
+    # rule leaves such a tile to the teammate. The newborn told by its dying parent goes anyway.
+    near, near_clock = (17, 15), {(17, 15): 12}
+    mum = {3: ('A', [(17, 13), (17, 12)])}
 
-    # 8. Spots carried with a dead end are read as offsets from its gate.
-    far = walk(binary, body, 5, pearls={(15, 15)}, wires=[wire(((2, 2), 'N', 3, 0), [((15, 15), False)])])
-    check('hear spot: pearl sent with a far dead end', any(x['head'] == (15, 15) for x in far),
-          [(x['move'], x['head']) for x in far])
+    def beside(told_it):
+        me = Dragon(binary, 9, body)
+        log = [me.turn(40 + k, others=mum, timers=near_clock, wires=[wire(far_end, [(near, True)])] if told_it and k == 0 else ())
+               for k in range(4)]
+        me.close()
+        return log
 
-    # 9. A message naming tiles off the map changes nothing and breaks nothing.
-    junk = codec.seal(KEY, (1 << 63) | (1 << 52) | (TAG << 53) | 0x3FFF | (0x3FFF << 15) | (0x3FFE << 30))
-    odd = walk(binary, body, 5, pearls={(15, 15)}, wires=[junk])
-    check('off-map tiles are ignored', [x['move'] for x in odd] == [x['move'] for x in plain],
-          [x['move'] for x in odd])
+    check('push: a teammate nearer, not told, it stays away', not any(x['head'] == near for x in beside(False)),
+          path(beside(False)))
+    check('push: a teammate nearer, told, it goes anyway', any(x['head'] == near for x in beside(True)),
+          path(beside(True)))
+    # In sight with a long countdown the bot's own rule drops a refill tile; the told newborn still walks onto it.
+    slow = walk(binary, body, 5, wires=[wire(far_end, [((16, 15), True)])], timers={(16, 15): 30})
+    check('push: a long countdown in sight does not stop it', any(x['head'] == (16, 15) for x in slow), path(slow))
+    # A told tile that turns out to be no spawn tile at all is dropped once seen.
+    dud = walk(binary, body, 8, wires=spot)
+    check('push: a told tile that is no spawn tile is dropped once seen', not any(x['head'] == goal for x in dud) and
+          any(gap(x['head']) <= 3 for x in dud), path(dud))
+    # Only a newborn pushes. A dragon four turns old hears of a refill tile some thirty tiles off: the tile goes on
+    # its map (the usual six-step pull), and it takes the same steps as a twin that heard nothing.
+    def aged(told_it):
+        me = Dragon(binary, 9, body)
+        log = [me.turn(40 + k, wires=[wire(far_end, [((2, 2), True)])] if told_it and k == 4 else ()) for k in range(10)]
+        me.close()
+        return log
+
+    check('push: an older dragon that hears it does not push', [x['move'] for x in aged(True)] ==
+          [x['move'] for x in aged(False)], (path(aged(True)), path(aged(False))))
+
+    # 8. A told tile inside a dead end the newborn is charged for is no goal: on the gate of the 20-tile room in
+    # pen(), told "no pearls" and a refill tile deep inside, it stays out.
+    lured = walk(binary, line((14, 12), 'W', 3), 5, board=pen(),
+                 wires=[wire(((14, 12), 'W', 20, 0), [((11, 12), True)])], timers={(11, 12): 12})
+    check('push: not into a dead end that does not pay',
+          not any(10 <= x['head'][0] <= 13 and 10 <= x['head'][1] <= 14 for x in lured), path(lured))
+
+    # 9. Messages that carry nothing usable change nothing and break nothing: a gate off the map, and the first
+    # build's three-spot message, which is no longer read.
+    junk = codec.seal(KEY, (1 << 63) | (3 << 51) | (TAG << 53) | 0x3FFF | (5 << 16) | (0x1FFF << 25))
+    three = wire(None, [(goal, True), ((16, 15), False)])
+    for name, odd_wire in (('a gate off the map', junk), ('an old three-spot message', three)):
+        odd = walk(binary, body, 6, timers=clock, wires=[odd_wire])
+        check(f'{name} is ignored', [x['move'] for x in odd] == [x['move'] for x in plain[:6]] and
+              not any(x['split_pings'] for x in odd), path(odd))
 
     # 10. Alert. A length-3 dragon walks into the passage (gate (16, 10), shut at x 10) with nobody to tell it. Until
     # it has seen the shut end it sends nothing new. From then on, every turn, all four pings carry the dead end and
@@ -303,6 +352,16 @@ def cases(binary):
           [(x['move'], x['split_pings'][0][1]['end']['pearls']) for x in alerts])
     check('alert: no leader report on an alert turn', bool(alerts) and not any(x['leaders'] for x in alerts),
           [x['sonar'] for x in alerts][:2])
+    # A split in there while a step is still open is not a trapped one: the dead end goes to the child without
+    # spots, though she knows a refill tile outside.
+    me = Dragon(binary, 9, line((16, 10), 'W', 3), board=hall)
+    lying = {(13, 10), (10, 10)}
+    log = [me.turn(40 + k, pearls=lying, wires=[wire(far_end, [((20, 12), True)])] if k == 0 else ()) for k in range(7)]
+    me.close()
+    early = [x for x in log if x['split'] and x['head'][0] > 10]
+    check('ordinary split inside a dead end: the dead end, no spots',
+          bool(early) and all(m['end'] and not m['spots'] for x in early for _, m in x['split_pings']) and
+          all(x['split_pings'] for x in early), [(x['move'], x['split'], x['head'], x['split_pings'][:1]) for x in log])
     # The count is "pearls there or due": a tile whose spawn timer is about to run out counts, a slow one does not.
     for name, wait, want in (('about to spawn', 3, 2), ('far from spawning', 30, 1)):
         due = walk(binary, line((16, 10), 'W', 3), 5, board=hall, pearls={(14, 10), (10, 10)}, timers={(11, 10): wait})
@@ -382,10 +441,11 @@ def off_cases(binary):
     me.close()
     results.append(('switch off: splits, sends no split ping', t['split'] == 2 and not t['split_pings'], str(t)))
     body = line((20, 15), 'W', 3)
-    plain = walk(binary, body, 5, pearls={(15, 15)})
-    told = walk(binary, body, 5, pearls={(15, 15)}, wires=[wire(None, [((15, 15), False)])])
-    results.append(('switch off: a handed ping changes no step',
-                    [x['move'] for x in plain] == [x['move'] for x in told], str([x['move'] for x in told])))
+    plain = walk(binary, body, 8, timers={(10, 15): 12})
+    told = walk(binary, body, 8, timers={(10, 15): 12}, wires=[wire(((30, 20), 'N', 3, 0), [((10, 15), True)])])
+    results.append(('switch off: a handed refill tile changes no step and is not sent on',
+                    [x['move'] for x in plain] == [x['move'] for x in told] and
+                    not any(x['split_pings'] for x in told), str([x['move'] for x in told])))
     hall = corridor(10, 10, 15)
     me = Dragon(binary, 9, line((16, 10), 'W', 3), board=hall)
     lying = {(14, 10), (10, 10)}
