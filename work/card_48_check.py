@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Card #48 queen-sacrifice mechanism check (QUEEN_NO_FEED, second build): with the switch on, does our queen stay
-out of the feeding? She must not drop her body for the leader, not split after round 200, and not eat near the
-leader. And is the queen the only thing the switch changes?
+"""Card #48 queen-sacrifice mechanism check (QUEEN_NO_FEED, third build): with the switch on, does our queen stay
+out of the feeding? She must not drop her body for the leader, not split after round 200 unless forced, not eat
+near the leader, not eat our own dragons' bodies in feeding rounds and not be picked as the leader there. And does
+the switch change nothing else?
 
 usage: python3 work/card_48_check.py --replays DIR --base base --candidate candidate --output FILE
 Reads paired replays DIR/<tag>_<map>_<seed>_<side>.replay (side 0 = we are team A). The opponent is the base bot
@@ -9,65 +10,76 @@ in every game. A pair is the base game and the switch-on game of the same map, s
 
 Words:
   queen           the dragon with id 0 or 1; each team has one. The game is decided by the queens' lengths.
-  leader          the dragon the others feed late in the game. Here: our longest dragon other than the queen.
-  drop            a dragon ends its turn with no action and dies on the spot ("no valid action"), which leaves its
-                  body as pearls. It is how a feeder gives its length to the leader. A turn the game marks as timed
-                  out is counted apart.
+  drop            a dragon ends its turn with no action and dies on the spot ("no valid action"). It is how a
+                  feeder gives its length to the leader. A turn the game marks as timed out is counted apart.
+  body pearl      a dead dragon leaves a pearl on every second tile of its body, head first. The replay says when
+                  each pearl appears, so every pearl is told apart here: spawned by the map, or the body of one
+                  named dragon (dropped as a feeder, or died another way).
   feeding rounds  rounds where the bot's feeding can be on: after round 400, or after round 200 once we have 56
                   dragons.
-  small map       600 tiles or fewer. Only there is the base queen a plain dragon (unless her home is closed off):
-                  she can be a feeder and she splits like the others. On bigger maps she already keeps to the
-                  queen's split rules and, once feeding starts, she is the one the others feed.
+  the leader she knows   every turn a dragon sends its teammates a sonar message naming the leader it currently
+                  believes in (id, length, position). This file decodes our own team's messages, so "the leader
+                  she knows" is read from what the queen herself sent that turn, not guessed. A turn in which she
+                  sent no such message counts as "knows none" (the bot sends none exactly then, except on a turn
+                  all four pings carried a portal warning, where the previous turn's answer is kept).
+  fed on purpose  on maps over 600 tiles, or when her home is closed off, the swarm picks the queen as the leader
+                  in feeding and feeds her. Her messages then name herself. The rules about pearls do not apply
+                  on such turns: those pearls are meant for her.
+  true leader     our longest dragon other than the queen, from true lengths. Reported next to what she knew.
   view            the 7x7 box around her head, all the bot sees.
-  open step       a neighbouring tile with no wall (kelp) in between and no dragon body on it, from which she can
-                  reach at least 3 x her length + 8 free tiles or her own tail (the bot's own test for "not a dead
-                  end", rebuilt from the replay with the bodies as they stand that turn).
-  roomy step      the same with a lower bar: at least her length + 2 free tiles, or her own tail. With no roomy
-                  step the bot calls her stuck and lets her split 2 off to wait in place.
+  open step       a neighbouring tile she can step on (no wall, no dragon on it, her own tail tile included: the
+                  bot treats the tail as blocked for the next step) from which she can reach at least 3 x her
+                  length + 8 free tiles or her own tail. This is the bot's own test for "not a dead end".
+  roomy step      the same with a lower bar: her length + 2 free tiles, or her own tail. With no roomy step the
+                  bot calls her stuck and lets her split 2 off to wait in place.
   pressed         an enemy head is in her view at the start of her turn. The bot puts her safety first then, so
                   a split or a pearl taken on such a turn is not held against the switch.
-  free split      she splits, in a round after 200, not pressed, with at least one roomy step. The switch stops the
-                  growth split (4 into 2 and 2) and the split out of a tight spot; it leaves the splits she makes
-                  when an enemy can hit her or when she is stuck.
-  near the leader within 9 tiles of the leader's head, wrap-aware (LEADER_PEARL_RADIUS, the zone in which the bot
-                  already tells plain dragons to leave pearls to the leader).
-  free bite near the leader   in a feeding round she grows on a tile near the leader, where: the leader is longer
-                  than her, it was our longest other dragon at her previous turn too and the tile was near its head
-                  then as well (the bot goes by the last report it heard, so a leader that just changed or just
-                  arrived does not count), she is not pressed, and she had an open step elsewhere.
+  free split      she splits, in a round after 200, not pressed, with at least one roomy step.
+  clean step      an open step other than the one she took, not through a portal, whose tile holds no pearl she is
+                  meant to leave. The bot gives up a pearl only when it has such a step.
+  free bite near the leader   in a feeding round she grows on a tile within 9 tiles (wrap-aware) of the position
+                  of the leader she knows, that leader is not herself, she is not pressed and had a clean step.
+  watched         the body pearl's tile was in her view with one of our dragons on it at her last turn before the
+                  death, and still in her view at her next turn. Then she saw the body turn into the pearl.
+  inferable       when she first sees the body pearl, her last look at that tile showed no pearl and a spawn
+                  countdown that had not run out yet (with INFER_MARGIN rounds to spare), or the tile never
+                  spawns. Then no spawn explains the pearl, so it must be a body.
+  free bite on our body   in a feeding round, on a turn she does not name herself leader, she grows on a body
+                  pearl of one of our own dragons that was watched or inferable, not pressed, with a clean step.
   first difference  the base and switch-on game of a pair are the same game, event for event, until the switch
                   changes a decision. The first turn that differs is that decision, from an identical position.
 
 Expectation, written before any game was played with this build's switch on (thresholds are the constants below):
-  1. only the queen: every pair that differs has its first difference inside our own queen's turn, in a round
-     after FIRST_FROM (200; 150 on maps over 1200 tiles, where the leader's zone starts earlier). A pair whose
-     queen is dead before that stays the same game to the end.
-  2. target seen: queens run by the base bot (ours in the base games, the opponent's in every game) drop at least
-     TARGET_MIN times in this run, and our switch-on queen has at least EXPOSED_MIN turns of her own in feeding
-     rounds on small maps, so the rules below had turns in which they could be broken.
+  1. only what the switch covers: every pair that differs has its first difference (a) inside our own queen's
+     turn, in a round after FIRST_FROM (200; 150 on maps over 1200 tiles), or (b) in the turn of another of our
+     dragons, on a map of 600 tiles or fewer, at or after the first feeding round in which the base game has one
+     of our dragons naming our queen as leader without the fed-on-purpose mark (the switch stops them picking
+     her there).
+  2. target seen: queens run by the base bot drop at least TARGET_MIN times in this run; our switch-on queen has
+     at least EXPOSED_MIN feeding turns on which she does not name herself leader; and in at least BODY_MIN of those
+     turns one of our dragons' body pearls lay on a tile she could step on.
   3. never drops: our switch-on queen drops 0 times, on any map.
-  4. no free split: on small maps our switch-on queen makes 0 free splits.
-  5. no free bite near the leader: on small maps our switch-on queen makes 0 free bites near the leader.
+  4. no free split: our switch-on queen makes 0 free splits, on any map.
+  5. no free bite near the leader: 0 by our switch-on queen.
   6. it acted: at least ACTED_MIN pairs differ.
-passed = all six. target_seen = rule 2. mechanism_shown = rules 1, 3, 4, 5 and 6.
-Rules 4 and 5 are judged on small maps only. On bigger maps the switch does not change the split rules, and in
-feeding the queen is the one being fed, so "leader = longest other dragon" is not who the bot feeds; the same
-counts are reported for those maps without a verdict.
-Reported, not part of the verdict (a few games cannot settle them): every split and every bite of our queen after
-round 200 with its label; bites on a tile where one of our feeders dropped earlier, near the leader or not; how
-often she ended a feeding turn within 1 and within 3 tiles of the leader's head; what the first difference was
-and what became of both queens after it; queens alive when feeding starts, final queen lengths, wins, timeouts.
-Known before any switch-on game of this build:
-- from the first build's 16 pairs (same maps and seeds for tower_defense and default_small; the switch then only
-  stopped the drop): this file run on those replays fails rules 4 and 5 and passes the rest. In default_small
-  14800 side 1, the game the revision was asked for, the switch-on queen makes 4 free splits (rounds 416, 429,
-  451, 463) and 6 bites near the leader, 2 of them free (rounds 413, 432) and 4 while pressed; 4 of her bites are
-  on a tile where a feeder had dropped. In tower_defense 14801 side 1 the queen, base and switch-on alike, makes
-  4 free splits before feeding (rounds 202, 286, 306, 368), so the base bot shows the split this build stops.
-  In the base games of that run our queen was alive when feeding starts in 2 of 16 (tower_defense 14800 side 0,
-  default_small 14800 side 1); on weakhold and snake_trap both queens were dead by round 121.
-- from this build's 20 switch-off identity games (old 10 maps, 2 seeds): both queens were alive to the end on
-  trauma (1152 tiles) and schooltime (2400 tiles) in all 4 games; in the other 16 no queen was alive at round 401.
+  7. no free bite on our body: 0 by our switch-on queen.
+  8. not the leader: on maps of 600 tiles or fewer, in feeding rounds, our switch-on queen never names herself
+     leader and no dragon of ours names her, unless the message carries the fed-on-purpose mark. (For the
+     56-dragon kind of feeding a round counts here only with 58 or more dragons, see CAP_SLACK.)
+passed = all eight. target_seen = rule 2. mechanism_shown = the other seven.
+Reported, not part of the verdict: every split and bite of our queen after round 200 with its labels; bites on
+our body pearls she could not tell from a spawned pearl (neither watched nor inferable); bites on turns she named
+herself leader; bites near the true leader when she did not know of it; splits while
+pressed or stuck; how often she ended a feeding turn within 1 and 3 tiles of the true leader; how often the base
+bot's queen names herself leader or is named in feeding rounds; what became of both queens; lengths and wins.
+Known before any switch-on game of this build, from the second build's replays (same maps and seeds):
+- default_small 14800 side 1, switch on: the queen heard of leader 191 until round 453; its reports then went
+  stale and from round 454 she and the dragons around her named HER the leader. The feeders that dropped next to
+  her in rounds 454 to 457 dropped for her. Of her 20 bites in feeding, 5 were spawned pearls, 5 a feeder's
+  dropped body and 10 the body of one of our dragons that died another way (6 of them the dead leader's).
+- tower_defense 14801 side 1, round 331: the split the second check called free was a stuck split. Our own dragon
+  96 had closed her 2x2 pocket; the old check counted her own tail tile as a step with room. This file no longer
+  does. The bot has no growth split after round 200 with the switch on.
 The game runner drops the bot's log lines (--no-debug), so nothing here reads them.
 """
 import argparse, concurrent.futures as cf, glob, hashlib, json, os, sys
@@ -81,7 +93,8 @@ from card_39_check import load_map
 
 # Expectation thresholds (fixed before any game with this build's switch on)
 TARGET_MIN = 2       # drops by base-bot queens needed to call the target seen
-EXPOSED_MIN = 30     # feeding-round turns of our switch-on queen on small maps needed to call the target seen
+EXPOSED_MIN = 30     # feeding turns on which our switch-on queen does not name herself leader, for target seen
+BODY_MIN = 3         # of those, turns with one of our dragons' body pearls on a tile she could step on
 ACTED_MIN = 2        # pairs that must differ to say the switch acted
 FIRST_FROM = 200     # QUEEN_SPLIT_ROUND / FEED_CAP_ROUND: the switch changes nothing at or before this round
 FIRST_FROM_BIG = 150 # LEADER_GROW_ROUND_BIG: on maps over BIG_CELLS tiles the leader's zone starts here
@@ -90,15 +103,77 @@ SPLIT_ROUND = 200    # QUEEN_SPLIT_ROUND
 FEED_ROUND = 400     # ENDGAME_ROUND
 FEED_FROM = 200      # FEED_CAP_ROUND
 CAP_UNITS = 56       # FEED_CAP_UNITS
-KEEP_UNITS = 3       # FEEDER_KEEP_UNITS
-LEN_RATIO = 2        # FEED_LEN_RATIO
-APPROACH = 15        # FEEDER_APPROACH
 ZONE = 9             # LEADER_PEARL_RADIUS
+SMALL_CELLS = 600    # QUEEN_MIN_CELLS: at or below this the swarm feeds the queen on purpose only in a queen game
+INFER_MARGIN = 3     # rounds of slack before a pearl counts as "no spawn explains it" (the bot uses 1)
+CAP_SLACK = 2        # the 56-dragon kind of feeding flips as dragons split and die within a round: rule 8 counts a
+                     # round only at CAP_UNITS + CAP_SLACK or more, rule 1 already allows CAP_UNITS - CAP_SLACK
 VIEW = 3             # the bot sees a 7x7 box around its head
-SMALL_CELLS = 600    # QUEEN_MIN_CELLS: the base queen is a plain dragon at or below this
 BIG_CELLS = 1200     # AGGRESSIVE_MAX_CELLS
 CAUSE = ['wall', 'self', 'body', 'headon', 'no_action']
 QUEENS = (0, 1)
+
+# Sonar wire format, as in mybot2/sonar_codec.hpp and pack_leader in mybot2/main.cpp.
+M64 = (1 << 64) - 1
+SECRET = 0xE1DE70530C48DE42
+CHECK_MASK = 0xFF << 55
+CIPHER_MASK = M64 ^ CHECK_MASK ^ (0x3 << 53)
+
+
+def rotl(x, b):
+    return ((x << b) | (x >> (64 - b))) % (1 << 64)
+
+
+def prf(key, m):
+    """SipHash-2-4 of one 8-byte block."""
+    v = [key[0] ^ 0x736F6D6570736575, key[1] ^ 0x646F72616E646F6D, key[0] ^ 0x6C7967656E657261,
+         key[1] ^ 0x7465646279746573]
+
+    def rounds(n):
+        for _ in range(n):
+            v[0] = (v[0] + v[1]) % (1 << 64)
+            v[1] = rotl(v[1], 13) ^ v[0]
+            v[0] = rotl(v[0], 32)
+            v[2] = (v[2] + v[3]) % (1 << 64)
+            v[3] = rotl(v[3], 16) ^ v[2]
+            v[0] = (v[0] + v[3]) % (1 << 64)
+            v[3] = rotl(v[3], 21) ^ v[0]
+            v[2] = (v[2] + v[1]) % (1 << 64)
+            v[1] = rotl(v[1], 17) ^ v[2]
+            v[2] = rotl(v[2], 32)
+    tail = 8 << 56
+    v[3] ^= m
+    rounds(2)
+    v[0] ^= m
+    v[3] ^= tail
+    rounds(2)
+    v[0] ^= tail
+    v[2] ^= 0xFF
+    rounds(4)
+    return v[0] ^ v[1] ^ v[2] ^ v[3]
+
+
+assert prf((0x0706050403020100, 0x0F0E0D0C0B0A0908), 0x0706050403020100) == 0x93F5F5799A932462
+
+
+def sonar_key(width, height, tag):
+    root = (SECRET, rotl(SECRET, 29) ^ 0xA5A5A5A5A5A5A5A5)
+    game = (width << 40) | (height << 16) | tag
+    return prf(root, game), prf(root, game | (1 << 63))
+
+
+def leader_report(key, tag, wire, width, height):
+    """The leader a sonar message names, or None when it is another kind of message or not ours."""
+    check = (wire >> 55) % 256
+    plain = (wire ^ (check << 55)) ^ (prf(key, CHECK_MASK | check) & CIPHER_MASK)
+    if prf(key, plain) % 256 != check or plain >> 63 or (plain >> 53) % 4 != tag:
+        return None
+    named = plain % 65536
+    out = dict(id=named % 32768, on_purpose=named >= 32768, len=(plain >> 16) % 1024, when=(plain >> 28) % 512,
+               pos=[(plain >> 37) % 128, (plain >> 44) % 128])
+    if out['len'] <= 0 or out['pos'][0] >= width or out['pos'][1] >= height:
+        return None
+    return out
 
 
 def gap(a, b, size):
@@ -125,40 +200,60 @@ def scan(job):
             team_of[did] = 'A' if int(q[1]) == 0 else 'B'
     queen = track[0] if track else next((i for i in QUEENS if team_of.get(i) == ours), None)
     foe = track[1] if track else next((i for i in QUEENS if team_of.get(i) != ours), None)
-    small = W * H <= SMALL_CELLS
+    tag = 2 if ours == 'A' else 1
+    key = sonar_key(W, H, tag)
+    decoded = {}
 
     def dist(a, b):
         return gap(a[0], b[0], W) + gap(a[1], b[1], H)
 
-    def open_steps(body):
-        """Neighbouring tiles of her head that are open steps, and how many are roomy steps (see the words above)."""
+    def in_view(head, cell):
+        return gap(head[0], cell[0], W) <= VIEW and gap(head[1], cell[1], H) <= VIEW
+
+    pearl = {}                       # tile -> where the pearl lying there came from
+    eaten = {}                       # tile -> (round, mover, pearl) for the pearl last taken from it
+    dying = {}                       # tile -> the dragon that died on it in the current turn
+    zero_at = {}                     # tile -> round its spawn countdown runs out (tiles that never spawn: absent)
+    looked = {}                      # tile -> (round, had a pearl, zero_at then) at our queen's last look at it
+
+    def kind_of(p):
+        """'spawn', 'ours' (body of one of our dragons), 'theirs', or None for no pearl."""
+        return None if p is None else 'spawn' if p['kind'] == 'spawn' else 'ours' if p['ours'] else 'theirs'
+
+    def steps_from(body):
+        """Her four neighbours: can she step there, is it an open step, a roomy step, and what pearl lies on it."""
         taken = {c for b in bodies.values() for c in b}
         tail = body[-1]
-        taken.discard(tail)
+        free = taken - {tail}
         need = 3 * len(body) + 8
-        found, roomy = [], 0
+        out = []
         for d in 'NESW':
             first = step(body[0], d)
             if first is None or first[0] in taken:
                 continue
-            seen, frontier, reaches = {first[0]}, [first[0]], first[0] == tail
+            seen, frontier, reaches = {first[0]}, [first[0]], False
             while frontier and len(seen) < need and not reaches:
                 nxt = []
                 for cell in frontier:
                     for e in 'NESW':
                         h = step(cell, e)
-                        if h is None or h[0] in taken or h[0] in seen:
+                        if h is None or h[0] in free or h[0] in seen:
                             continue
                         seen.add(h[0])
                         nxt.append(h[0])
                         reaches = reaches or h[0] == tail
                 frontier = nxt
-            if reaches or len(seen) >= need:
-                found.append(list(first[0]))
-            roomy += reaches or len(seen) >= len(body) + 2
-        return found, roomy
+            out.append(dict(tile=list(first[0]), open=bool(reaches or len(seen) >= need), portal=first[1],
+                            roomy=bool(reaches or len(seen) >= len(body) + 2), pearl=kind_of(pearl.get(first[0]))))
+        return out
 
-    last = dict(lead=None, heads={})    # the leader and our heads at our queen's previous turn
+    last = dict(ours_in_view=set(), said=None)    # from our queen's previous turn
+
+    def units():
+        return sum(1 for i, b in bodies.items() if b and team_of.get(i) == ours)
+
+    def feeding_now(rnd):
+        return rnd > FEED_ROUND or (rnd > FEED_FROM and units() >= CAP_UNITS)
 
     def look(rnd):
         body = bodies[queen]
@@ -166,39 +261,56 @@ def scan(job):
         mine = {i: b for i, b in bodies.items() if b and team_of.get(i) == ours}
         rest = {i: len(b) for i, b in mine.items() if i != queen}
         lead = min(rest, key=lambda i: (-rest[i], i)) if rest else None
-        feeding = rnd > FEED_ROUND or (rnd > FEED_FROM and len(mine) >= CAP_UNITS)
-        lead_len = rest[lead] if lead is not None else 0
         lead_at = bodies[lead][0] if lead is not None else None
-        lead_dist = dist(head, lead_at) if lead_at else None
-        feeder = bool(small and feeding and len(mine) > KEEP_UNITS and lead is not None
-                      and len(body) * LEN_RATIO <= lead_len and lead_dist <= APPROACH)
-        pressed = any(b and team_of.get(i) != ours and gap(b[0][0], head[0], W) <= VIEW
-                      and gap(b[0][1], head[1], H) <= VIEW for i, b in bodies.items())
-        steps, roomy = open_steps(body) if rnd > SPLIT_ROUND else ([], 0)
-        turn = dict(round=rnd, len=len(body), start=list(head), end=list(head), units=len(mine), feeding=feeding,
-                    lead=lead, lead_len=lead_len, lead_at=list(lead_at) if lead_at else None, lead_dist=lead_dist,
-                    lead_was=list(last['heads'][lead]) if lead is not None and last['lead'] == lead
-                    and lead in last['heads'] else None,
-                    feeder_call=feeder, pressed=pressed, open=steps, roomy=roomy,
-                    path=[], bites=[], kind=None, died=None)
-        last['lead'], last['heads'] = lead, {i: b[0] for i, b in mine.items()}
-        return turn
+        pressed = any(b and team_of.get(i) != ours and in_view(head, b[0]) for i, b in bodies.items())
+        for p in pearl.values():
+            if p['kind'] == 'spawn':
+                continue
+            if p['after'] is None:
+                p['after'] = in_view(head, p['tile'])
+            if p['inferable'] is None and in_view(head, p['tile']):
+                prev = looked.get(p['tile'])
+                if prev is None:
+                    p['inferable'] = p['tile'] not in zero_at
+                else:
+                    p['inferable'] = bool(not prev[1] and (prev[2] is None or prev[2] > rnd + INFER_MARGIN))
+        for dx in range(-VIEW, VIEW + 1):
+            for dy in range(-VIEW, VIEW + 1):
+                cell = ((head[0] + dx) % W, (head[1] + dy) % H)
+                looked[cell] = (rnd, cell in pearl, zero_at.get(cell))
+        last['ours_in_view'] = {c for i, b in mine.items() if i != queen for c in b if in_view(head, c)}
+        return dict(round=rnd, len=len(body), start=list(head), end=list(head), units=len(mine),
+                    feeding=feeding_now(rnd), lead=lead, lead_len=rest[lead] if lead is not None else 0,
+                    lead_at=list(lead_at) if lead_at else None,
+                    lead_dist=dist(head, lead_at) if lead_at else None, lead_in_view=bool(lead_at and in_view(head, lead_at)),
+                    pressed=pressed, steps=steps_from(body) if rnd > SPLIT_ROUND else [],
+                    said=None, said_this_turn=False, pings=0, path=[], bites=[], kind=None, died=None)
 
     turns = []                       # (round, mover, hash of what happened in that turn)
+    turn_ours = []                   # was that turn's mover one of our dragons
     queen_turns = {}                 # round -> our queen's turn
     drops = []                       # every turn a queen ended with no action
-    feeder_drops = {}                # tile -> rounds after FEED_FROM in which one of our other dragons dropped there
+    named = []                       # (round, by our queen herself, surely a feeding round) for each turn of one
+                                     # of our dragons that named our queen leader without the fed-on-purpose
+                                     # mark in or next to a feeding round, on a map of SMALL_CELLS tiles or fewer
     fate = {q: dict(death_round=None, cause=None, own_move=None, len_at_death=None) for q in (queen, foe)}
     alive_at_feed = {queen: False, foe: False}
     len_at_feed = {queen: 0, foe: 0}
     c = Counter()
-    rnd, mover, sig, pending, acted = 0, None, None, None, None
+    on_purpose_from = None           # first round a report carried the fed-on-purpose mark
+    rnd, mover, sig, pending, acted, named_turn = 0, None, None, None, None, None
 
     def close():
-        nonlocal sig, pending, acted
+        nonlocal sig, pending, acted, named_turn
         if sig is not None:
             turns.append((rnd, mover, sig.hexdigest()[:16]))
-        sig, pending, acted = None, None, None
+            turn_ours.append(team_of.get(mover) == ours)
+        if pending is not None:
+            if not pending['said_this_turn']:
+                # No leader message: she knows none, unless all four pings carried something else this turn.
+                pending['said'] = last['said'] if pending['pings'] >= 4 else None
+            last['said'] = pending['said']
+        sig, pending, acted, named_turn = None, None, None, None
 
     for ev in root.pointer(3):
         which = ev.u16(0)
@@ -207,6 +319,7 @@ def scan(job):
         if kind == 'roundStart':
             close()
             rnd, mover = pl.i32(0), None
+            dying.clear()
             if rnd == FEED_ROUND + 1:
                 for q in alive_at_feed:
                     alive_at_feed[q] = bool(bodies.get(q))
@@ -215,6 +328,34 @@ def scan(job):
             close()
             mover = pl.i32(0)
             sig = hashlib.sha1()
+            dying.clear()
+        elif kind == 'pearlCountdown':
+            zero_at[replay.point(pl.pointer(0))] = rnd + pl.i32(0)
+        elif kind == 'tileChange':
+            p = replay.point(pl.pointer(0))
+            if pl.i32(0):
+                pearl[p] = dying.get(p) and dict(dying[p], tile=p) or dict(kind='spawn', round=rnd, tile=p)
+            elif p in pearl:
+                eaten[p] = (rnd, mover, pearl.pop(p))
+        elif kind == 'sonarPing':
+            sender, wire = pl.i32(0), pl.u64(16)
+            if team_of.get(sender) != ours:
+                continue
+            if wire not in decoded:
+                decoded[wire] = leader_report(key, tag, wire, W, H)
+            report = decoded[wire]
+            if pending is not None and sender == queen:
+                pending['pings'] += 1
+                if report is not None:
+                    pending['said'], pending['said_this_turn'] = report, True
+            if report is None:
+                continue
+            if report['on_purpose'] and on_purpose_from is None:
+                on_purpose_from = rnd
+            if (report['id'] == queen and not report['on_purpose'] and W * H <= SMALL_CELLS and named_turn != sender
+                    and (rnd > FEED_ROUND or (rnd > FEED_FROM and units() >= CAP_UNITS - CAP_SLACK))):
+                named_turn = sender
+                named.append((rnd, sender == queen, rnd > FEED_ROUND or units() >= CAP_UNITS + CAP_SLACK))
         elif kind == 'dragonAction':
             did = pl.i32(0)
             a = pl.pointer(0)
@@ -256,7 +397,9 @@ def scan(job):
                 pending['end'] = list(h)
                 pending['path'].append(list(h))
                 if len(b) > before:
-                    pending['bites'].append(list(h))
+                    took = eaten.get(h)
+                    took = took[2] if took and took[0] == rnd and took[1] == queen else pearl.get(h)
+                    pending['bites'].append((list(h), took))
         elif kind == 'dragonSplit':
             pa, ch = pl.i32(0), pl.i32(4)
             bodies[pa] = deque(replay.point(x) for x in pl.pointer(0))
@@ -272,11 +415,14 @@ def scan(job):
                 sig.update(f'd{did}:{r};'.encode())
             if did in fate and fate[did]['death_round'] is None:
                 fate[did] = dict(death_round=rnd, cause=cause, own_move=mover == did, len_at_death=len(b or ()))
-            if (cause == 'no_action' and b and did != queen and team_of.get(did) == ours and acted
-                    and acted[0] == did and not acted[2] and rnd > FEED_FROM):
+            dropped = bool(cause == 'no_action' and acted and acted[0] == did and not acted[2])
+            mine = team_of.get(did) == ours
+            if dropped and b and did != queen and mine and rnd > FEED_FROM:
                 c['feeder_drops_ours'] += 1
-                for cell in b:
-                    feeder_drops.setdefault(cell, []).append(rnd)
+            for cell in b or ():
+                dying[cell] = dict(kind='drop' if dropped else 'death', ours=mine, id=did, len=len(b), round=rnd,
+                                   before=mine and did != queen and cell in last['ours_in_view'], after=None,
+                                   inferable=None)
             if pending and did == queen:
                 pending['died'] = cause
     close()
@@ -288,28 +434,52 @@ def scan(job):
     marks = []                       # our queen's splits and bites after round SPLIT_ROUND, labelled
     for t in queen_turns.values():
         t['end_dist'] = dist(t['end'], t['lead_at']) if t['lead_at'] else None
+        said = t['said']
+        t['names_self'] = bool(said and said['id'] == queen)
+        t['on_purpose'] = bool(said and said['id'] == queen and said['on_purpose'])
+        knows = bool(said and said['id'] != queen)
+        t['knows'] = dict(id=said['id'], len=said['len'], as_of=said['when'], at=said['pos']) if said else None
+        t['knows_true_leader'] = bool(knows and said['id'] == t['lead'])
+
+        def leave(tile, origin):
+            """A pearl she is meant to leave on a turn she is not the one being fed."""
+            return bool(not t['names_self'] and (origin == 'ours' or (origin and knows and dist(tile, said['pos']) <= ZONE)))
+
+        t['body_chance'] = bool(t['feeding'] and not t['names_self'] and any(s['pearl'] == 'ours' for s in t['steps']))
         if t['round'] <= SPLIT_ROUND:
             continue
+        roomy = sum(s['roomy'] for s in t['steps'])
         where = dict(round=t['round'], len=t['len'], at=t['start'], feeding=t['feeding'], pressed=t['pressed'],
-                     open_steps=len(t['open']), roomy_steps=t['roomy'], lead_len=t['lead_len'],
-                     lead_dist=t['lead_dist'])
+                     steps=len(t['steps']), open_steps=sum(s['open'] for s in t['steps']), roomy_steps=roomy,
+                     knows=t['knows'], names_self=t['names_self'], on_purpose=t['on_purpose'],
+                     true_leader=t['lead'], true_leader_len=t['lead_len'],
+                     true_leader_dist=t['lead_dist'])
         if t['kind'] == 'split':
-            marks.append(dict(where, what='split', free=bool(not t['pressed'] and t['roomy'])))
-        for n, cell in enumerate(t['bites']):
-            near = bool(t['lead_at'] and dist(cell, t['lead_at']) <= ZONE)
-            steady = bool(near and t['lead_was'] and dist(cell, t['lead_was']) <= ZONE)
+            marks.append(dict(where, what='split', free=bool(not t['pressed'] and roomy)))
+        for n, (cell, took) in enumerate(t['bites']):
             first = n == 0 and cell == t['path'][0]
-            elsewhere = [o for o in t['open'] if o != cell] if first else [cell]
-            dropped = [r for r in feeder_drops.get(tuple(cell), ()) if r <= t['round']]
-            marks.append(dict(where, what='bite', tile=cell, near_leader=near,
-                              to_leader=dist(cell, t['lead_at']) if t['lead_at'] else None,
-                              leader_longer=t['lead_len'] > t['len'], leader_steady=steady,
-                              open_step_elsewhere=bool(elsewhere),
-                              feeder_dropped_here=max(dropped) if dropped else None,
-                              free=bool(t['feeding'] and near and steady and t['lead_len'] > t['len']
-                                        and not t['pressed'] and elsewhere)))
-    return dict(cells=W * H, win=int(winner == ours), queen_id=queen, turns=turns, queen_turns=queen_turns, drops=drops,
-                marks=marks, queen=fate[queen], foe_queen=fate[foe], counts=dict(c))
+            clean = bool(not first or any(s['open'] and not s['portal'] and s['tile'] != cell
+                                          and not leave(s['tile'], s['pearl']) for s in t['steps']))
+            origin = kind_of(took)
+            body = took if origin in ('ours', 'theirs') else None
+            watched = bool(body and body['before'] and body['after'])
+            inferable = bool(body and body['inferable'])
+            near_known = bool(knows and dist(cell, said['pos']) <= ZONE)
+            near_true = bool(t['lead_at'] and dist(cell, t['lead_at']) <= ZONE)
+            marks.append(dict(where, what='bite', tile=cell, pearl=origin,
+                              body_of=body and dict(id=body['id'], how=body['kind'], round=body['round'], len=body['len']),
+                              watched=watched, inferable=inferable, clean_step=clean, near_known_leader=near_known,
+                              to_known_leader=dist(cell, said['pos']) if knows else None,
+                              near_true_leader=near_true, to_true_leader=dist(cell, t['lead_at']) if t['lead_at'] else None,
+                              free_near_leader=bool(t['feeding'] and near_known and not t['pressed'] and clean),
+                              free_on_our_body=bool(t['feeding'] and origin == 'ours' and not t['names_self']
+                                                    and (watched or inferable) and not t['pressed'] and clean)))
+    for t in queen_turns.values():
+        del t['said'], t['steps'], t['bites'], t['path']
+    return dict(cells=W * H, win=int(winner == ours), queen_id=queen, turns=turns, turn_ours=turn_ours,
+                queen_turns=queen_turns, drops=drops,
+                marks=marks, queen=fate[queen], foe_queen=fate[foe], counts=dict(c), named=named,
+                on_purpose_from=on_purpose_from)
 
 
 def collect(directory, tag):
@@ -335,12 +505,8 @@ def first_difference(base, cand):
 def brief(turn):
     if turn is None:
         return None
-    out = {k: turn[k] for k in ('kind', 'len', 'start', 'end', 'lead_len', 'lead_dist', 'end_dist', 'feeding',
-                                'feeder_call', 'pressed', 'died')}
-    out['bit'] = bool(turn['bites'])
-    out['open_steps'] = len(turn['open'])
-    out['roomy_steps'] = turn['roomy']
-    return out
+    return {k: turn[k] for k in ('kind', 'len', 'start', 'end', 'feeding', 'pressed', 'knows', 'names_self',
+                                 'lead', 'lead_len', 'lead_dist', 'end_dist', 'died')}
 
 
 def after(game, rnd):
@@ -354,41 +520,49 @@ def after(game, rnd):
     return f"alive at the end, length {q['final_len']}"
 
 
-def share(n, d):
-    return round(n / d, 3) if d else None
-
-
-def tally(rows, small):
-    """Our queen's splits, bites and feeding turns over the games whose map is small (or not)."""
-    rows = [g for g in rows if (g['cells'] <= SMALL_CELLS) == small]
+def tally(rows):
+    """Our queen's splits, bites and feeding turns over a set of games."""
+    rows = list(rows)
     marks = [m for g in rows for m in g['marks']]
     splits = [m for m in marks if m['what'] == 'split']
-    bites = [m for m in marks if m['what'] == 'bite']
-    fed = [m for m in bites if m['feeding']]
+    fed = [m for m in marks if m['what'] == 'bite' and m['feeding']]
+    plain = [m for m in fed if not m['names_self']]          # bites on turns she is not the one being fed
+    ours = [m for m in plain if m['pearl'] == 'ours']
     turns = [t for g in rows for t in g['queen_turns'].values() if t['feeding']]
+    aloof = [t for t in turns if not t['names_self']]
     known = [t for t in turns if t['end_dist'] is not None]
+    by_self = [n for g in rows for n in g['named'] if n[1] and n[2]]
+    by_others = [n for g in rows for n in g['named'] if not n[1] and n[2]]
     return dict(games=len(rows), feeding_turns=len(turns),
-                games_with_feeding_turns=sum(any(t['feeding'] for t in g['queen_turns'].values()) for g in rows),
+                feeding_turns_fed_on_purpose=sum(t['on_purpose'] for t in turns),
+                feeding_turns_not_naming_herself_leader=len(aloof),
+                feeding_turns_with_our_body_pearl_in_reach=sum(t['body_chance'] for t in turns),
+                feeding_turns_knowing_a_leader=sum(bool(t['knows']) and not t['names_self'] for t in turns),
+                feeding_turns_knowing_the_true_leader=sum(t['knows_true_leader'] for t in turns),
+                feeding_turns_naming_herself_leader=len(by_self),
+                feeding_turns_named_leader_by_our_dragons=len(by_others),
                 drops_by_our_other_dragons_after_200=sum(g['counts'].get('feeder_drops_ours', 0) for g in rows),
                 splits_after_200=len(splits), free_splits=sum(m['free'] for m in splits),
                 splits_pressed=sum(m['pressed'] for m in splits),
                 splits_stuck=sum(not m['pressed'] and not m['roomy_steps'] for m in splits),
-                bites_after_200=len(bites), bites_in_feeding=len(fed),
-                bites_in_feeding_near_leader=sum(m['near_leader'] for m in fed),
-                free_bites_near_leader=sum(m['free'] for m in fed),
-                near_leader_bites_pressed=sum(m['near_leader'] and m['pressed'] for m in fed),
-                near_leader_bites_no_open_step_elsewhere=sum(m['near_leader'] and not m['pressed']
-                                                             and not m['open_step_elsewhere'] for m in fed),
-                near_leader_bites_leader_not_steady=sum(m['near_leader'] and not m['pressed']
-                                                        and m['open_step_elsewhere']
-                                                        and not (m['leader_steady'] and m['leader_longer'])
-                                                        for m in fed),
-                bites_where_a_feeder_dropped=sum(m['feeder_dropped_here'] is not None for m in fed),
-                bites_where_a_feeder_dropped_not_near_leader=sum(m['feeder_dropped_here'] is not None
-                                                                 and not m['near_leader'] for m in fed),
-                feeding_turns_ended_within_1_of_leader=sum(t['end_dist'] <= 1 for t in known),
-                feeding_turns_ended_within_3_of_leader=sum(t['end_dist'] <= 3 for t in known),
-                feeding_turns_ended_within_3_share=share(sum(t['end_dist'] <= 3 for t in known), len(known)))
+                bites_in_feeding=len(fed), bites_fed_on_purpose=sum(m['on_purpose'] for m in fed),
+                bites_naming_herself_leader_unmarked=sum(m['names_self'] and not m['on_purpose'] for m in fed),
+                bites_spawned_pearl=sum(m['pearl'] == 'spawn' for m in plain),
+                bites_enemy_body=sum(m['pearl'] == 'theirs' for m in plain),
+                bites_our_body=len(ours),
+                bites_our_body_dropped_feeder=sum(m['body_of']['how'] == 'drop' for m in ours),
+                bites_our_body_watched=sum(m['watched'] for m in ours),
+                bites_our_body_inferable_only=sum(m['inferable'] and not m['watched'] for m in ours),
+                bites_our_body_not_knowable=sum(not m['watched'] and not m['inferable'] for m in ours),
+                bites_our_body_pressed=sum(m['pressed'] for m in ours),
+                bites_our_body_no_clean_step=sum(not m['pressed'] and not m['clean_step'] for m in ours),
+                free_bites_on_our_body=sum(m['free_on_our_body'] for m in plain),
+                bites_near_known_leader=sum(m['near_known_leader'] for m in plain),
+                free_bites_near_leader=sum(m['free_near_leader'] for m in plain),
+                bites_near_true_leader=sum(m['near_true_leader'] for m in plain),
+                bites_near_true_leader_not_known=sum(m['near_true_leader'] and not m['near_known_leader'] for m in plain),
+                feeding_turns_ended_within_1_of_true_leader=sum(t['end_dist'] <= 1 for t in known),
+                feeding_turns_ended_within_3_of_true_leader=sum(t['end_dist'] <= 3 for t in known))
 
 
 def main():
@@ -412,34 +586,43 @@ def main():
         i = first_difference(b, c)
         row = dict(map=key[0], seed=key[1], side=key[2], cells=b['cells'], differs=i is not None,
                    base_win=b['win'], candidate_win=c['win'],
+                   fed_on_purpose_from={'base': b['on_purpose_from'], 'candidate': c['on_purpose_from']},
                    base_queen=b['queen'], candidate_queen=c['queen'],
                    base_queen_drops=[d for d in b['drops'] if d['who'] == 'ours'],
                    candidate_queen_drops=[d for d in c['drops'] if d['who'] == 'ours'],
+                   base_queen_named_leader_rounds=sorted({n[0] for n in b['named']}),
+                   candidate_queen_named_leader_rounds=sorted({n[0] for n in c['named']}),
                    base_queen_marks=b['marks'], candidate_queen_marks=c['marks'])
         if i is not None:
             rnd, mover, _ = (b['turns'] if i < len(b['turns']) else c['turns'])[i]
             bt, ct = b['queen_turns'].get(rnd), c['queen_turns'].get(rnd)
             both = i < len(b['turns']) and i < len(c['turns']) and b['turns'][i][:2] == c['turns'][i][:2]
-            queen_turn = both and mover == b['queen_id'] and bt is not None and ct is not None
-            label = None
-            if queen_turn:
-                near = any(m['what'] == 'bite' and m['round'] == rnd and m['near_leader'] for m in b['marks'])
+            queen_turn = bool(both and mover == b['queen_id'] and bt is not None and ct is not None)
+            first_from = FIRST_FROM_BIG if b['cells'] > BIG_CELLS else FIRST_FROM
+            first_named = min((n[0] for n in b['named']), default=None)
+            ours_turn = bool(both and b['turn_ours'][i])
+            if queen_turn and rnd > first_from:
                 label = ('base queen drops' if bt['kind'] == 'drop' else
                          'base queen splits' if bt['kind'] == 'split' else
-                         'base queen bites near the leader' if near else
-                         'base queen is a feeder' if bt['feeder_call'] else 'other')
-            row.update(first_difference_round=rnd, first_difference_in_queen_turn=bool(queen_turn),
-                       first_difference_from=FIRST_FROM_BIG if b['cells'] > BIG_CELLS else FIRST_FROM,
-                       first_difference_label=label,
+                         'base queen names herself leader' if bt['names_self'] and not bt['on_purpose'] else
+                         'base queen bites' if any(m['what'] == 'bite' and m['round'] == rnd for m in b['marks']) else
+                         'other move of the queen')
+            elif not queen_turn and ours_turn and first_named is not None and first_named <= rnd:
+                label = 'our dragon, after the base game named the queen leader'
+            else:
+                label = None
+            row.update(first_difference_round=rnd, first_difference_mover=mover,
+                       first_difference_in_queen_turn=queen_turn, first_difference_from=first_from,
+                       base_first_named_queen_leader_round=first_named,
+                       first_difference_label=label, first_difference_covered=label is not None,
                        base_turn=brief(bt) if queen_turn else None, candidate_turn=brief(ct) if queen_turn else None,
                        base_queen_after=after(b, rnd), candidate_queen_after=after(c, rnd))
         pairs.append(row)
 
     differ = [p for p in pairs if p['differs']]
     same = [p for p in pairs if not p['differs']]
-    in_rule = [p for p in differ
-               if p['first_difference_in_queen_turn'] and p['first_difference_round'] > p['first_difference_from']]
-    labels = Counter(p['first_difference_label'] for p in in_rule)
+    covered = [p for p in differ if p['first_difference_covered']]
+    labels = Counter(p['first_difference_label'] for p in covered)
 
     def drops(rows, who):
         return [d for g in rows for d in g['drops'] if d['who'] == who and not d['timeout']]
@@ -462,15 +645,18 @@ def main():
                     timeouts=sum(g['counts'].get('timeouts_ours', 0) for g in rows),
                     timeout_no_action_turns=sum(d['timeout'] for g in rows for d in g['drops'] if d['who'] == 'ours'))
 
-    bs, cs = tally(base.values(), True), tally(cand.values(), True)
-    bb, cb = tally(base.values(), False), tally(cand.values(), False)
+    bs, cs = tally(base.values()), tally(cand.values())
+    named_candidate = cs['feeding_turns_naming_herself_leader'] + cs['feeding_turns_named_leader_by_our_dragons']
     checks = {
-        'only_queen': len(in_rule) == len(differ),
-        'target_seen': base_bot_drops >= TARGET_MIN and cs['feeding_turns'] >= EXPOSED_MIN,
+        'only_what_the_switch_covers': len(covered) == len(differ),
+        'target_seen': (base_bot_drops >= TARGET_MIN and cs['feeding_turns_not_naming_herself_leader'] >= EXPOSED_MIN
+                        and cs['feeding_turns_with_our_body_pearl_in_reach'] >= BODY_MIN),
         'never_drops': len(cand_ours) == 0,
         'no_free_split': cs['free_splits'] == 0,
         'no_free_bite_near_leader': cs['free_bites_near_leader'] == 0,
         'it_acted': len(differ) >= ACTED_MIN,
+        'no_free_bite_on_our_body': cs['free_bites_on_our_body'] == 0,
+        'not_the_leader': named_candidate == 0,
     }
     passed = all(checks.values())
     mechanism_shown = all(v for k, v in checks.items() if k != 'target_seen')
@@ -478,35 +664,44 @@ def main():
     dropped_after = sum(p['base_queen_after'].startswith('dropped') for p in differ)
     cand_alive_after = sum(p['candidate_queen_after'].startswith('alive') for p in differ)
     bq, cq = queens(base.values()), queens(cand.values())
-    small = sum(base[k]['cells'] <= SMALL_CELLS for k in keys)
     note = (
-        f"{'PASS' if passed else 'FAIL'} ({'all six checks' if passed else 'failed: ' + ', '.join(failed)}). "
-        f"{games} paired games, {small} on maps of {SMALL_CELLS} tiles or fewer (small maps). Drops (queen ends her "
-        f"turn with no action and dies to feed the leader): base-bot queens {base_bot_drops} (ours in base games "
-        f"{len(base_ours)}, the opponent's {len(base_theirs)}), our switch-on queen {len(cand_ours)}. On small maps "
-        f"our switch-on queen had {cs['feeding_turns']} turns in feeding rounds in {cs['games_with_feeding_turns']} "
-        f"games (base {bs['feeding_turns']} in {bs['games_with_feeding_turns']}). Her splits after round "
-        f"{SPLIT_ROUND} there: {cs['splits_after_200']}, of which free (no enemy head in her view and a step with "
-        f"room to take) {cs['free_splits']}; base queen {bs['splits_after_200']}, free {bs['free_splits']}. Her bites "
-        f"(growing on a tile) in feeding rounds there: {cs['bites_in_feeding']}, within {ZONE} tiles of the "
-        f"leader's head {cs['bites_in_feeding_near_leader']}, of which free (leader steady and longer, no enemy "
-        f"head in view, an open step elsewhere) {cs['free_bites_near_leader']}; base queen "
-        f"{bs['bites_in_feeding']}, near {bs['bites_in_feeding_near_leader']}, free {bs['free_bites_near_leader']}. "
-        f"Bites on a tile where one of our feeders had dropped: switch on {cs['bites_where_a_feeder_dropped']} "
-        f"({cs['bites_where_a_feeder_dropped_not_near_leader']} of them not near the leader), base "
-        f"{bs['bites_where_a_feeder_dropped']}. Feeding turns she ended within 3 tiles of the leader's head: switch "
-        f"on {cs['feeding_turns_ended_within_3_of_leader']} of {cs['feeding_turns']} (within 1 tile "
-        f"{cs['feeding_turns_ended_within_1_of_leader']}), base {bs['feeding_turns_ended_within_3_of_leader']} of "
-        f"{bs['feeding_turns']}. Pairs that differ: {len(differ)} of {games}; first difference inside our queen's "
-        f"own turn after the switch's first round in {len(in_rule)} of them ({dict(labels)}). After it, the base "
-        f"queen went on to drop in {dropped_after} of {len(differ)} pairs; the switch-on queen was alive at the end "
-        f"in {cand_alive_after}. Our queen alive when feeding starts (round {FEED_ROUND + 1}): base "
-        f"{bq['alive_when_feeding_starts']}, switch on {cq['alive_when_feeding_starts']} of {games}. Bigger maps, "
-        f"not judged for splits and bites: {games - small} games, switch-on queen feeding turns "
-        f"{cb['feeding_turns']}, splits after round {SPLIT_ROUND} {cb['splits_after_200']} (base "
-        f"{bb['splits_after_200']}), bites in feeding rounds {cb['bites_in_feeding']} (base "
-        f"{bb['bites_in_feeding']}). Raw, not judged: queen length at the end, summed, ours:theirs base "
-        f"{bq['final_length_sum']}:{bq['foe_queen_final_length_sum']}, switch on "
+        f"{'PASS' if passed else 'FAIL'} ({'all eight checks' if passed else 'failed: ' + ', '.join(failed)}). "
+        f"{games} paired games. Drops (queen ends her turn with no action and dies to feed the leader): base-bot "
+        f"queens {base_bot_drops} (ours in base games {len(base_ours)}, the opponent's {len(base_theirs)}), our "
+        f"switch-on queen {len(cand_ours)}. Our switch-on queen had {cs['feeding_turns']} turns in feeding rounds, "
+        f"{cs['feeding_turns_not_naming_herself_leader']} of them without naming herself leader (base "
+        f"{bs['feeding_turns']} and {bs['feeding_turns_not_naming_herself_leader']}); in "
+        f"{cs['feeding_turns_with_our_body_pearl_in_reach']} of those one of our dragons' body pearls lay on a tile "
+        f"she could step on (base {bs['feeding_turns_with_our_body_pearl_in_reach']}). Her bites (growing on a "
+        f"tile) on those turns: {cs['bites_spawned_pearl']} spawned pearls, {cs['bites_enemy_body']} enemy bodies, "
+        f"{cs['bites_our_body']} bodies of our own dragons ({cs['bites_our_body_dropped_feeder']} a dropped "
+        f"feeder; {cs['bites_our_body_watched']} she had watched appear, {cs['bites_our_body_inferable_only']} "
+        f"more that no spawn explains, {cs['bites_our_body_not_knowable']} she could not tell; "
+        f"{cs['bites_our_body_pressed']} with an enemy head in view, {cs['bites_our_body_no_clean_step']} with no "
+        f"clean step), free bites on our body {cs['free_bites_on_our_body']}; base queen "
+        f"{bs['bites_spawned_pearl']} spawned, {bs['bites_our_body']} our bodies, free "
+        f"{bs['free_bites_on_our_body']}. Bites on turns she named herself leader: without the fed-on-purpose "
+        f"mark {cs['bites_naming_herself_leader_unmarked']} (base {bs['bites_naming_herself_leader_unmarked']}), "
+        f"fed on purpose {cs['bites_fed_on_purpose']} (base {bs['bites_fed_on_purpose']}). Bites within {ZONE} "
+        f"tiles of the leader she knew: "
+        f"{cs['bites_near_known_leader']}, free {cs['free_bites_near_leader']} (base "
+        f"{bs['bites_near_known_leader']}, free {bs['free_bites_near_leader']}); within {ZONE} of the true leader "
+        f"when she did not know of it there: {cs['bites_near_true_leader_not_known']} (base "
+        f"{bs['bites_near_true_leader_not_known']}). Feeding turns in which she named herself leader without "
+        f"being fed on purpose: {cs['feeding_turns_naming_herself_leader']} (base "
+        f"{bs['feeding_turns_naming_herself_leader']}); turns of our other dragons naming her so: "
+        f"{cs['feeding_turns_named_leader_by_our_dragons']} (base {bs['feeding_turns_named_leader_by_our_dragons']}). "
+        f"Her splits after round {SPLIT_ROUND}: {cs['splits_after_200']}, free (no enemy head in view and a step "
+        f"with room) {cs['free_splits']}, with an enemy head in view {cs['splits_pressed']}, stuck "
+        f"{cs['splits_stuck']}; base queen {bs['splits_after_200']}, free {bs['free_splits']}. Pairs that differ: "
+        f"{len(differ)} of {games}; first difference covered by the switch in {len(covered)} of them "
+        f"({dict(labels)}). After it, the base queen went on to drop in {dropped_after} of {len(differ)} pairs; the "
+        f"switch-on queen was alive at the end in {cand_alive_after}. Our queen alive when feeding starts (round "
+        f"{FEED_ROUND + 1}): base {bq['alive_when_feeding_starts']}, switch on {cq['alive_when_feeding_starts']} "
+        f"of {games}. Raw, not judged: feeding turns she ended within 3 tiles of the true leader, switch on "
+        f"{cs['feeding_turns_ended_within_3_of_true_leader']} of {cs['feeding_turns']}, base "
+        f"{bs['feeding_turns_ended_within_3_of_true_leader']} of {bs['feeding_turns']}; queen length at the end, "
+        f"summed, ours:theirs base {bq['final_length_sum']}:{bq['foe_queen_final_length_sum']}, switch on "
         f"{cq['final_length_sum']}:{cq['foe_queen_final_length_sum']}; wins base {bq['wins']}, switch on "
         f"{cq['wins']} of {games}.")
     out = {
@@ -515,34 +710,33 @@ def main():
         'target_seen': checks['target_seen'],
         'mechanism_shown': mechanism_shown,
         'checks': checks,
-        'thresholds': {'TARGET_MIN': TARGET_MIN, 'EXPOSED_MIN': EXPOSED_MIN, 'ACTED_MIN': ACTED_MIN,
-                       'FIRST_FROM': FIRST_FROM, 'FIRST_FROM_BIG': FIRST_FROM_BIG},
+        'thresholds': {'TARGET_MIN': TARGET_MIN, 'EXPOSED_MIN': EXPOSED_MIN, 'BODY_MIN': BODY_MIN,
+                       'ACTED_MIN': ACTED_MIN, 'FIRST_FROM': FIRST_FROM, 'FIRST_FROM_BIG': FIRST_FROM_BIG},
         'games': games,
-        'games_on_small_maps': small,
         'queen_drops': {'base_bot_all': base_bot_drops, 'base_ours': len(base_ours), 'base_bot_opponent': len(base_theirs),
                         'candidate_ours': len(cand_ours)},
         'queen_drop_rounds': {'base_ours': sorted(d['round'] for d in base_ours),
                               'base_bot_opponent': sorted(d['round'] for d in base_theirs),
                               'candidate_ours': sorted(d['round'] for d in cand_ours)},
-        'our_queen_small_maps': {'base': bs, 'candidate': cs},
-        'our_queen_bigger_maps': {'base': bb, 'candidate': cb},
+        'our_queen': {'base': dict(bs, **bq), 'candidate': dict(cs, **cq)},
         'pairs_that_differ': len(differ),
         'pairs_same_game_to_the_end': len(same),
         'pairs_same_game_queen_dead_before_feeding': sum(not p['base_queen']['alive_at_feed'] for p in same),
-        'pairs_first_difference_in_queen_turn_after_first_round': len(in_rule),
+        'pairs_first_difference_covered': len(covered),
         'first_difference_rounds': sorted(p['first_difference_round'] for p in differ),
         'first_difference_labels': dict(labels),
         'after_first_difference': {'base_queen_dropped': dropped_after, 'candidate_queen_alive_at_end': cand_alive_after},
-        'our_queen': {'base': bq, 'candidate': cq},
-        'limits': 'The leader is taken to be our longest other dragon, and "near", "open step" and "feeder" are '
-                  'rebuilt from true lengths and positions; the bot acts on what it has seen or heard, so the labels '
-                  'are close, not exact. A bite near the leader that is not counted as free (enemy head in view, no '
-                  'open step elsewhere, leader just changed) is listed per pair so a person can look at it. Whether '
-                  'a pearl she ate was a dropped body or a fresh pearl on the same tile is not separated. Whether '
-                  'her being near the leader cost it any length is not measured. After the first difference the two '
-                  'games of a pair drift apart for many reasons, so what became of the queens later, lengths and '
-                  'wins are raw numbers, not effects of the switch. A queen that is dead before round 200 shows '
-                  'nothing either way.',
+        'limits': 'Pearl origins, drops, splits and what each dragon told its team are exact, read from the replay. '
+                  '"The leader she knows" is what she sent after her move; the bot decides on the same belief. '
+                  '"Open step", "roomy step" and "pressed" are rebuilt from true positions, while the bot uses what '
+                  'it has seen, so those labels are close, not exact; every split and bite is listed per pair so a '
+                  'person can look. A body pearl she neither watched appear nor could infer from the tile\'s spawn '
+                  'countdown looks like any other pearl to her, so bites on those are counted but not judged. An '
+                  'enemy body she did not watch appear is left alone too. Whether her being near '
+                  'the leader cost it any length is not measured. After the first difference the two games of a '
+                  'pair drift apart for many reasons, so what became of the queens later, lengths and wins are raw '
+                  'numbers, not effects of the switch. A queen that is dead before round 200 shows nothing either '
+                  'way.',
         'pairs': pairs,
     }
     with open(a.output, 'w') as f:

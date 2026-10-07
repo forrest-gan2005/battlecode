@@ -153,6 +153,7 @@ constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
 // Card #48: on any map the queen takes no feeding role (feeder, local drop, rally, assassin, endgame hunt),
 // follows the big-map split rules after QUEEN_SPLIT_ROUND and leaves pearls near the leader to it.
+// In feeding, unless the swarm feeds her on purpose (queen game), she is no leader candidate and leaves dead bodies.
 constexpr bool QUEEN_NO_FEED = false;
 constexpr double QUEEN_ZONE_VETO = 5e5;
 constexpr int QUEEN_HUNT_MAX_LEN = 0;
@@ -1442,6 +1443,9 @@ class Bot {
             if (CORPSE_SLACK > 0 && tile.has_pearl() && !pearl_here[index] && occupied_round[index] >= round - 1) {
                 corpse_round[index] = round;
             }
+            if (queen_aloof()) {
+                note_body(index, tile.has_pearl(), tile.get_pearl_time());
+            }
             pearl_here[index] = tile.has_pearl() ? 1 : 0;
             pearl_timer[index] = tile.get_pearl_time();
             seen_round[index] = round;
@@ -1467,6 +1471,9 @@ class Bot {
                 }
                 if (QUEEN_WAIT && part->get_team() == ct.get_team()) {
                     ally_part_stamp[index] = round;
+                }
+                if (queen_aloof()) {
+                    (part->get_team() == ct.get_team() ? ours_seen : foe_seen)[index] = round;
                 }
             } else {
                 own_parts.push_back(index);
@@ -1749,6 +1756,21 @@ class Bot {
             round - known_leader_round > SONAR_STALE) {
             forget_leader();
         }
+        if (queen_barred(known_leader_id)) {
+            forget_leader();
+        }
+    }
+
+    // QUEEN_NO_FEED: in feeding the queen is a leader candidate only where the swarm feeds her on purpose
+    // (maps over QUEEN_MIN_CELLS, or a queen game).
+    bool queen_barred(int id) const {
+        return QUEEN_NO_FEED && QUEEN_MODE && id >= 0 && id == queen_id && feeding_phase() &&
+               cells <= QUEEN_MIN_CELLS && QUEEN_QUIET_ROUND > 0 && !queen_game;
+    }
+
+    // The barred queen takes a new leader only if it is ahead of her, as when she was a candidate herself.
+    bool queen_behind(int id, int len) const {
+        return queen_barred(ct.get_id()) && id != known_leader_id && leader_priority(id, len) <= length;
     }
 
     
@@ -1760,6 +1782,17 @@ class Bot {
         if (QUEEN_MODE && id <= 1) {
             queen_id = id;
             enemy_queen_id = 1 - id;
+        }
+        if (queen_barred(id)) {
+            // Her own report still measures the leader she knows: one she has caught up with is dropped.
+            int const mine = leader_priority(known_leader_id, known_leader_len);
+            if (id == ct.get_id() && known_leader_id >= 0 && (len > mine || (len == mine && when > known_leader_round))) {
+                forget_leader();
+            }
+            return;
+        }
+        if (queen_behind(id, len)) {
+            return;
         }
         if (id == known_leader_id) {
             if (when >= known_leader_round) {
@@ -1790,6 +1823,9 @@ class Bot {
     }
 
     void hear_sighting(int id, int visible, Position pos, Direction facing) {
+        if (queen_barred(id) || queen_behind(id, visible)) {
+            return;
+        }
         if (id == known_leader_id) {
             known_leader_len = std::max(known_leader_len, visible);
             known_leader_pos = pos;
@@ -2962,10 +2998,10 @@ class Bot {
                                       round - corpse_round[index] <= CORPSE_FRESH && steps <= theirs + CORPSE_SLACK &&
                                       ally_race_steps(index) >= steps);
                 if ((share >= 1.0 || contest) && result.dist_pearl < 0 && pearl_here[index] &&
-                    !in_leader_pearl_zone(index)) {
+                    !in_leader_pearl_zone(index) && !queen_leaves_pearl(index)) {
                     result.dist_pearl = steps;
                 }
-                if (share > 0.0 && pearl_here[index] && !in_leader_pearl_zone(index)) {
+                if (share > 0.0 && pearl_here[index] && !in_leader_pearl_zone(index) && !queen_leaves_pearl(index)) {
                     result.pearls++;
                 }
                 if (share >= 1.0 && result.dist_soon < 0 && seen_round[index] >= 0 && pearl_timer[index] >= 0 &&
@@ -3218,7 +3254,7 @@ class Bot {
                 found = LOOK_SOON;
             }
         }
-        if (found <= 0.0 || in_leader_pearl_zone(cell)) {
+        if (found <= 0.0 || in_leader_pearl_zone(cell) || queen_leaves_pearl(cell)) {
             return 0.0;
         }
         int const theirs = rival_steps(cell);
@@ -3743,13 +3779,48 @@ class Bot {
         return queen_aloof() && round > QUEEN_SPLIT_ROUND;
     }
 
-    // A pearl within LEADER_PEARL_RADIUS of the leader: the queen leaves it to the leader.
+    // A pearl the queen leaves alone unless she is the one being fed: in feeding a dead dragon's body (ours as
+    // far as she can tell), and any pearl within LEADER_PEARL_RADIUS of the leader.
     bool queen_leaves_pearl(int index) const {
-        if (!queen_aloof() || !pearl_here[index] || known_leader_id < 0 || known_leader_id == ct.get_id() ||
-            (round <= grow_round && !feeding_phase())) {
+        if (!queen_aloof() || !pearl_here[index] || known_leader_id == ct.get_id()) {
+            return false;
+        }
+        if (feeding_phase() && !body_pearl.empty() && body_pearl[index] == 1) {
+            return true;
+        }
+        if (known_leader_id < 0 || (round <= grow_round && !feeding_phase())) {
             return false;
         }
         return manhattan(position_of(index), live_leader_head()) <= LEADER_PEARL_RADIUS;
+    }
+
+    // QUEEN_NO_FEED, queen only. A new pearl is a body (1) when one of our dragons lay on the tile at her last
+    // look or no spawn explains it; where she just saw an enemy part it is the enemy's (2).
+    void note_body(int index, bool pearl, int timer) {
+        if (body_pearl.empty()) {
+            body_pearl.assign(cells, 0);
+            ours_seen.assign(cells, -1000);
+            foe_seen.assign(cells, -1000);
+        }
+        if (!pearl) {
+            body_pearl[index] = 0;
+            return;
+        }
+        if (pearl_here[index]) {
+            return;
+        }
+        if (seen_round[index] < 0) {
+            body_pearl[index] = timer < 0 ? 1 : 0;
+            return;
+        }
+        int const since = round - seen_round[index];
+        bool const fresh = since <= 1;
+        bool const unexplained = pearl_timer[index] < 0 || pearl_timer[index] > since + 1;
+        if (fresh && foe_seen[index] == seen_round[index]) {
+            body_pearl[index] = 2;
+        } else {
+            body_pearl[index] = (fresh && ours_seen[index] == seen_round[index]) || unexplained ? 1 : 0;
+        }
     }
 
     // Queen threat handling: with QUEEN_SAFETY on every map, except on a turn she is trapped.
@@ -5079,7 +5150,8 @@ class Bot {
         if (pocket_full) {
             score -= POCKET_PENALTY * (grown - pocket / POCKET_DIV);
         }
-        if (pearl_here[index_of(destination)] && !is_feeder() && !in_leader_pearl_zone(index_of(destination)) && !pocket_full) {
+        if (pearl_here[index_of(destination)] && !is_feeder() && !in_leader_pearl_zone(index_of(destination)) && !pocket_full &&
+            !queen_leaves_pearl(index_of(destination))) {
             score += EAT_BONUS;
         }
         if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
@@ -5654,6 +5726,9 @@ class Bot {
     int turn_cells = 0;
     int survey_cap_now = 0;
     std::vector<int> ally_part_stamp;
+    std::vector<std::uint8_t> body_pearl;
+    std::vector<int> ours_seen;
+    std::vector<int> foe_seen;
     std::vector<int> hit_stamp;
     int hit_mark = 0;
     int hit_round = -1;
