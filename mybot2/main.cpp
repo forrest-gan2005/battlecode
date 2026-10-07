@@ -151,8 +151,10 @@ constexpr int QUEEN_SAFE_ROUND = 300;
 constexpr int QUEEN_SAFE_SPAN = 0;
 constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
-// Card #48: the queen takes no feeding role on any map (feeder, local drop, rally, assassin, endgame hunt).
+// Card #48: on any map the queen takes no feeding role (feeder, local drop, rally, assassin, endgame hunt),
+// follows the big-map split rules after QUEEN_SPLIT_ROUND and leaves pearls near the leader to it.
 constexpr bool QUEEN_NO_FEED = false;
+constexpr double QUEEN_ZONE_VETO = 5e5;
 constexpr int QUEEN_HUNT_MAX_LEN = 0;
 constexpr int HOME_CHECK_ROUND = 200;
 constexpr double HOME_MAX_FRAC = 0.5;
@@ -857,6 +859,9 @@ class Bot {
                 if (SHARE_SIGHT && enemy_near(position_of(next), 2)) {
                     continue;
                 }
+                if (queen_leaves_pearl(next)) {
+                    continue;
+                }
                 if (CELL_BUDGET > 0 && turn_cells > CELL_BUDGET + STRIDE_BUDGET) {
                     break;
                 }
@@ -1027,6 +1032,9 @@ class Bot {
                            length - unswbc::Constants::MIN_SIZE < (queen_guard() ? QG_KEEP : QUEEN_KEEP))) {
             return 0;
         }
+        if (queen_no_split()) {
+            return 0;
+        }
         if (round > SPLIT_LAST_ROUND || length < SPLIT_MIN_LENGTH || is_leader()) {
             return 0;
         }
@@ -1121,7 +1129,7 @@ class Bot {
         if (!no_move && !boxed) {
             return 0;
         }
-        if (is_queen() && !no_move) {
+        if ((is_queen() || queen_no_split()) && !no_move) {
             return 0;
         }
         int const child = length - 2;
@@ -1149,7 +1157,7 @@ class Bot {
     
     bool harvestable(int pocket_pearls, double pocket_room, bool inside) {
         int const min_size = unswbc::Constants::MIN_SIZE;
-        if (is_feeder() || is_leader() || is_queen() || tail_index < 0) {
+        if (is_feeder() || is_leader() || is_queen() || queen_no_split() || tail_index < 0) {
             return false;
         }
         
@@ -3731,6 +3739,19 @@ class Bot {
         return QUEEN_NO_FEED && real_queen();
     }
 
+    bool queen_no_split() const {
+        return queen_aloof() && round > QUEEN_SPLIT_ROUND;
+    }
+
+    // A pearl within LEADER_PEARL_RADIUS of the leader: the queen leaves it to the leader.
+    bool queen_leaves_pearl(int index) const {
+        if (!queen_aloof() || !pearl_here[index] || known_leader_id < 0 || known_leader_id == ct.get_id() ||
+            (round <= grow_round && !feeding_phase())) {
+            return false;
+        }
+        return manhattan(position_of(index), live_leader_head()) <= LEADER_PEARL_RADIUS;
+    }
+
     // Queen threat handling: with QUEEN_SAFETY on every map, except on a turn she is trapped.
     bool queen_wary() const {
         return QUEEN_SAFETY ? real_queen() && !qs_plain : is_queen();
@@ -5317,6 +5338,21 @@ class Bot {
             }
             hit_blocked = risky && !open[0];
             pay_open = open[1];
+        }
+
+        if (queen_aloof() && !qs_plain) {
+            // Vetoed only while another plain step is open, no dead end and out of enemy reach this turn.
+            bool other = false;
+            for (std::size_t k = 0; k < directions.size(); k++) {
+                other = other || (scored[k] && dests[k] >= 0 && scores[k] > SCORE_REJECT * 0.5 && !closed[k] &&
+                                  !dead[k] && edge_at(head, directions[k]) != EDGE_PORTAL &&
+                                  risk_at(dests[k]) == 0 && !queen_leaves_pearl(dests[k]));
+            }
+            for (std::size_t k = 0; other && k < directions.size(); k++) {
+                if (scored[k] && dests[k] >= 0 && queen_leaves_pearl(dests[k])) {
+                    scores[k] -= QUEEN_ZONE_VETO;
+                }
+            }
         }
 
         apply_route(scores, scored, closed, dests, route_dist);
