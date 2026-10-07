@@ -41,6 +41,9 @@ games are judged layout by layout (one map = one layout; a layout needs MIN_LAYO
   6. pearls: on every layout with the problem, the candidate's median pearls by round 100 is above PEARL_WRONG (the
      card: 7 or fewer = leaving is not the bottleneck).
 passed = all six.
+Attempt 2 keeps these six gates and their thresholds as they were set for attempt 1. The bot change it checks:
+attempt 1 left the pin corner but took 2 of 26 door chances while stalled, so a stalled dragon is now also pulled
+along real paths toward the nearest tile it has not seen. Read "door chances while stalled: taken" for that part.
 The card also names round 30 as the expected median first exit. That is reported, not gated: the stall clock is 12
 rounds after the last new nearest mark and the pin corner of a 7x7 room is 13 steps from the first tile outside, so
 on the ladder layout round 30 is about the earliest exit the rule allows at all.

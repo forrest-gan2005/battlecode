@@ -368,6 +368,7 @@ constexpr bool TR_CENTER_ORIENT = false;
 constexpr bool TR_STALL_RELEASE = false;
 constexpr int TR_STALL_ROUNDS = 12;
 constexpr int TR_STALL_ROOM = 6;
+constexpr int TR_STALL_SEEK = 30;
 constexpr bool QH_SCOUT = true;
 constexpr int QH_MAX_LEN = 4;
 constexpr int QH_REVENGE_ROUND = 100;
@@ -3098,6 +3099,11 @@ class Bot {
                length <= CENTER_MAX_LENGTH && round - stall_round >= TR_STALL_ROUNDS;
     }
 
+    // Card #51: a released dragon is pulled along real paths to the nearest unseen tile instead of to the centre.
+    int stall_seek(int dist_unseen) const {
+        return dist_unseen >= 0 ? std::min(dist_unseen, TR_STALL_SEEK) : TR_STALL_SEEK;
+    }
+
     bool portal_into_pocket(Position position, Direction direction) {
         if (!POCKET_PORTAL_BAN || POCKET_CAP <= 0) {
             return false;
@@ -5082,10 +5088,10 @@ class Bot {
         if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
             score -= ZONE_PEARL_PENALTY;
         }
-        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH && !released &&
+        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
             static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
             std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
-            score -= CENTER_PULL * center_distance(destination);
+            score -= CENTER_PULL * (released ? stall_seek(survey.dist_unseen) : center_distance(destination));
         }
         if (can_step_to(ally_heads, destination)) {
             score -= PENALTY_ENEMY_HEAD;
