@@ -1,5 +1,5 @@
 # Live switch profile applied by work/server_bot.py to the latest bot source.
-# Live bot v62 (submission 20366) = main a358ec8 + this profile.
+# Live bot one2 (submission 20880, 2026-10-08 23:02 KST) = main + this profile.
 # Add or remove a line only after an online test.
 ZONE_NEARER true
 POCKET_LOOP true
@@ -9,3 +9,11 @@ TRADE_EVEN true
 LEADER_FULL_UNITS 56
 HUNT_SMALL_RATIO 2
 QS_KEEP_LEN 3
+QUEEN_HERD true
+QUEEN_DEFEND_STEPS 3
+SPLIT_ROUND0 true
+FEEDER_EAT true
+QW_END_ROOM 1
+LUNGE_PEARL true
+TRADE_SHORT_BY 1
+ATTACK_MIN_UNITS 56
