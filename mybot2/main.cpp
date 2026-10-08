@@ -132,9 +132,10 @@ constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
 // Card #54: dragons of LS_MIN_LENGTH+ take the queen's ring veto; an enemy reaches its free steps plus LS_PAY_STEPS paid.
 constexpr bool LONG_SAFETY = false;
-constexpr int LS_MIN_LENGTH = 31;
+constexpr int LS_MIN_LENGTH = 30;
 constexpr int LS_PAY_STEPS = 1;
 constexpr int LS_ESCAPE_COST = 2;
+constexpr int LS_ALLY_NEAR = 2;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
 constexpr bool STRIDE_SAFE_END = true;
@@ -410,6 +411,14 @@ struct Foe {
     int last = 0;   // parts at the last sighting
     bool cut = false;  // its body ran out of view then
     int round = -1;
+};
+
+// A tile a run can end on, and the step that reached it.
+struct RunNode {
+    int cell;
+    int parent;
+    int depth;
+    Direction dir;
 };
 
 struct StrideEnd {
@@ -1436,6 +1445,7 @@ class Bot {
         seen_parts.clear();
         edge_ids.clear();
         foe_now.clear();
+        ally_cells.clear();
         enemy_heads.clear();
         enemy_head_ids.clear();
         enemy_head_dirs.clear();
@@ -1485,6 +1495,8 @@ class Bot {
                 }
                 if (LONG_SAFETY && part->get_team() != ct.get_team()) {
                     foe_now.push_back(part->get_id());
+                } else if (LONG_SAFETY) {
+                    ally_cells.emplace_back(index, part->get_id());
                 }
                 if (QUEEN_WAIT && part->get_team() == ct.get_team()) {
                     ally_part_stamp[index] = round;
@@ -3799,7 +3811,7 @@ class Bot {
     }
 
     // Card #54: no clean step left: a free stride, then a sprint paying at most LS_ESCAPE_COST, then a split, then
-    // the least bad tile.
+    // (at the unit cap) a sprint at any cost or a run to the allies, then the least bad tile.
     bool long_stuck(std::vector<Direction>& path) {
         int const keep = unswbc::Constants::MIN_SIZE;
         auto run = [&]() {
@@ -3823,6 +3835,10 @@ class Bot {
             split_off(keep);
             return true;
         }
+        // At the unit cap no split is open: a sprint to a clean tile at any cost, else a run to the nearest allies.
+        if (ct.get_unit_count() >= gm.get_unit_limit() && (hit_escape(path, true, 0, true) || ally_run(path))) {
+            return run();
+        }
         int const step = least_bad();
         if (step < 0) {
             return false;
@@ -3834,6 +3850,53 @@ class Bot {
         ct.make_move(direction);
         act_dirs.assign(1, direction);
         return true;
+    }
+
+    // Card #54: a free run that ends beside the allies in view: the nearest ally first, then more allies within
+    // LS_ALLY_NEAR, then the least bad ring.
+    bool ally_run(std::vector<Direction>& path) {
+        if (ally_cells.empty()) {
+            return false;
+        }
+        std::vector<RunNode> const nodes = run_nodes(std::min(sprint_free(), STRIDE_MAX));
+        std::vector<std::pair<std::array<int, 6>, int>> ends;
+        std::vector<int> ids;
+        for (std::size_t k = 1; k < nodes.size(); k++) {
+            int const cell = nodes[k].cell;
+            int near = cells;
+            ids.clear();
+            for (auto const& [index, id] : ally_cells) {
+                int const gap = manhattan(position_of(cell), position_of(index));
+                near = std::min(near, gap);
+                if (gap <= LS_ALLY_NEAR && std::find(ids.begin(), ids.end(), id) == ids.end()) {
+                    ids.push_back(id);
+                }
+            }
+            bool const marked = risk_at(cell) > 0;
+            ends.push_back({{near, -static_cast<int>(ids.size()), risk_at(cell), marked ? hit_count[cell] : 0,
+                             marked ? pay_count[cell] : 0, nodes[k].depth},
+                            static_cast<int>(k)});
+        }
+        std::sort(ends.begin(), ends.end());
+        int evals = 0;
+        for (auto const& end : ends) {
+            RunNode const& node = nodes[static_cast<std::size_t>(end.second)];
+            bool fine = false;
+            if (node.depth == 1) {
+                // A single step keeps the score it already has.
+                for (std::size_t slot = 0; slot < step_dest.size(); slot++) {
+                    fine = fine || (step_dest[slot] == node.cell && step_score[slot] > SCORE_REJECT * 0.5 && !step_closed[slot]);
+                }
+            } else if (evals < QS_ESCAPE_EVALS && !(CELL_BUDGET > 0 && turn_cells > CELL_BUDGET)) {
+                evals++;
+                fine = score_step(position_of(node.cell)) > SCORE_REJECT * 0.5 && (last_reaches_tail || last_room >= length + 2.0);
+            }
+            if (fine) {
+                run_path(nodes, end.second, path);
+                return true;
+            }
+        }
+        return false;
     }
 
     // Card #54: the step when every step is in reach: an open tile over a pocket, a pay-ring tile over a hit-ring
@@ -4065,27 +4128,15 @@ class Bot {
         return hit_stamp[index] == hit_mark ? 2 : pay_stamp[index] == hit_mark ? 1 : 0;
     }
 
-    // Sprint to the best seen tile of at most this risk, on free steps or, with paid, on length too.
-    bool hit_escape(std::vector<Direction>& path, bool paid, int risk) {
-        // Card #54: a long dragon pays at most LS_ESCAPE_COST, and its paid run only adds tiles past the free one.
-        bool const far = long_wary() && paid;
-        int const limit = far ? std::min(sprint_reach(), sprint_free() + LS_ESCAPE_COST)
-                              : std::min(paid ? sprint_reach() : sprint_free(), STRIDE_MAX);
-        int const first = far ? std::min(sprint_free(), STRIDE_MAX) + 1 : 2;
-        struct Node {
-            int cell;
-            int parent;
-            int depth;
-            Direction dir;
-        };
-        std::vector<Node> nodes;
+    // Seen tiles a run of at most limit steps can end on, nearest first; node 0 is the head.
+    std::vector<RunNode> run_nodes(int limit) {
+        std::vector<RunNode> nodes;
         visit_mark++;
         int const start = index_of(head);
         visit_stamp[start] = visit_mark;
         nodes.push_back({start, -1, 0, dir_of(Direction::NORTH)});
-        std::vector<int> safe;
         for (std::size_t q = 0; q < nodes.size(); q++) {
-            Node const node = nodes[q];
+            RunNode const node = nodes[q];
             if (node.depth >= limit) {
                 continue;
             }
@@ -4105,9 +4156,34 @@ class Bot {
                 }
                 visit_stamp[next] = visit_mark;
                 nodes.push_back({next, static_cast<int>(q), node.depth + 1, direction});
-                if (node.depth + 1 >= first && risk_at(next) <= risk) {
-                    safe.push_back(static_cast<int>(nodes.size()) - 1);
-                }
+            }
+        }
+        return nodes;
+    }
+
+    void run_path(std::vector<RunNode> const& nodes, int end, std::vector<Direction>& path) const {
+        path.clear();
+        for (int k = end; nodes[static_cast<std::size_t>(k)].parent >= 0; k = nodes[static_cast<std::size_t>(k)].parent) {
+            path.push_back(nodes[static_cast<std::size_t>(k)].dir);
+        }
+        std::reverse(path.begin(), path.end());
+    }
+
+    // Sprint to the best seen tile of at most this risk, on free steps or, with paid, on length too.
+    bool hit_escape(std::vector<Direction>& path, bool paid, int risk, bool any_cost = false) {
+        // Card #54: a long dragon pays at most LS_ESCAPE_COST, and its paid run only adds tiles past the free one;
+        // with any_cost it pays whatever the run takes, and only adds tiles past that.
+        bool const far = long_wary() && paid;
+        int const dear = sprint_free() + LS_ESCAPE_COST;
+        int const limit = any_cost ? sprint_reach()
+                          : far    ? std::min(sprint_reach(), dear)
+                                   : std::min(paid ? sprint_reach() : sprint_free(), STRIDE_MAX);
+        int const first = any_cost ? dear + 1 : far ? std::min(sprint_free(), STRIDE_MAX) + 1 : 2;
+        std::vector<RunNode> const nodes = run_nodes(limit);
+        std::vector<int> safe;
+        for (std::size_t k = 1; k < nodes.size(); k++) {
+            if (nodes[k].depth >= first && risk_at(nodes[k].cell) <= risk) {
+                safe.push_back(static_cast<int>(k));
             }
         }
         double best = SCORE_REJECT * 0.5;
@@ -4126,11 +4202,7 @@ class Bot {
         if (best_node < 0) {
             return false;
         }
-        path.clear();
-        for (int k = best_node; nodes[k].parent >= 0; k = nodes[k].parent) {
-            path.push_back(nodes[k].dir);
-        }
-        std::reverse(path.begin(), path.end());
+        run_path(nodes, best_node, path);
         return true;
     }
 
@@ -5896,6 +5968,7 @@ class Bot {
     std::vector<int> pay_count;
     std::vector<Foe> foes;
     std::vector<int> foe_now;
+    std::vector<std::pair<int, int>> ally_cells;
     int foe_longest = 0;
     std::array<double, 4> step_score{};
     std::array<int, 4> step_dest{};
