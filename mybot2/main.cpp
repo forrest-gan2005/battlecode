@@ -20,6 +20,7 @@ constexpr int BLOCKED_FOREVER = 1 << 28;
 
 constexpr bool DEBUG_LOG = false;
 constexpr int TIE_SEED = 0;
+constexpr double HEADING_TIE = 0.0;
 
 constexpr double CONTESTED_SHARE = 0.5;
 constexpr double PENALTY_HEAD_RACE = 450.0;
@@ -64,6 +65,9 @@ constexpr int FEEDER_FRONT_CLEAR = 3;
 constexpr int FEEDER_ENEMY_CLEAR = 4;
 constexpr double ZONE_PEARL_PENALTY = 600.0;
 constexpr bool ZONE_NEARER = false;
+constexpr bool FEEDER_EAT = false;
+constexpr bool SPLIT_ROUND0 = false;
+constexpr bool EAT_BEFORE_SPLIT = false;
 constexpr bool CRAMPED_EAT = false;
 constexpr int QUEEN_SURE_LEN = 0;
 constexpr int QUEEN_SURE_STEPS = 3;
@@ -96,6 +100,8 @@ constexpr int AGGRESSIVE_MAX_CELLS = 1200;
 constexpr int AGGRESSIVE_TRADE_MIN_UNITS = 1;
 constexpr int AGGRESSIVE_RAM_MAX_STEPS = 3;
 constexpr int TRADE_LOCAL_EDGE = 1;
+constexpr int TRADE_SHORT_BY = 0;
+constexpr bool LUNGE_PEARL = false;
 constexpr int DEFEND_MIN_PARTS = 10;
 constexpr int DEFEND_RADIUS = 6;
 constexpr double TRADE_REWARD = 2500.0;
@@ -127,6 +133,7 @@ constexpr int STRIDE_CAP = 1500;
 constexpr bool QUEEN_WAIT = true;
 constexpr int QW_MIN_LENGTH = 4;
 constexpr bool QW_ANY_BLOCK = true;
+constexpr int QW_END_ROOM = 0;
 constexpr bool QW_LOG = false;
 constexpr bool QUEEN_SAFETY = true;
 constexpr double QS_THREAT_MULT = 4.0;
@@ -186,6 +193,8 @@ constexpr int QG_SPLIT_CLEAR = 6;
 constexpr int QG_KEEP = 0;
 constexpr int QG_HOME_RADIUS = 0;
 constexpr double QG_HOME_PENALTY = 60.0;
+constexpr int QUEEN_HOME_LEASH = 0;
+constexpr double QUEEN_HOME_SLOPE = 150.0;
 constexpr bool QG_SAFEZONE = false;
 constexpr int QG_SAFEZONE_CHECKS = 2;
 constexpr int QG_SAFEZONE_GAP = 4;
@@ -253,6 +262,7 @@ constexpr bool BARREN_BY_RATE = false;
 constexpr bool BARREN_KNOWN = false;
 constexpr bool NO_REVERSE = false;
 constexpr int RALLY_FRESH = 0;
+constexpr int RALLY_END_FRESH = 0;
 constexpr int LC_LEAD_ROUND = 0;
 constexpr int LC_FEED_ROUND = 0;
 constexpr double LC_LEAD_MULT = 1.0;
@@ -604,7 +614,7 @@ class Bot {
         if (route_target < 0 && is_assassin() && enemy_heads.empty() && manhattan(head, big_enemy_pos) > 2) {
             route_target = index_of(big_enemy_pos);
         }
-        if (rally_fresh > 0 && route_target < 0 && rally_ready()) {
+        if ((rally_fresh > 0 || RALLY_END_FRESH > 0) && route_target < 0 && rally_ready()) {
             route_target = index_of(known_leader_pos);
         }
         if (QG_SAFEZONE && route_target < 0 && zone_target >= 0) {
@@ -1063,6 +1073,14 @@ class Bot {
         }
         if (ct.get_unit_count() >= SPLIT_SOFT_LIMIT) {
             return 0;
+        }
+        if (EAT_BEFORE_SPLIT && !real_queen()) {
+            for (Direction const direction : Direction::get_direction_list()) {
+                int const next = step_index(head, direction);
+                if (next >= 0 && pearl_here[next] && seen_round[next] == round && enter_time[next] == 0) {
+                    return 0;
+                }
+            }
         }
         
         
@@ -2390,7 +2408,7 @@ class Bot {
         }
         Position const cell = position_of(index);
         int const to_leader = torus_gap(cell.x, zone_head.x, width) + torus_gap(cell.y, zone_head.y, height);
-        if (ZONE_NEARER && !is_feeder() &&
+        if (ZONE_NEARER && (FEEDER_EAT || !is_feeder()) &&
             torus_gap(cell.x, head.x, width) + torus_gap(cell.y, head.y, height) < to_leader) {
             return false;
         }
@@ -2703,7 +2721,7 @@ class Bot {
                     continue;
                 }
                 visit_stamp[next] = visit_mark;
-                step_count[next] = steps + 1;
+                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
                 bfs_parent[next] = index;
                 bfs_via[next] = static_cast<char>(direction.value);
                 bfs_queue[queue_tail++] = position_of(next);
@@ -2724,7 +2742,7 @@ class Bot {
             if (spare && enemy_head_ids[k] != enemy_queen_id) {
                 continue;
             }
-            bool const worth = at_cap || aggressive || TRADE_EVEN ? parts >= length : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
+            bool const worth = at_cap || aggressive || TRADE_EVEN ? parts >= length - (real_queen() ? 0 : TRADE_SHORT_BY) : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
             if ((normal_ok && worth) || (!spare && guards_big_ally(enemy_heads[k]))) {
                 trade_target_stamp[index_of(enemy_heads[k])] = round;
                 trade_targets++;
@@ -2782,7 +2800,7 @@ class Bot {
                     continue;
                 }
                 visit_stamp[next] = visit_mark;
-                step_count[next] = steps + 1;
+                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
                 bfs_parent[next] = index;
                 bfs_via[next] = static_cast<char>(direction.value);
                 bfs_queue[queue_tail++] = position_of(next);
@@ -3782,7 +3800,9 @@ class Bot {
         if (!QUEEN_WAIT || !real_queen() || length < QW_MIN_LENGTH || !ct.can_split(unswbc::Constants::MIN_SIZE)) {
             return false;
         }
-        bool const stuck = !any_enterable || (chosen_scored && !chosen_reaches_tail && chosen_room < length + 2.0);
+        bool const cramped = chosen_scored && !chosen_reaches_tail && chosen_room < length + 2.0;
+        bool const outlasts = QW_END_ROOM > 0 && chosen_room >= QW_END_ROOM * (unswbc::Constants::MAX_ROUNDS - round);
+        bool const stuck = !any_enterable || (cramped && !outlasts);
         if (!stuck) {
             return false;
         }
@@ -4989,8 +5009,9 @@ class Bot {
     }
 
     bool rally_ready() const {
-        if ((QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || queen_aloof() || known_leader_id < 0 ||
-            known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > rally_fresh ||
+        int const fresh = RALLY_END_FRESH > 0 && round > feed_round ? RALLY_END_FRESH : rally_fresh;
+        if (fresh <= 0 || (QH_SCOUT && qh_on) || !feeding_phase() || is_feeder() || is_leader() || is_trader() || queen_aloof() || known_leader_id < 0 ||
+            known_leader_id == ct.get_id() || known_leader_round < 0 || round - known_leader_round > fresh ||
             !feed_len_ok() || ct.get_unit_count() <= FEEDER_KEEP_UNITS) {
             return false;
         }
@@ -5146,7 +5167,7 @@ class Bot {
             score -= POCKET_PENALTY * (grown - pocket / POCKET_DIV);
             last_pocket = POCKET_PENALTY * (grown - pocket / POCKET_DIV);
         }
-        if (pearl_here[index_of(destination)] && !is_feeder() && !in_leader_pearl_zone(index_of(destination)) && !pocket_full) {
+        if (pearl_here[index_of(destination)] && (FEEDER_EAT || !is_feeder()) && !in_leader_pearl_zone(index_of(destination)) && !pocket_full) {
             score += EAT_BONUS;
         } else if (pocket_full && pearl_here[index_of(destination)] && !is_feeder() && !in_leader_pearl_zone(index_of(destination))) {
             last_pocket += EAT_BONUS;
@@ -5216,6 +5237,10 @@ class Bot {
             if (last_dead_end || (!last_reaches_tail && last_room < length + 2.0)) {
                 score -= (queen_guard() ? QG_DEAD_PENALTY : QUEEN_DEAD_PENALTY);
             }
+        }
+        if (QUEEN_HOME_LEASH > 0 && real_queen() && queen_home.x >= 0) {
+            int const leash = std::min(QUEEN_HOME_LEASH, (width + height) / 8);
+            score -= QUEEN_HOME_SLOPE * std::max(0, manhattan(destination, queen_home) - leash);
         }
         if (QG_HOME_RADIUS > 0 && queen_guard() && queen_home.x >= 0) {
             score -= QG_HOME_PENALTY * std::max(0, manhattan(destination, queen_home) - QG_HOME_RADIUS);
@@ -5486,6 +5511,10 @@ class Bot {
             }
 
             score += 0.25 * ((TIE_SEED * 101 + ct.get_id() * 31 + round * 17 + static_cast<int>(k) * 7) % 5);
+            if (HEADING_TIE > 0.0 && length <= CENTER_MAX_LENGTH && !real_queen() && !is_leader() && !is_feeder() &&
+                scored[k] && score > SCORE_REJECT * 0.5 && directions[k] == ct.get_dir()) {
+                score += HEADING_TIE;
+            }
 
             if (DEBUG_LOG) {
                 ct.output_log("r", round, "len", length, "trail", static_cast<int>(trail.size()), "dir",
@@ -5648,7 +5677,7 @@ class Bot {
     std::vector<std::pair<Position, int>> recent_allies;
     int growth_length = 0;
     bool cornered = false;
-    int harvest_round = -1;
+    int harvest_round = SPLIT_ROUND0 ? -2 : -1;
     int behind_round = -1;
     double behind_room = 0.0;
     double last_seen_room = 0.0;

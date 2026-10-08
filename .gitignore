@@ -51,6 +51,7 @@ work/*.json
 work/*.pkl
 work/*.log
 work/*.txt
+!work/server_profile.txt
 !work/*set*.txt
 !work/official.txt
 !work/sqfull.txt

@@ -1,0 +1,11 @@
+# Live switch profile applied by work/server_bot.py to the latest bot source.
+# Live bot v62 (submission 20366) = main a358ec8 + this profile.
+# Add or remove a line only after an online test.
+ZONE_NEARER true
+POCKET_LOOP true
+HARVEST_PORTAL true
+SPAWN_CLEAR true
+TRADE_EVEN true
+LEADER_FULL_UNITS 56
+HUNT_SMALL_RATIO 2
+QS_KEEP_LEN 3
