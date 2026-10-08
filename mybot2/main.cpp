@@ -370,11 +370,14 @@ constexpr int TR_STALL_ROUNDS = 12;
 constexpr int TR_STALL_ROOM = 6;
 constexpr int TR_STALL_SEEK = 30;
 // Card #55: outnumbered (herself counted, a draw counts, enemy heads of the last GHOST_ROUNDS rounds too), the queen
-// falls back to her start tile or to where she last saw a teammate; keep-away leads only while the way there is shut.
+// falls back to a spot where she lately saw more of ours than theirs; to her start tile only when she remembers none.
 constexpr bool QUEEN_FALLBACK = false;
 constexpr int QF_GUARD_RADIUS = 5;
 constexpr int QF_MEMORY = 40;
 constexpr int QF_HOLD = 2;
+constexpr int QF_SPOTS = 4;
+constexpr int QF_MERGE = 6;
+constexpr int QF_CROWD = 3;
 constexpr double QF_PULL = 30000.0;
 constexpr double QF_TIE_PULL = 300.0;
 constexpr int QF_TIE_SPAN = 2;
@@ -403,6 +406,12 @@ struct Ghost {
     int round = -1;
     int parts = 0;
     bool shared = false;
+};
+
+struct Spot {
+    int cell = -1;
+    int margin = 0;
+    int round = -1;
 };
 
 struct StrideEnd {
@@ -3177,9 +3186,11 @@ class Bot {
         // Enemy heads in view, and those she saw in the last GHOST_ROUNDS rounds.
         int const theirs =
             static_cast<int>(std::count_if(ghosts.begin(), ghosts.end(), [](Ghost const& g) { return !g.shared; }));
-        int const here = index_of(head);
+        fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                      [this](Spot const& spot) { return round - spot.round > QF_MEMORY; }),
+                       fb_spots.end());
         if (theirs < ours) {
-            // With more of ours than theirs, the tile of the nearest teammate head in view is remembered.
+            // More of ours than theirs: the tile of the nearest teammate head in view is remembered, with the margin.
             int nearest = -1;
             for (Position const& ally : ally_heads) {
                 int const key = manhattan(head, ally) * cells + index_of(ally);
@@ -3188,43 +3199,64 @@ class Bot {
                 }
             }
             if (nearest >= 0) {
-                fb_spot = nearest % cells;
-                fb_spot_round = round;
+                Position const seen = position_of(nearest % cells);
+                // A sighting within QF_MERGE tiles of a remembered spot replaces it.
+                fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                              [&](Spot const& spot) {
+                                                  return manhattan(position_of(spot.cell), seen) <= QF_MERGE;
+                                              }),
+                               fb_spots.end());
+                if (static_cast<int>(fb_spots.size()) >= QF_SPOTS) {
+                    fb_spots.erase(fb_spots.begin());
+                }
+                fb_spots.push_back(Spot{nearest % cells, ours - theirs, round});
             }
             return;
         }
         fb_on = true;
-        // Targets: her start tile and the remembered spot; within QF_HOLD steps on foot she is there.
-        int home = -1;
-        int spot = -1;
-        if (queen_home.x >= 0) {
-            fallback_walk(index_of(queen_home), fb_dist);
-            home = fb_dist[here];
-        }
-        if (fb_spot >= 0 && round - fb_spot_round <= QF_MEMORY) {
-            fallback_walk(fb_spot, fb_other);
-            spot = fb_other[here];
-            // Outnumbered at the spot: it is no longer a place with company.
-            if (spot >= 0 && spot <= QF_HOLD) {
-                fb_spot = -1;
-                spot = -1;
+        int const here = index_of(head);
+        fallback_walk(here, fb_other);
+        // Outnumbered within QF_HOLD steps on foot of a spot: it is no longer a place with company.
+        fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                      [this](Spot const& spot) {
+                                          return fb_other[spot.cell] >= 0 && fb_other[spot.cell] <= QF_HOLD;
+                                      }),
+                       fb_spots.end());
+        // Spots by steps on foot, each extra head of margin worth QF_CROWD steps; the newer one on a tie.
+        std::vector<std::array<int, 3>> order;
+        for (std::size_t k = 0; k < fb_spots.size(); k++) {
+            int const steps = fb_other[fb_spots[k].cell];
+            if (steps >= 0) {
+                order.push_back({steps - QF_CROWD * (fb_spots[k].margin - 1), steps, -static_cast<int>(k)});
             }
         }
-        if (home < 0 && spot < 0) {
+        std::sort(order.begin(), order.end());
+        // The first spot with an open way leads; all ways shut, keep-away leads and the first spot breaks ties.
+        for (std::size_t k = 0; k < order.size() && !fb_lead; k++) {
+            if (k == 1) {
+                fb_dist.swap(fb_other);
+            }
+            fallback_walk(fb_spots[static_cast<std::size_t>(-order[k][2])].cell, fb_dist);
+            fb_lead = fallback_way(fb_dist);
+        }
+        if (!order.empty()) {
+            if (!fb_lead && order.size() > 1) {
+                fb_dist.swap(fb_other);
+            }
+            fb_floor = 0;
+            fb_pull = true;
             return;
         }
-        bool const spot_first = spot >= 0 && (home < 0 || spot < home);
-        // At home she holds: the pull only keeps her within QF_HOLD steps of it.
-        bool const home_way = home >= 0 && (home <= QF_HOLD || fallback_way(fb_dist));
-        bool const spot_way = spot >= 0 && fallback_way(fb_other);
-        // Nearer target on foot first; its way shut, the other one; both shut, keep-away leads this turn.
-        fb_lead = home_way || spot_way;
-        if (fb_lead ? spot_way && (spot_first || !home_way) : spot_first) {
-            fb_dist.swap(fb_other);
-            fb_floor = 0;
-        } else {
-            fb_floor = QF_HOLD;
+        // No spot left: her start tile is the last resort, and within QF_HOLD steps of it she holds.
+        if (queen_home.x < 0) {
+            return;
         }
+        fallback_walk(index_of(queen_home), fb_dist);
+        if (fb_dist[here] < 0) {
+            return;
+        }
+        fb_lead = fb_dist[here] <= QF_HOLD || fallback_way(fb_dist);
+        fb_floor = QF_HOLD;
         fb_pull = true;
     }
 
@@ -5627,8 +5659,7 @@ class Bot {
     bool fb_pull = false;
     bool fb_lead = false;
     int fb_floor = 0;
-    int fb_spot = -1;
-    int fb_spot_round = -1000;
+    std::vector<Spot> fb_spots;
     std::vector<int> fb_dist;
     std::vector<int> fb_other;
     std::vector<int> fb_queue;
