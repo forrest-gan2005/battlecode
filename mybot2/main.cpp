@@ -102,6 +102,7 @@ constexpr int AGGRESSIVE_RAM_MAX_STEPS = 3;
 constexpr int TRADE_LOCAL_EDGE = 1;
 constexpr int TRADE_SHORT_BY = 0;
 constexpr bool LUNGE_PEARL = false;
+constexpr int ATTACK_MIN_UNITS = 0;
 constexpr int DEFEND_MIN_PARTS = 10;
 constexpr int DEFEND_RADIUS = 6;
 constexpr double TRADE_REWARD = 2500.0;
@@ -122,6 +123,7 @@ constexpr bool QUEEN_DEAD_END = true;
 constexpr double QUEEN_DEAD_PENALTY = QUEEN_DEAD_END ? 6000.0 : 0.0;
 constexpr double QUEEN_KNOWN_STEP = 400.0;
 constexpr int QUEEN_DEFEND_RADIUS = 0;
+constexpr int QUEEN_DEFEND_STEPS = 0;
 constexpr int QUEEN_HUNT_STEPS = 12;
 constexpr int QUEEN_CHASE_DIST = 0;
 constexpr int QUEEN_CHASE_FRESH = 8;
@@ -142,6 +144,8 @@ constexpr double QS_PAY_PENALTY = 2e8;
 constexpr int QS_PAY_REACH = 3;
 constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int QS_KEEP_LEN = 0;
+constexpr int QS_KEEP_ROUND = 0;
+constexpr int QS_KEEP_CLEAR = 0;
 constexpr bool QUEEN_DEAD_ALL = false;
 constexpr int STRIDE_MAX = 6;
 constexpr bool STRIDE_SEEN = true;
@@ -195,6 +199,10 @@ constexpr int QG_HOME_RADIUS = 0;
 constexpr double QG_HOME_PENALTY = 60.0;
 constexpr int QUEEN_HOME_LEASH = 0;
 constexpr double QUEEN_HOME_SLOPE = 150.0;
+constexpr bool QUEEN_HERD = false;
+constexpr double HERD_PULL = 120.0;
+constexpr int HERD_MIN_UNITS = 12;
+constexpr double HERD_BEHIND = 0.0;
 constexpr bool QG_SAFEZONE = false;
 constexpr int QG_SAFEZONE_CHECKS = 2;
 constexpr int QG_SAFEZONE_GAP = 4;
@@ -439,6 +447,21 @@ struct Spot {
     int round = -1;
 };
 
+struct Mate {
+    int id = -1;
+    int cell = -1;
+    int round = -1;
+};
+
+struct Herd {
+    bool on = false;
+    std::vector<Mate> mates;
+    std::vector<int> dist;
+    std::vector<int> queue;
+    std::vector<std::pair<int, int>> foes;
+    int ahead = 0;
+};
+
 struct StrideEnd {
     double room = 0.0;
     bool reaches_tail = false;
@@ -553,6 +576,9 @@ class Bot {
         }
         if (QUEEN_FALLBACK) {
             fallback_update();
+        }
+        if (QUEEN_HERD) {
+            herd_update();
         }
         if (QUEEN_HOME_CLOSED && !home_closed && real_queen() && round <= HOME_CHECK_ROUND && round % 2 == 0) {
             int const size = home_region_size();
@@ -1090,7 +1116,9 @@ class Bot {
         if (QUEEN_SAFETY && queen_wary() && (hit_head || pay_head)) {
             return 0;
         }
-        if (QS_KEEP_LEN > 0 && real_queen() && length - unswbc::Constants::MIN_SIZE < QS_KEEP_LEN) {
+        if (QS_KEEP_LEN > 0 &&
+            (QS_KEEP_ROUND <= 0 || round >= QS_KEEP_ROUND || (QS_KEEP_CLEAR > 0 && enemy_near(head, QS_KEEP_CLEAR))) &&
+            real_queen() && length - unswbc::Constants::MIN_SIZE < QS_KEEP_LEN) {
             return 0;
         }
         if (round > grow_round && length > SPLIT_MIN_LENGTH && !(board_short() && length < LEADER_FULL_KEEP)) {
@@ -2746,7 +2774,7 @@ class Bot {
                     continue;
                 }
                 visit_stamp[next] = visit_mark;
-                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
+                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && attack_units_ok() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
                 bfs_parent[next] = index;
                 bfs_via[next] = static_cast<char>(direction.value);
                 bfs_queue[queue_tail++] = position_of(next);
@@ -2767,12 +2795,42 @@ class Bot {
             if (spare && enemy_head_ids[k] != enemy_queen_id) {
                 continue;
             }
-            bool const worth = at_cap || aggressive || TRADE_EVEN ? parts >= length - (real_queen() ? 0 : TRADE_SHORT_BY) : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
-            if ((normal_ok && worth) || (!spare && guards_big_ally(enemy_heads[k]))) {
+            bool const worth = at_cap || aggressive || TRADE_EVEN ? parts >= length - (real_queen() || !attack_units_ok() ? 0 : TRADE_SHORT_BY) : parts >= std::max(TRADE_TARGET_MIN_PARTS, length + 2);
+            if ((normal_ok && worth) || (!spare && guards_big_ally(enemy_heads[k])) ||
+                (QUEEN_DEFEND_STEPS > 0 && !spare && enemy_head_ids[k] != enemy_queen_id && guards_queen(enemy_heads[k]))) {
                 trade_target_stamp[index_of(enemy_heads[k])] = round;
                 trade_targets++;
             }
         }
+    }
+
+    bool guards_queen(Position enemy) const {
+        if (!QUEEN_MODE || length > TRADE_MAX_LENGTH || is_leader()) {
+            return false;
+        }
+        int const target = index_of(enemy);
+        for (std::size_t k = 0; k < ally_heads.size(); k++) {
+            if (ally_head_ids[k] != queen_id) {
+                continue;
+            }
+            std::vector<int> reached{index_of(ally_heads[k])};
+            std::size_t from = 0;
+            for (int steps = 0; steps < QUEEN_DEFEND_STEPS; steps++) {
+                std::size_t const upto = reached.size();
+                for (; from < upto; from++) {
+                    for (Direction const direction : Direction::get_direction_list()) {
+                        int const next = step_index(position_of(reached[from]), direction);
+                        if (next == target) {
+                            return true;
+                        }
+                        if (next >= 0 && std::find(reached.begin(), reached.end(), next) == reached.end()) {
+                            reached.push_back(next);
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     bool guards_big_ally(Position enemy) const {
@@ -2825,7 +2883,7 @@ class Bot {
                     continue;
                 }
                 visit_stamp[next] = visit_mark;
-                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
+                step_count[next] = steps + (LUNGE_PEARL && !real_queen() && attack_units_ok() && pearl_here[next] && seen_round[next] == round ? 0 : 1);
                 bfs_parent[next] = index;
                 bfs_via[next] = static_cast<char>(direction.value);
                 bfs_queue[queue_tail++] = position_of(next);
@@ -3321,6 +3379,99 @@ class Bot {
         return std::max(fb_dist[index_of(head)], fb_floor) - std::max(fb_dist[cell], fb_floor);
     }
 
+    Herd& herd_state() const {
+        static Herd herd;
+        return herd;
+    }
+
+    void herd_update() {
+        Herd& herd = herd_state();
+        herd.on = false;
+        herd.foes.clear();
+        herd.ahead = 0;
+        if (!real_queen() || is_leader() || ct.get_unit_count() < HERD_MIN_UNITS) {
+            return;
+        }
+        for (std::size_t k = 0; k < ally_heads.size(); k++) {
+            int const id = ally_head_ids[k];
+            auto found = std::find_if(herd.mates.begin(), herd.mates.end(), [id](Mate const& m) { return m.id == id; });
+            if (found == herd.mates.end()) {
+                herd.mates.push_back(Mate{id, index_of(ally_heads[k]), round});
+            } else {
+                found->cell = index_of(ally_heads[k]);
+                found->round = round;
+            }
+        }
+        herd.mates.erase(std::remove_if(herd.mates.begin(), herd.mates.end(),
+                                        [this](Mate const& m) { return round - m.round > INC_ALLY_MEMORY; }),
+                         herd.mates.end());
+        if (herd.mates.empty() || (POCKET_CAP > 0 && pocket_size(index_of(head)) < POCKET_CAP)) {
+            return;
+        }
+        if (HERD_BEHIND > 0.0) {
+            for (Ghost const& ghost : ghosts) {
+                if (ghost.id == enemy_queen_id) {
+                    continue;
+                }
+                int nearest = -1;
+                for (Mate const& mate : herd.mates) {
+                    int const gap = manhattan(position_of(mate.cell), ghost.pos);
+                    if (round - mate.round <= GHOST_ROUNDS && (nearest < 0 || gap < nearest)) {
+                        nearest = gap;
+                    }
+                }
+                if (nearest >= 0) {
+                    herd.foes.emplace_back(index_of(ghost.pos), nearest);
+                }
+            }
+            herd.ahead = herd_ahead(index_of(head));
+        }
+        if (ally_heads.size() >= 2) {
+            return;
+        }
+        herd.dist.assign(cells, -1);
+        herd.queue.clear();
+        for (Mate const& mate : herd.mates) {
+            if (herd.dist[mate.cell] < 0) {
+                herd.dist[mate.cell] = 0;
+                herd.queue.push_back(mate.cell);
+            }
+        }
+        for (std::size_t at = 0; at < herd.queue.size(); at++) {
+            Position const position = position_of(herd.queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge != EDGE_OPEN && edge != EDGE_UNKNOWN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (herd.dist[next] >= 0) {
+                    continue;
+                }
+                herd.dist[next] = herd.dist[herd.queue[at]] + 1;
+                herd.queue.push_back(next);
+            }
+        }
+        herd.on = herd.dist[index_of(head)] >= 0;
+    }
+
+    int herd_ahead(int cell) const {
+        int ahead = 0;
+        for (auto const& foe : herd_state().foes) {
+            ahead = std::max(ahead, foe.second - manhattan(position_of(cell), position_of(foe.first)));
+        }
+        return ahead;
+    }
+
+    int herd_gain(int cell) const {
+        Herd const& herd = herd_state();
+        if (!herd.on || herd.dist[cell] < 0) {
+            return 0;
+        }
+        int const gap = unswbc::Constants::VISION_RADIUS;
+        return std::max(herd.dist[index_of(head)], gap) - std::max(herd.dist[cell], gap);
+    }
+
     bool portal_into_pocket(Position position, Direction direction) {
         if (!POCKET_PORTAL_BAN || POCKET_CAP <= 0) {
             return false;
@@ -3578,6 +3729,10 @@ class Bot {
         if (LC_ENEMY_FEED > 0 && enemy_big_seen >= LC_ENEMY_FEED && round < feed_round) {
             feed_round = round;
         }
+    }
+
+    bool attack_units_ok() const {
+        return ATTACK_MIN_UNITS <= 0 || ct.get_unit_count() >= ATTACK_MIN_UNITS;
     }
 
     bool board_short() const {
@@ -5410,6 +5565,27 @@ class Bot {
         }
         if (QG_HOME_RADIUS > 0 && queen_guard() && queen_home.x >= 0) {
             score -= QG_HOME_PENALTY * std::max(0, manhattan(destination, queen_home) - QG_HOME_RADIUS);
+        }
+        if (QUEEN_HERD && real_queen() && !qs_plain) {
+            int const cell = index_of(destination);
+            int gain = std::clamp(herd_gain(cell), -STRIDE_MAX, STRIDE_MAX);
+            if (boxed || !survey.reaches_tail || pocket < POCKET_CAP || threat_at(cell) > 0 || risk_at(cell) > 0) {
+                gain = std::min(gain, 0);
+            }
+            if (pearl_here[cell]) {
+                gain = std::max(gain, 0);
+            }
+            score += HERD_PULL * gain;
+            if (HERD_BEHIND > 0.0) {
+                int back = std::clamp(herd_state().ahead - herd_ahead(cell), -STRIDE_MAX, STRIDE_MAX);
+                if (boxed || !survey.reaches_tail || pocket < POCKET_CAP || threat_at(cell) > 0 || risk_at(cell) > 0) {
+                    back = std::min(back, 0);
+                }
+                if (pearl_here[cell]) {
+                    back = std::max(back, 0);
+                }
+                score += HERD_BEHIND * back;
+            }
         }
         if (fall && fb_pull && fb_dist[index_of(destination)] >= 0) {
             int const gain = fallback_gain(index_of(destination));
