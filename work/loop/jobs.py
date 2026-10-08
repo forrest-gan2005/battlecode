@@ -386,9 +386,11 @@ def ai(spec, fds):
             write(out / spec['output'], json.loads(result))
             Path(spec['log']).write_text(json.dumps({'type': 'result', 'result': result}) + '\n')
     else:
-        # Builds get more effort; the ladder review is a quick skim.
-        effort = {'ladder': 'medium', 'build': 'xhigh'}.get(step, 'high')
-        argv = ['claude', '-p', '--model', 'opus', '--effort', effort, '--permission-mode',
+        # Every step runs at high; the ladder review is a quick skim.
+        effort = {'ladder': 'medium'}.get(step, 'high')
+        # Questions and the written verdict go to the smaller model; build, check and replay reading stay on opus.
+        model = 'claude-sonnet-5-5' if step in ('clarify', 'verdict', 'verdict-fields') else 'opus'
+        argv = ['claude', '-p', '--model', model, '--effort', effort, '--permission-mode',
                 'bypassPermissions', '--settings', str(HERE / 'settings.json'),
                 '--output-format', 'stream-json', '--verbose']
         def completed():
