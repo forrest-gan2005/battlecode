@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Card #54 avoiding-long mechanism check (LONG_SAFETY, attempt 2): do our dragons of 31 or longer stay off the tiles
+"""Card #54 avoiding-long mechanism check (LONG_SAFETY, attempt 3): do our dragons of 31 or longer stay off the tiles
 an enemy head can crash into this turn, what do they do when no such tile is left, and are the rings drawn large
-enough for an enemy that is only partly in view?
+enough for an enemy that is only partly in view? New in attempt 3 (Zhe, 10-08): a stuck dragon keeps 2 and sends the
+rest off even when it does not know where its tail is; the check also follows the body that left.
 
 usage: python3 work/card_54_check.py --replays DIR --base base --candidate candidate --output FILE [--events DIR]
 Replays are DIR/<tag>_<map>_<seed>_<side>.replay (work/ab3.py with KEEP=1), paired by (map, seed, side).
@@ -37,12 +38,16 @@ dragon could see (the 7x7 box around its head) and the rings the bot draws:
                its free steps (at most 6, the bot's stride cap), 'paid' up to 2 steps beyond its free steps
   no way out = stuck without one. The card's answer then, in this order (jun's revision of 10-08, for Zhe):
                keep 2  = the head keeps 2 and the rest leaves from the tail end as its own dragon; open when our team
-                         is below the 64-dragon cap, the dragon knows where its tail is, the tail-end tile is not
-                         ringed and has room
+                         is below the 64-dragon cap and either the dragon does not know where its tail is ('blind',
+                         new in attempt 3) or the tail-end tile is not ringed and has room
                stay    = its own tile is not ringed and it can split: 2 off the tail and it stays (ends clean)
                least bad tile = otherwise it moves: a pay-ring tile over a free-ring tile, then the tile fewer heads
                          reach
-  clean ending possible = avoidable, or a way out, or no way out with keep 2 or stay open
+  clean ending possible = avoidable, or a way out, or no way out with stay open or with keep 2 open and the tail end
+               not inside the rings our dragon draws (a blind split cannot know that; the check reads the real tail)
+  body that left = the child of a keep-2 split made while stuck with no way out. Followed for its birth round and the
+               two after: its first turn (a child of 31+ is judged like any long dragon), whether it splits again in
+               the round it was born (a chain), whether it is rammed; and whether the 2 left behind are rammed
   missed     = a clean ending was possible and the long body still ended on a ringed tile
 
 PASS RULE (fixed before any game was played with this attempt's switch on; constants below):
@@ -62,13 +67,27 @@ PASS RULE (fixed before any game was played with this attempt's switch on; const
      rammed by an enemy head that was in view at the dragon's last decision and came on its free steps or 1 paid
      step. With at least RAM_N of them in base, switch-on near rams in view per 1000 decisions are at most RAM_CUT x
      base's.
-passed = 1 and 2, and 3 to 6 where they come up. target_seen = rule 1, mechanism_shown = rules 1 and 2.
-Rules 3-6 report "not seen" below their minimum and do not fail the check then.
+  7. this attempt's change, judged only if it comes up: with at least BLIND_N switch-on decisions that are stuck with
+     no way out, the tail not known and our team below the cap, at least STUCK_OK of them keep 2 (a move that ends
+     outside the rings after all also counts).
+passed = 1 and 2, and 3 to 7 where they come up. target_seen = rule 1, mechanism_shown = rules 1 and 2 and rule 7 seen
+and met. Rules 3-7 report "not seen" below their minimum and do not fail the check then.
 NOT part of the pass rule (16 games per side cannot settle them, the outcome A/B does): all rams on 31+ dragons, the
-length lost to rams per game, pearls those dragons eat, length shed by stuck splits, lengths and wins.
+length lost to rams per game, pearls those dragons eat, length shed by stuck splits, lengths and wins, and everything
+about the body that left (first turn, chains, rams within 2 rounds).
 The bot's own log lines are not used: the game runner drops them.
 
-KNOWN BEFORE any game with this attempt's switch on, from running this check on the 32 replays attempt 1 kept (16
+KNOWN BEFORE any game with attempt 3's switch on, from running this check on the 32 replays attempt 2 kept (16 base
+against base, 16 with attempt 2's switch on; same maps and seeds as this run):
+  - stuck with no way out, the tail not known and the team below the cap: base 69 (kept 2: 0, moved out of the rings
+    5, moved onto a ringed tile 64); attempt 2's switch 71 (kept 2: 0, moved out 11, onto a ringed tile 45, 2 off the
+    tail and stayed on a clean tile 15). So rule 7 stands at 11 of 71 before this change and rule 4, with blind
+    counted as open, at 25 of 85. Missed endings by the new definition: base 216 of 569, attempt 2's switch 44 of 478.
+  - the body that left, attempt 2's switch: 15 stuck keep-2 splits (all with the tail known), 13 children still 31+;
+    1 of those 13 was stuck with no way out on its first turn; 1 child rammed within 2 rounds (44 length); the 2 left
+    behind rammed within 2 rounds once. No chain yet, because a fresh child could not split.
+
+KNOWN BEFORE attempt 2, kept for reference, from running the attempt-2 check on the 32 replays attempt 1 kept (16
 base against base, 16 with attempt 1's switch on; same maps as this run):
   - ring size against real lengths, base games: our 31+ dragons saw an enemy head 3123 times, 2819 of them with the
     body running out of view. 1603 of those 2819 enemies were really 2-4 long. Attempt 1's stub rule sized 1094 of
@@ -113,6 +132,8 @@ ESCAPE_COST = 2      # LS_ESCAPE_COST: the most length a long dragon pays to run
 RUN_MAX = 6          # STRIDE_MAX: the most steps of a free run
 UNIT_CAP = 64        # dragons a team may have alive; at the cap a split is refused (work/plan.md, and the last look)
 TAIL_ROOM = 5        # tiles the tail end must reach for the rest to leave from it (CHILD_MIN_ROOM 4, plus itself)
+CHILD_ROUNDS = 2     # 'soon' for the body that left: its birth round and the two after
+BLIND_N = 5          # switch-on no-way-out decisions with the tail not known needed to judge rule 7
 CAUSE =['wall', 'self', 'body', 'headon', 'none']
 DIRS = 'NESW'
 OFFSET = {'N': (0, -1), 'E': (1, 0), 'S': (0, 1), 'W': (-1, 0)}
@@ -310,6 +331,8 @@ def one(job):
     longest = {}         # our dragon -> most parts it has had in view of any enemy
     known = {}           # our dragon -> how many of its own body tiles, from the head, it knows
     last = {}            # our long dragon -> how its last finished action left it
+    born = {}            # child of a stuck keep-2 split -> {rnd, depth, blind, len}
+    keepers = {}         # the 2-long piece a stuck keep-2 split left behind -> round
     pending = None
     mover = None
     act_from, act_len = None, 0
@@ -494,8 +517,10 @@ def one(job):
         tail = body[-1]
         capped = units >= UNIT_CAP
         tail_known = known.get(viewer, 1) >= size
-        keep2 = bool(stuck and run is None and not capped and tail_known and zone(tail) == 0
-                     and has_room(step, tail, taken - {tail}, TAIL_ROOM))
+        tail_fit = zone(tail) == 0 and has_room(step, tail, taken - {tail}, TAIL_ROOM)
+        # Attempt 3: a tail the dragon does not know no longer holds keep 2 back ('blind').
+        keep2 = bool(stuck and run is None and not capped and (not tail_known or tail_fit))
+        blind = keep2 and not tail_known
         stay = bool(stuck and run is None and not capped and own_zone == 0 and not keep2)
         pool = [t for t in walk if roomy[t]] or walk
         best_zone = min((zones[t] for t in pool), default=0)
@@ -504,6 +529,7 @@ def one(job):
                     seen_ring=seen_ring, zone=zone, heads=lambda t: (hitc[t], payc[t]), own=own_zone,
                     touch=own_zone > 0 or ringed_step, safe=safe, stuck=stuck, run=run, keep2=keep2, stay=stay,
                     capped=capped, tail_known=tail_known, tail_zone=zone(tail), units=units, best_zone=best_zone,
+                    blind=blind, tail_fit=tail_fit, fresh=born.get(viewer, {}).get('rnd') == rnd, child_id=None,
                     fewest=fewest, reach=reach_of, short_foe=any(f['parts'] <= 5 for f in foes), seen=0, dead=False,
                     cause=None, child=0, kind='other', n=0)
 
@@ -516,7 +542,8 @@ def one(job):
         avoidable = p['touch'] and p['safe']
         way = p['run'] if p['stuck'] else None
         noexit = p['stuck'] and way is None
-        possible = avoidable or way is not None or p['keep2'] or p['stay']
+        # A blind keep 2 is a clean ending only where the tail end turns out not to be ringed.
+        possible = avoidable or way is not None or (p['keep2'] and p['tail_zone'] == 0) or p['stay']
         c['decisions'] += 1
         c['possible'] += possible
         c['enemy_head_in_view'] += p['view']
@@ -533,10 +560,16 @@ def one(job):
         c['noexit_at_cap'] += noexit and p['capped']
         c['noexit_tail_unknown'] += noexit and not p['capped'] and not p['tail_known']
         c['noexit_tail_ringed'] += noexit and not p['capped'] and p['tail_known'] and p['tail_zone'] > 0
+        c['noexit_tail_cramped'] += noexit and not p['capped'] and p['tail_known'] and p['tail_zone'] == 0 and not p['tail_fit']
+        c['child_first_turns'] += p['fresh']
+        c['child_first_touch'] += p['fresh'] and p['touch']
+        c['child_first_stuck'] += p['fresh'] and p['stuck']
+        c['child_first_noexit'] += p['fresh'] and noexit
         b = bodies.get(did)
         if p['dead'] or not b:
             c['died_acting'] += 1
             c['died_acting_' + (p['cause'] or 'other')] += 1
+            c['child_first_died_acting'] += p['fresh']
             c['avoidable_died_acting'] += avoidable
             c['noexit_died_acting'] += noexit
             if p['touch']:
@@ -580,6 +613,26 @@ def one(job):
                 c['stuck_split_stays_ringed'] += p['stuck'] and stays and p['own'] > 0
         ringed = counted and where > 0
         c['ended_ringed'] += ringed
+        c['child_first_ended_ringed'] += p['fresh'] and ringed
+        if noexit and kept2:
+            depth = born[did]['depth'] + 1 if p['fresh'] else 1
+            c['kept2_children'] += 1
+            c['kept2_children_31plus'] += p['child'] >= LONG_MIN
+            c['kept2_child_length'] += p['child']
+            c['kept2_tail_end_ringed'] += p['tail_zone'] > 0
+            c['kept2_by_a_child_born_this_round'] += p['fresh']
+            c[f'kept2_depth{min(depth, 4)}'] += 1
+            keepers[did] = p['rnd']
+            if p['child_id'] is not None:
+                born[p['child_id']] = dict(rnd=p['rnd'], depth=depth, blind=p['blind'], len=p['child'])
+        if noexit and p['blind']:
+            c['blind_open'] += 1
+            c['blind_kept_2'] += kept2
+            c['blind_moved_out'] += moved and where == 0
+            c['blind_moved_ringed'] += moved and where > 0
+            c['blind_other'] += not kept2 and not moved
+            c['blind_child_length'] += p['child'] if kept2 else 0
+            c['blind_tail_end_ringed'] += kept2 and p['tail_zone'] > 0
         if possible and ringed:
             c['missed'] += 1
             c['missed_' + ('avoidable' if avoidable else 'way_out' if way else 'split_open')] += 1
@@ -625,6 +678,7 @@ def one(job):
             note('touch', rnd=p['rnd'], id=did, len=p['len'], after=after, kind=p['kind'], n=p['n'], child=p['child'],
                  start=p['start'], end=end, avoidable=avoidable, stuck=p['stuck'], way=way, keep2_open=p['keep2'],
                  stay_open=p['stay'], capped=p['capped'], tail_known=p['tail_known'], tail_zone=p['tail_zone'],
+                 blind=p['blind'], fresh=p['fresh'],
                  own=p['own'], where=where, ringed=ringed, possible=possible, answered=answer, units=p['units'],
                  saw=sorted(p['saw']), mind=sorted(p['mind']),
                  foes=[(f, len(bodies[f]), bodies[f][0], p['reach'].get(f)) for f in sorted(p['saw'] | p['mind'])
@@ -691,6 +745,7 @@ def one(job):
                 known[pa] = min(known[pa], len(bodies[pa]))
             if pending and pa == pending['id']:
                 pending['child'] = len(bodies[ch])
+                pending['child_id'] = ch
         elif kind == 'dragonDeath':
             did = pl.i32(0)
             r = pl.u16(4)
@@ -700,6 +755,21 @@ def one(job):
             if pending and did == pending['id']:
                 pending['dead'] = True
                 pending['cause'] = cause
+            hit = cause == 'headon' and mover != did and team_of.get(mover) != ours and b
+            kid = born.get(did)
+            if kid and rnd - kid['rnd'] <= CHILD_ROUNDS:
+                c['child_dead_soon'] += 1
+                c['child_dead_soon_length'] += len(b or ())
+                if hit:
+                    c['child_rammed_soon'] += 1
+                    c['child_rammed_soon_length'] += len(b)
+                    c['child_rammed_soon_blind'] += kid['blind']
+                    c['child_rammed_same_round'] += rnd == kid['rnd']
+                    note('child_rammed', rnd=rnd, id=did, len=len(b), born=kid['rnd'], blind=kid['blind'], rammer=mover,
+                         rammer_len=act_len)
+            if did in keepers and rnd - keepers[did] <= CHILD_ROUNDS and hit:
+                c['keeper_rammed_soon'] += 1
+                c['keeper_rammed_soon_length'] += len(b)
             if team_of.get(did) != ours or did == queen or not b or len(b) < LONG_MIN:
                 continue
             c['long_deaths'] += 1
@@ -816,8 +886,14 @@ def view(s):
             'decisions': s['stuck_no_way_out'],
             'what_was_open': {'keep_2_split': s['noexit_keep2_open'], '2_off_and_stay_on_a_clean_tile': s['noexit_stay_open'],
                               'no_split': s['noexit_no_split_open']},
-            'why_keep_2_was_not_open': {'team_at_the_64_cap': s['noexit_at_cap'], 'tail_not_known': s['noexit_tail_unknown'],
-                                        'tail_end_ringed': s['noexit_tail_ringed']},
+            'why_keep_2_was_not_open': {'team_at_the_64_cap': s['noexit_at_cap'],
+                                        'tail_known_and_its_end_ringed': s['noexit_tail_ringed'],
+                                        'tail_known_and_its_end_cramped': s['noexit_tail_cramped']},
+            'tail_not_known_team_below_the_cap': {
+                'decisions': s['blind_open'], 'kept_2': s['blind_kept_2'], 'moved_out_of_the_rings': s['blind_moved_out'],
+                'moved_onto_a_ringed_tile': s['blind_moved_ringed'], 'other': s['blind_other'],
+                'length_sent_off': s['blind_child_length'],
+                'of_the_kept_2_tail_end_inside_the_parents_rings': s['blind_tail_end_ringed']},
             'what_it_did': {'split_kept_2': s['noexit_split_kept_2'],
                             'split_2_off_and_stayed_on_a_clean_tile': s['noexit_split_2_off_clean_tile'],
                             'split_2_off_and_stayed_on_a_ringed_tile': s['noexit_split_2_off_ringed_tile'],
@@ -834,6 +910,20 @@ def view(s):
             'by_what_was_open': {'keep_2': [s['noexit_want_keep2_answered'], s['noexit_want_keep2']],
                                  'stay': [s['noexit_want_stay_answered'], s['noexit_want_stay']],
                                  'move': [s['noexit_want_move_answered'], s['noexit_want_move']]}},
+        'bodies_that_left_by_a_stuck_keep_2': {
+            'all': s['kept2_children'], 'still_31plus': s['kept2_children_31plus'], 'length': s['kept2_child_length'],
+            'tail_end_inside_the_parents_rings': s['kept2_tail_end_ringed'],
+            'first_turn_of_those_31plus': {
+                'turns': s['child_first_turns'], 'ringed_tile_next_to_or_under_the_head': s['child_first_touch'],
+                'stuck': s['child_first_stuck'], 'stuck_with_no_way_out': s['child_first_noexit'],
+                'ended_ringed': s['child_first_ended_ringed'], 'died_acting': s['child_first_died_acting']},
+            'split_again_the_round_it_was_born': s['kept2_by_a_child_born_this_round'],
+            'keep_2_splits_by_chain_position_4_means_4_or_more': {str(k): s[f'kept2_depth{k}'] for k in range(1, 5)},
+            'dead_within_2_rounds': s['child_dead_soon'], 'length_of_those': s['child_dead_soon_length'],
+            'rammed_within_2_rounds': s['child_rammed_soon'], 'length_lost_to_those_rams': s['child_rammed_soon_length'],
+            'of_those_rams_the_birth_round': s['child_rammed_same_round'],
+            'of_those_rams_after_a_blind_split': s['child_rammed_soon_blind'],
+            'the_2_left_behind_rammed_within_2_rounds': s['keeper_rammed_soon']},
         'splits': s['splits'], 'splits_while_stuck': s['stuck_splits'],
         'length_shed_by_stuck_splits': s['stuck_length_shed'],
         'stuck_splits_leaving_a_31plus_dragon_on_a_ringed_tile': s['stuck_split_stays_ringed'],
@@ -937,8 +1027,12 @@ def main():
     bnear = 1000 * share(ball['ram_in_view_near'], ball['decisions'])
     cnear = 1000 * share(call['ram_in_view_near'], call['decisions'])
     ram_ok = cnear <= RAM_CUT * bnear if ram_seen else None
+    blind_n = call['blind_open']
+    blind_took = call['blind_kept_2'] + call['blind_moved_out']
+    blind_seen = blind_n >= BLIND_N
+    blind_ok = share(blind_took, blind_n) >= STUCK_OK if blind_seen else None
     passed = bool(target_seen and cut_ok and exit_ok is not False and split_ok is not False and move_ok is not False
-                  and ram_ok is not False)
+                  and ram_ok is not False and blind_ok is not False)
     why = []
     if ball['missed'] < TARGET_MIN:
         why.append(f"target not seen: base shows {ball['missed']} missed endings, {TARGET_MIN} needed")
@@ -956,6 +1050,9 @@ def main():
     if move_ok is False:
         why.append(f'no way out, not the least bad tile: {move_took} of {move_n} decisions with no split open ended on '
                    f'no worse a ring than the best single step, {STUCK_OK:.0%} needed')
+    if blind_ok is False:
+        why.append(f'tail not known, split not taken: {blind_took} of {blind_n} stuck decisions with no way out, the tail '
+                   f'not known and the team below the cap kept 2 (or moved out of the rings), {STUCK_OK:.0%} needed')
     if ram_ok is False:
         why.append(f"near rams in view not cut: {call['ram_in_view_near']} ({cnear:.2f} per 1000 decisions) against base "
                    f"{ball['ram_in_view_near']} ({bnear:.2f}), at most {RAM_CUT} x base allowed")
@@ -989,8 +1086,20 @@ def main():
         + seen_text(move_seen, STUCK_N)
         + f" (base, same counts: kept 2 {ball['noexit_split_kept_2']}, least bad tile {ball['noexit_least_bad_tile']}, "
         f"worse tile {ball['noexit_moved_worse_tile']} of {ball['stuck_no_way_out']}). Keep 2 was not open because: team at "
-        f"the 64 cap {call['noexit_at_cap']}, tail not known {call['noexit_tail_unknown']}, tail end ringed "
-        f"{call['noexit_tail_ringed']}. Stuck splits that left a 31+ dragon on a ringed tile: "
+        f"the 64 cap {call['noexit_at_cap']}, tail known and its end ringed {call['noexit_tail_ringed']}, tail known and "
+        f"its end cramped {call['noexit_tail_cramped']}. THIS ATTEMPT'S CHANGE, tail not known and team below the cap: "
+        f"{blind_n} stuck decisions with no way out (base {ball['blind_open']}); kept 2 {call['blind_kept_2']} (base "
+        f"{ball['blind_kept_2']}), moved out {call['blind_moved_out']}, moved onto a ringed tile "
+        f"{call['blind_moved_ringed']}, other {call['blind_other']}" + seen_text(blind_seen, BLIND_N)
+        + f"; length sent off by those splits {call['blind_child_length']}; tail end inside the parent's own rings "
+        f"{call['blind_tail_end_ringed']}. THE BODY THAT LEFT, switch on, all stuck keep-2 splits: "
+        f"{call['kept2_children']} ({call['kept2_children_31plus']} still 31+, {call['kept2_child_length']} length); on "
+        f"its first turn stuck with no way out {call['child_first_noexit']} of {call['child_first_turns']}; split again "
+        f"the round it was born {call['kept2_by_a_child_born_this_round']} (chain position 1 / 2 / 3 / 4+: "
+        f"{call['kept2_depth1']} / {call['kept2_depth2']} / {call['kept2_depth3']} / {call['kept2_depth4']}); rammed within "
+        f"2 rounds {call['child_rammed_soon']} ({call['child_rammed_soon_length']} length; base "
+        f"{ball['child_rammed_soon']}, {ball['child_rammed_soon_length']}); the 2 left behind rammed within 2 rounds "
+        f"{call['keeper_rammed_soon']}. Stuck splits that left a 31+ dragon on a ringed tile: "
         f"{ball['stuck_split_stays_ringed']} -> {call['stuck_split_stays_ringed']}. RAMS ON 31+ DRAGONS: {ball['rammed']} "
         f"-> {call['rammed']}; LENGTH LOST TO RAMS PER GAME {ball['rammed_length'] / g:.1f} -> "
         f"{call['rammed_length'] / g:.1f}. RAMMER IN VIEW at our last decision: {ball['rammer_was_in_view']} -> "
@@ -1008,7 +1117,9 @@ def main():
         f"{cv['pearls_per_100_decisions']}; wins {ball['win']} -> {call['win']}; pairs that played the very same game with "
         f"the switch on and off: {same} of {len(keys)}"
         + ('' if passed else '. NOT shown: ' + '; '.join(why)))
-    out = {'passed': passed, 'note': note, 'target_seen': bool(target_seen), 'mechanism_shown': bool(target_seen and cut_ok),
+    out = {'passed': passed, 'note': note, 'target_seen': bool(target_seen),
+           'mechanism_shown': bool(target_seen and cut_ok and blind_ok),
+           'blind_rule_seen': bool(blind_seen),
            'way_out_rule_seen': bool(exit_seen), 'split_rule_seen': bool(split_seen),
            'least_bad_rule_seen': bool(move_seen), 'ram_rule_seen': bool(ram_seen),
            'pairs': len(keys), 'pairs_playing_the_same_game': same, 'maps': maps,
@@ -1021,6 +1132,8 @@ def main():
                          'split_rule_counts': [split_took, split_n],
                          'least_bad_rule_seen': bool(move_seen), 'least_bad_rule_ok': move_ok,
                          'least_bad_rule_counts': [move_took, move_n],
+                         'blind_n': BLIND_N, 'blind_rule_seen': bool(blind_seen), 'blind_rule_ok': blind_ok,
+                         'blind_rule_counts': [blind_took, blind_n],
                          'ram_rule_seen': bool(ram_seen), 'ram_rule_ok': ram_ok,
                          'near_rams_in_view': [ball['ram_in_view_near'], call['ram_in_view_near']],
                          'near_rams_in_view_per_1000_decisions': [round(bnear, 3), round(cnear, 3)]},

@@ -3811,8 +3811,10 @@ class Bot {
         if (hit_escape(path, false, 0) || hit_escape(path, true, 0)) {
             return run();
         }
-        // The head keeps 2 where it stands and the rest leaves from the tail end, when that end is clean.
-        if (tail_index >= 0 && risk_at(tail_index) == 0 && ct.can_split(length - keep) && tail_room() >= CHILD_MIN_ROOM) {
+        // The head keeps 2 where it stands and the rest leaves from the tail end, unless that end is known to be
+        // ringed or cramped; a tail it does not know does not hold the split back.
+        bool const tail_fit = tail_index < 0 || (risk_at(tail_index) == 0 && tail_room() >= CHILD_MIN_ROOM);
+        if (tail_fit && ct.can_split(length - keep)) {
             split_off(length - keep);
             return true;
         }
