@@ -394,6 +394,18 @@ constexpr bool TR_STALL_RELEASE = true;
 constexpr int TR_STALL_ROUNDS = 12;
 constexpr int TR_STALL_ROOM = 6;
 constexpr int TR_STALL_SEEK = 30;
+// Card #55: outnumbered (herself counted, a draw counts, enemy heads of the last GHOST_ROUNDS rounds too), the queen
+// falls back to a spot where she lately saw more of ours than theirs; to her start tile only when she remembers none.
+constexpr bool QUEEN_FALLBACK = false;
+constexpr int QF_GUARD_RADIUS = 5;
+constexpr int QF_MEMORY = 40;
+constexpr int QF_HOLD = 2;
+constexpr int QF_SPOTS = 4;
+constexpr int QF_MERGE = 6;
+constexpr int QF_CROWD = 3;
+constexpr double QF_PULL = 30000.0;
+constexpr double QF_TIE_PULL = 300.0;
+constexpr int QF_TIE_SPAN = 2;
 constexpr bool QH_SCOUT = true;
 constexpr int QH_MAX_LEN = 4;
 constexpr int QH_REVENGE_ROUND = 100;
@@ -419,6 +431,12 @@ struct Ghost {
     int round = -1;
     int parts = 0;
     bool shared = false;
+};
+
+struct Spot {
+    int cell = -1;
+    int margin = 0;
+    int round = -1;
 };
 
 struct StrideEnd {
@@ -533,6 +551,9 @@ class Bot {
         if (queen_home.x < 0 && real_queen()) {
             queen_home = head;
         }
+        if (QUEEN_FALLBACK) {
+            fallback_update();
+        }
         if (QUEEN_HOME_CLOSED && !home_closed && real_queen() && round <= HOME_CHECK_ROUND && round % 2 == 0) {
             int const size = home_region_size();
             if (size >= HOME_MIN_CELLS) {
@@ -622,6 +643,10 @@ class Bot {
         }
         if (QG_CORNER && route_target < 0 && corner_target >= 0) {
             route_target = corner_target;
+        }
+        if (fallback_on()) {
+            route_target = -1;
+            escape_through = -1;
         }
         Direction best = pick_direction();
         if (IDLE_LOG > 0 && round - last_growth_round >= IDLE_LOG) {
@@ -3160,6 +3185,142 @@ class Bot {
         return dist_unseen >= 0 ? std::min(dist_unseen, TR_STALL_SEEK) : TR_STALL_SEEK;
     }
 
+    // Card #55: on for this turn; off on a turn she is trapped and moves as a plain dragon.
+    bool fallback_on() const {
+        return QUEEN_FALLBACK && fb_on && !qs_plain;
+    }
+
+    // Walking distance to `from` over open and unseen sides, bodies ignored, no portals.
+    void fallback_walk(int from, std::vector<int>& dist) {
+        dist.assign(cells, -1);
+        fb_queue.clear();
+        dist[from] = 0;
+        fb_queue.push_back(from);
+        for (std::size_t at = 0; at < fb_queue.size(); at++) {
+            Position const position = position_of(fb_queue[at]);
+            for (Direction const direction : Direction::get_direction_list()) {
+                std::uint8_t const edge = edge_at(position, direction);
+                if (edge != EDGE_OPEN && edge != EDGE_UNKNOWN) {
+                    continue;
+                }
+                int const next = index_of(position.add_dir(direction));
+                if (dist[next] >= 0) {
+                    continue;
+                }
+                dist[next] = dist[fb_queue[at]] + 1;
+                fb_queue.push_back(next);
+            }
+        }
+    }
+
+    // A free first step toward the target that no enemy head can reach this turn.
+    bool fallback_way(std::vector<int> const& dist) const {
+        int const here = dist[index_of(head)];
+        for (Direction const direction : Direction::get_direction_list()) {
+            if (edge_at(head, direction) != EDGE_OPEN) {
+                continue;
+            }
+            Position const next = head.add_dir(direction);
+            int const index = index_of(next);
+            if (enter_time[index] <= 1 && dist[index] >= 0 && dist[index] < here && risk_at(index) == 0 &&
+                !enemy_can_step_to(next)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Card #55: counts the heads and, when outnumbered, picks the fall-back target for this turn.
+    void fallback_update() {
+        fb_on = false;
+        fb_pull = false;
+        fb_lead = false;
+        if (!real_queen()) {
+            return;
+        }
+        int const ours = 1 + static_cast<int>(ally_heads.size());
+        // Enemy heads in view, and those she saw in the last GHOST_ROUNDS rounds.
+        int const theirs =
+            static_cast<int>(std::count_if(ghosts.begin(), ghosts.end(), [](Ghost const& g) { return !g.shared; }));
+        fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                      [this](Spot const& spot) { return round - spot.round > QF_MEMORY; }),
+                       fb_spots.end());
+        if (theirs < ours) {
+            // More of ours than theirs: the tile of the nearest teammate head in view is remembered, with the margin.
+            int nearest = -1;
+            for (Position const& ally : ally_heads) {
+                int const key = manhattan(head, ally) * cells + index_of(ally);
+                if (nearest < 0 || key < nearest) {
+                    nearest = key;
+                }
+            }
+            if (nearest >= 0) {
+                Position const seen = position_of(nearest % cells);
+                // A sighting within QF_MERGE tiles of a remembered spot replaces it.
+                fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                              [&](Spot const& spot) {
+                                                  return manhattan(position_of(spot.cell), seen) <= QF_MERGE;
+                                              }),
+                               fb_spots.end());
+                if (static_cast<int>(fb_spots.size()) >= QF_SPOTS) {
+                    fb_spots.erase(fb_spots.begin());
+                }
+                fb_spots.push_back(Spot{nearest % cells, ours - theirs, round});
+            }
+            return;
+        }
+        fb_on = true;
+        int const here = index_of(head);
+        fallback_walk(here, fb_other);
+        // Outnumbered within QF_HOLD steps on foot of a spot: it is no longer a place with company.
+        fb_spots.erase(std::remove_if(fb_spots.begin(), fb_spots.end(),
+                                      [this](Spot const& spot) {
+                                          return fb_other[spot.cell] >= 0 && fb_other[spot.cell] <= QF_HOLD;
+                                      }),
+                       fb_spots.end());
+        // Spots by steps on foot, each extra head of margin worth QF_CROWD steps; the newer one on a tie.
+        std::vector<std::array<int, 3>> order;
+        for (std::size_t k = 0; k < fb_spots.size(); k++) {
+            int const steps = fb_other[fb_spots[k].cell];
+            if (steps >= 0) {
+                order.push_back({steps - QF_CROWD * (fb_spots[k].margin - 1), steps, -static_cast<int>(k)});
+            }
+        }
+        std::sort(order.begin(), order.end());
+        // The first spot with an open way leads; all ways shut, keep-away leads and the first spot breaks ties.
+        for (std::size_t k = 0; k < order.size() && !fb_lead; k++) {
+            if (k == 1) {
+                fb_dist.swap(fb_other);
+            }
+            fallback_walk(fb_spots[static_cast<std::size_t>(-order[k][2])].cell, fb_dist);
+            fb_lead = fallback_way(fb_dist);
+        }
+        if (!order.empty()) {
+            if (!fb_lead && order.size() > 1) {
+                fb_dist.swap(fb_other);
+            }
+            fb_floor = 0;
+            fb_pull = true;
+            return;
+        }
+        // No spot left: her start tile is the last resort, and within QF_HOLD steps of it she holds.
+        if (queen_home.x < 0) {
+            return;
+        }
+        fallback_walk(index_of(queen_home), fb_dist);
+        if (fb_dist[here] < 0) {
+            return;
+        }
+        fb_lead = fb_dist[here] <= QF_HOLD || fallback_way(fb_dist);
+        fb_floor = QF_HOLD;
+        fb_pull = true;
+    }
+
+    // Steps gained on the fall-back target by ending on `cell`.
+    int fallback_gain(int cell) const {
+        return std::max(fb_dist[index_of(head)], fb_floor) - std::max(fb_dist[cell], fb_floor);
+    }
+
     bool portal_into_pocket(Position position, Direction direction) {
         if (!POCKET_PORTAL_BAN || POCKET_CAP <= 0) {
             return false;
@@ -5095,7 +5256,8 @@ class Bot {
         if (avail < length + 2.0) {
             cramped += PENALTY_TRAPPED * (length + 2.0 - avail);
         }
-        bool const released = stall_released();
+        bool const fall = fallback_on();
+        bool const released = stall_released() && !fall;
         if (!eats_cramped && tail_index >= 0 && !survey.reaches_tail && (NO_TAIL_ROOM <= 0 || avail < NO_TAIL_ROOM * length + 8.0) &&
             !(released && avail >= TR_STALL_ROOM * length + 8.0)) {
             cramped += PENALTY_NO_TAIL;
@@ -5106,14 +5268,18 @@ class Bot {
         last_pearls = survey.pearls;
         last_dead_end = (tail_index >= 0 || (QUEEN_DEAD_END && dead_queen())) && !survey.reaches_tail && room < room_wanted;
         double score = space - cramped;
+        // Card #55: a step short of room, which the fall-back pull must not buy.
+        bool boxed = last_dead_end || avail < length + 2.0 || (!survey.reaches_tail && room < length + 2.0);
         if (dead_queen() && QUEEN_ROOM > 0 && (last_dead_end || avail < length + QUEEN_ROOM)) {
             score -= QUEEN_DEAD_PENALTY;
+            boxed = true;
         }
         if (QUEEN_DEAD_END && dead_queen()) {
             int const need = length + 2;
             int const known = known_room(index_of(destination), need);
             if (known < need) {
                 score -= QUEEN_DEAD_PENALTY + QUEEN_KNOWN_STEP * (need - known);
+                boxed = true;
             }
         }
         if (QUEEN_MODE && QUEEN_GIVE_WAY > 0 && !is_queen()) {
@@ -5184,7 +5350,7 @@ class Bot {
         if (!is_leader() && pearl_here[index_of(destination)] && in_leader_pearl_zone(index_of(destination))) {
             score -= ZONE_PEARL_PENALTY;
         }
-        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH &&
+        if (CENTER_PULL > 0.0 && center_map && round < center_rounds && length <= CENTER_MAX_LENGTH && !fall &&
             static_cast<int>(enemy_heads.size()) - static_cast<int>(ally_heads.size()) <= center_margin &&
             std::max(target_bonus(survey.dist_pearl, pearl_weight), target_bonus(survey.dist_hot, WEIGHT_HOT)) <= 0.0) {
             score -= CENTER_PULL * (released ? stall_seek(survey.dist_unseen) : center_distance(destination));
@@ -5217,8 +5383,8 @@ class Bot {
             }
         }
 
-        int const guard_radius = queen_guard() ? QG_GUARD_RADIUS : QUEEN_GUARD_RADIUS;
-        if (is_queen() && guard_radius > 0) {
+        int const guard_radius = fall ? QF_GUARD_RADIUS : queen_guard() ? QG_GUARD_RADIUS : QUEEN_GUARD_RADIUS;
+        if ((is_queen() || fall) && guard_radius > 0) {
             for (Position const& enemy : enemy_heads) {
                 int const gap = manhattan(destination, enemy);
                 if (gap <= guard_radius) {
@@ -5244,6 +5410,12 @@ class Bot {
         }
         if (QG_HOME_RADIUS > 0 && queen_guard() && queen_home.x >= 0) {
             score -= QG_HOME_PENALTY * std::max(0, manhattan(destination, queen_home) - QG_HOME_RADIUS);
+        }
+        if (fall && fb_pull && fb_dist[index_of(destination)] >= 0) {
+            int const gain = fallback_gain(index_of(destination));
+            // Leading, the pull outweighs keep-away, and a boxed step ranks below any other step.
+            score += fb_lead ? QF_PULL * (std::clamp(gain, -STRIDE_MAX, STRIDE_MAX) - (boxed ? 2 : 0))
+                             : QF_TIE_PULL * std::clamp(gain, -QF_TIE_SPAN, QF_TIE_SPAN);
         }
         if (QG_SAFEZONE && zone_mode == 2) {
             score -= zone_cost(index_of(destination));
@@ -5610,6 +5782,14 @@ class Bot {
     bool center_map = false;
     int stall_best = -1;
     int stall_round = 0;
+    bool fb_on = false;
+    bool fb_pull = false;
+    bool fb_lead = false;
+    int fb_floor = 0;
+    std::vector<Spot> fb_spots;
+    std::vector<int> fb_dist;
+    std::vector<int> fb_other;
+    std::vector<int> fb_queue;
     int feeder_approach = FEEDER_APPROACH;
     int rally_fresh = RALLY_FRESH;
     Position known_leader_pos{};
