@@ -195,6 +195,7 @@ constexpr int QUEEN_SAFE_ROUND = 300;
 constexpr int QUEEN_SAFE_SPAN = 0;
 constexpr bool QUEEN_PORTAL_ALL = false;
 constexpr bool QUEEN_PORTAL_LAST = false;
+constexpr bool QUEEN_NO_BLIND_PORTAL = false;
 constexpr bool QUEEN_HOME_CLOSED = true;
 // Card #48: the queen takes no feeding role on any map (feeder, local drop, rally, assassin, endgame hunt).
 constexpr bool QUEEN_NO_FEED = true;
@@ -8077,6 +8078,9 @@ class Bot {
                 bool const scout = QH_SCOUT && qh_on ? static_cast<int>(k) == escape_through : scouting;
                 blind[k] = scout && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1) &&
                            !(QG_SAFEZONE && zone_blocked(head, direction));
+                if (QUEEN_NO_BLIND_PORTAL && real_queen()) {
+                    blind[k] = false;
+                }
             } else if (edge != EDGE_KELP) {
                 Position const destination = head.add_dir(direction);
                 dests[k] = index_of(destination);
