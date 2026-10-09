@@ -156,6 +156,7 @@ constexpr bool CUT_BODY_STRIDE = false;
 constexpr bool REACH_EATS = false;
 constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int QS_KEEP_LEN = 0;
+constexpr int QS_SHED_MAX = 0;
 constexpr int QS_KEEP_MIN_UNITS = 0;
 constexpr int QS_KEEP_ROUND = 0;
 constexpr int QS_KEEP_CLEAR = 0;
@@ -1804,7 +1805,7 @@ class Bot {
                 return;
             }
             // Her own tile is in reach too: she keeps 2 and the rest leaves as a child.
-            if (exposed && (ct.can_split(length - keep) && !(QUEEN_BOOT_LEN > 0 && queen_booting()))) {
+            if (exposed && (QS_SHED_MAX <= 0 || length <= QS_SHED_MAX) && (ct.can_split(length - keep) && !(QUEEN_BOOT_LEN > 0 && queen_booting()))) {
                 split_off(length - keep);
                 return;
             }
