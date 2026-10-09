@@ -1,5 +1,5 @@
 # Live switch profile applied by work/server_bot.py to the latest bot source.
-# Live bot one13 (submission 21377, 2026-10-09 08:07 KST) = main + this profile.
+# Live bot one14 (submission 21497, 2026-10-09 10:24 KST) = main + this profile.
 # Add or remove a line only after an online test.
 ZONE_NEARER true
 POCKET_LOOP true
@@ -45,4 +45,3 @@ BIG_ESCAPE_MIN_LENGTH 8
 TERRITORY_DECAY 16.0
 QUEEN_FAR_HEADS 2
 QUEEN_CORRIDOR_GUARD 6
-PORTAL_SCOUT_MIN_LEN 4
