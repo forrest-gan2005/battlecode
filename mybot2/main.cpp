@@ -157,6 +157,7 @@ constexpr bool REACH_EATS = false;
 constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int QS_KEEP_LEN = 0;
 constexpr int QS_SHED_MAX = 0;
+constexpr bool QS_LONG_WAIT = false;
 constexpr bool QUEEN_NO_RAM = false;
 constexpr int QUEEN_BLIND_STALL = 0;
 constexpr int QS_KEEP_MIN_UNITS = 0;
@@ -1834,6 +1835,11 @@ class Bot {
                 split_off(length - keep);
                 return;
             }
+            if (QS_LONG_WAIT && exposed && QS_SHED_MAX > 0 && length > QS_SHED_MAX &&
+                ct.can_split(keep) && !(QUEEN_BOOT_LEN > 0 && queen_booting())) {
+                split_off(keep);
+                return;
+            }
             // A tile an enemy must pay for beats one it hits for free.
             if (pay_open && risk_at(chosen_index) < 2) {
                 ct.make_move(best);
@@ -1849,8 +1855,10 @@ class Bot {
             // Trapped: for this turn she moves as a plain dragon.
             qs_plain = true;
             map_threats();
-            mark_trade_targets();
-            mark_hunt_targets();
+            if (!(QUEEN_NO_RAM && real_queen())) {
+                mark_trade_targets();
+                mark_hunt_targets();
+            }
             if (!(QUEEN_NO_RAM && real_queen()) && hunt_path(path)) {
                 ct.make_moves(path);
                 act_dirs = path;
@@ -8108,7 +8116,7 @@ class Bot {
                 blind[k] = scout && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1) &&
                            !(QG_SAFEZONE && zone_blocked(head, direction));
                 if (QUEEN_NO_BLIND_PORTAL && real_queen() &&
-                    !(QUEEN_BLIND_STALL > 0 && round >= QUEEN_BLIND_STALL && ct.get_unit_count() <= 2)) {
+                    !(QUEEN_BLIND_STALL > 0 && round >= QUEEN_BLIND_STALL && round < 5 * QUEEN_BLIND_STALL && ct.get_unit_count() <= 2)) {
                     blind[k] = false;
                 }
             } else if (edge != EDGE_KELP) {

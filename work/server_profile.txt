@@ -1,5 +1,5 @@
 # Live switch profile applied by work/server_bot.py to the latest bot source.
-# Live bot one19 (submission 21827, 2026-10-09 14:36 KST) = main + this profile.
+# Live bot one21 (submission 21857, 2026-10-09 14:49 KST) = main + this profile.
 # Add or remove a line only after an online test.
 ZONE_NEARER true
 POCKET_LOOP true
@@ -49,3 +49,4 @@ QUEEN_CORRIDOR_MATE true
 CENTER_MAX_CELLS 100000
 QUEEN_NO_RAM true
 QUEEN_BLIND_STALL 20
+QS_LONG_WAIT true
