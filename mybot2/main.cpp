@@ -157,6 +157,8 @@ constexpr bool REACH_EATS = false;
 constexpr int QS_ESCAPE_EVALS = 6;
 constexpr int QS_KEEP_LEN = 0;
 constexpr int QS_SHED_MAX = 0;
+constexpr bool QUEEN_NO_RAM = false;
+constexpr int QUEEN_BLIND_STALL = 0;
 constexpr int QS_KEEP_MIN_UNITS = 0;
 constexpr int QS_KEEP_ROUND = 0;
 constexpr int QS_KEEP_CLEAR = 0;
@@ -166,6 +168,8 @@ constexpr bool QUEEN_EXIT_STRICT = false;
 constexpr bool MATE_UNPIN = false;
 constexpr bool POCKET_KEEP_OUT = false;
 constexpr int QUEEN_CORRIDOR_GUARD = 0;
+constexpr bool QUEEN_CORRIDOR_MATE = false;
+constexpr bool QUEEN_CORRIDOR_TREE = false;
 constexpr bool SHORT_EVADE = false;
 constexpr int SHORT_EVADE_PAID = 0;
 constexpr bool SHORT_EVADE_ANY = false;
@@ -286,6 +290,7 @@ constexpr int LEADER_GUARD_RADIUS = 6;
 constexpr double LEADER_GUARD_PENALTY = 2000.0;
 constexpr bool UNSEEN_CLAIM = false;
 constexpr bool HARVEST_SPLIT = false;
+constexpr bool SPLIT_KNOWN_TAIL = false;
 constexpr bool HARVEST_PORTAL = false;
 constexpr bool TARGET_REACHABLE = false;
 constexpr bool SPAWN_CLEAR = false;
@@ -818,6 +823,10 @@ class Bot {
                 }
                 auto const* tile = ct.get_tile(position_of(cell));
                 auto const* part = tile ? tile->get_dragon() : nullptr;
+                if (QUEEN_CORRIDOR_MATE && corridor_choice()->attack && part && part->get_team() == ct.get_team() &&
+                    part->get_id() != ct.get_id()) {
+                    return false;
+                }
                 return part && (part->get_id() != ct.get_id() ||
                                std::find(start.body.begin(), start.body.end(), cell) == start.body.end());
             };
@@ -874,7 +883,7 @@ class Bot {
                             std::find(free_cells.begin(), free_cells.end(), next) == free_cells.end()) {
                             free_cells.push_back(next);
                         }
-                        if (room && free_cells.size() >= proposed.body.size() + 2) {
+                        if (!QUEEN_CORRIDOR_TREE && room && free_cells.size() >= proposed.body.size() + 2) {
                             return false;
                         }
                         Move forward = move;
@@ -919,6 +928,22 @@ class Bot {
                 }
                 best = static_cast<int>(k);
                 best_score = choice.scores[k];
+            }
+            if (QUEEN_CORRIDOR_MATE && best < 0) {
+                for (std::size_t k = 0; k < directions.size(); k++) {
+                    Move next = start;
+                    if ((best >= 0 && choice.scores[k] <= best_score) || step_index(ct.get_position(), directions[k]) < 0 ||
+                        unknown(ct.get_position(), directions[k]) || !step(next, directions[k], false)) {
+                        continue;
+                    }
+                    corridor_choice()->attack = true;
+                    bool const dead = rejected(next);
+                    corridor_choice()->attack = false;
+                    if (!dead) {
+                        best = static_cast<int>(k);
+                        best_score = choice.scores[k];
+                    }
+                }
             }
             if (best >= 0) {
                 act_dirs.assign(1, directions[static_cast<std::size_t>(best)]);
@@ -1826,14 +1851,14 @@ class Bot {
             map_threats();
             mark_trade_targets();
             mark_hunt_targets();
-            if (hunt_path(path)) {
+            if (!(QUEEN_NO_RAM && real_queen()) && hunt_path(path)) {
                 ct.make_moves(path);
                 act_dirs = path;
                 remember_path(path);
                 return;
             }
             best = pick_direction();
-            if (ram_path(path)) {
+            if (!(QUEEN_NO_RAM && real_queen()) && ram_path(path)) {
                 ct.make_moves(path);
                 act_dirs = path;
                 remember_path(path);
@@ -2326,6 +2351,9 @@ class Bot {
         }
         
         if (tail_index < 0) {
+            if (SPLIT_KNOWN_TAIL && round > 0) {
+                return 0;
+            }
             return child;
         }
         
@@ -8079,7 +8107,8 @@ class Bot {
                 bool const scout = QH_SCOUT && qh_on ? static_cast<int>(k) == escape_through : scouting;
                 blind[k] = scout && !usable && leads_to_unknown(head, direction) && !mouth_fresh(-1) &&
                            !(QG_SAFEZONE && zone_blocked(head, direction));
-                if (QUEEN_NO_BLIND_PORTAL && real_queen()) {
+                if (QUEEN_NO_BLIND_PORTAL && real_queen() &&
+                    !(QUEEN_BLIND_STALL > 0 && round >= QUEEN_BLIND_STALL && ct.get_unit_count() <= 2)) {
                     blind[k] = false;
                 }
             } else if (edge != EDGE_KELP) {
