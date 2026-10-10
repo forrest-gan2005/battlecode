@@ -1,5 +1,5 @@
 """Explain missed estimates from local evidence; persist one notice per deadline."""
-from collections import Counter, deque
+from collections import Counter
 import datetime as dt
 import json
 from pathlib import Path
@@ -29,7 +29,7 @@ def json_rows(path):
 
 
 def ai_reason(spec):
-    counts, activities, seen, last = Counter(), Counter(), set(), deque(maxlen=2)
+    activities, seen, last = Counter(), set(), None
     for item in json_rows(spec.get('log', '')):
         if not isinstance(item, dict):
             continue
@@ -44,12 +44,13 @@ def ai_reason(spec):
             if key:
                 seen.add(key)
             name = block.get('name', 'unknown')
-            counts[name] += 1
             args = block.get('input') or {}
             if not isinstance(args, dict):
                 args = {}
-            desc = args.get('description') or args.get('command') or args.get('file_path') or name
-            last.append(compact(desc, 72))
+            desc = args.get('description') or ''
+            if desc:
+                last = ' '.join(str(desc).split()).rstrip('…. ')[:90].rstrip('…. ')
+                last = last[:1].lower() + last[1:]
             command = str(args.get('command', ''))
             evidence = str(desc) + ' ' + command
             if name == 'Read' or (name == 'Bash' and re.search(r'\b(cat|sed|head|tail|rg|grep)\b', command)):
@@ -63,13 +64,19 @@ def ai_reason(spec):
                     activities['builds'] += 1
                 elif re.search(r'\b(ab[23]\.py|unswbc|replay|games?|runq)\b', evidence, re.I):
                     activities['game/replay runs'] += 1
-    summary = ', '.join(f'{n} {name}' for name, n in activities.items())
-    types = ', '.join(f'{n} {name}' for name, n in counts.items())
-    reason = f'still working: {sum(counts.values())} tool calls so far'
-    if summary or types:
-        reason += ' (' + compact(summary or types, 110) + ')'
-    reason += '; last: ' + ('; '.join(repr(x) for x in last) if last else 'no tool descriptions available')
-    return compact(reason)
+    dominant = activities.most_common(1)
+    if dominant and dominant[0][0] == 'identity checks':
+        return "re-checking that it plays the same when off"
+    if dominant and dominant[0][0] == 'game/replay runs':
+        return 'running games and checking how it plays'
+    if last:
+        return last
+    return {'build': 'still editing and checking the change',
+            'task': 'still editing and checking the change',
+            'adopt': 'still checking how the change fits',
+            'ladder': 'still reading our new ladder games',
+            'look': 'still checking how it plays',
+            'verdict': 'still reviewing the results'}.get(spec.get('step'), 'still working through this step')
 
 
 def longest_run(root, step):
@@ -111,10 +118,10 @@ def batch_progress(spec, elapsed):
     count = len(done)
     rate = count / elapsed if elapsed > 0 else 0
     if not planned or not rate:
-        return 'game progress unavailable; unknown, checking again in 15 min', 15, False
+        return 'checking game progress', 15, False
     if count >= planned:
-        return f'all {planned} games done; post-game checks still running', 5, True
-    return (f'games are slower than planned: {count} of {planned} done, {rate:.1f}/min',
+        return 'all games are done; checking the results', 5, True
+    return (f'games are taking longer than planned: {count} of {planned} done',
             max(5, (planned - count) / rate), True)
 
 
@@ -136,14 +143,14 @@ def external_holder(path):
         result = subprocess.run(['ps', '-p', holder['pid'], '-o', 'command='], capture_output=True, text=True, timeout=5)
         command = result.stdout.strip() or holder['command']
         scripts = re.findall(r'(?:[\w./-]+/)?[\w-]+\.py\b', command)
-        description = 'pool validation (work/pool.py)' if any(s.endswith('/pool.py') for s in scripts) else compact(command, 100)
-        return f"{description} (pid {holder['pid']})"
+        return 'pool validation' if any(s.endswith('/pool.py') for s in scripts) else 'another local job'
     except (OSError, subprocess.SubprocessError):
         return None
 
 
-def lock_reason(root, locks, resources, path, now, queued=()):
+def lock_reason(root, locks, resources, path, now, queued=(), describe_external=True):
     holders, remaining, unknown, matched = [], [], False, set()
+    holder_info = []
     for file in Path(root).glob('**/jobs/*/job.json'):
         job = file.parent
         if job == Path(path) or (job / 'done.json').exists():
@@ -156,30 +163,50 @@ def lock_reason(root, locks, resources, path, now, queued=()):
             late = read(job / 'late.json', {}).get('notice', {})
             if late.get('waiting') or late.get('started') != iso_time(job_start(job, spec)):
                 late = {}
+            started = job_start(job, spec)
+            planned = spec.get('eta_minutes', eta_minutes(root, spec['step']))
+            elapsed = (now - started) / 60
             deadline = (dt.datetime.fromisoformat(late['new_eta_at']).timestamp() if late.get('new_eta_at')
-                        else job_start(job, spec) + spec.get('eta_minutes', eta_minutes(root, spec['step'])) * 60)
+                        else started + planned * 60)
             left = (deadline - now) / 60
             matched.update(shared)
             if left <= 0 or late.get('eta_known') is False:
                 unknown = True
-                estimate = 'estimate overdue'
             else:
                 remaining.append(left)
-                estimate = f'about {left:.0f}m remaining'
-            holders.append(f"{card_ref(spec)} {spec['step']} ({estimate})")
+            holder_info.append({'job': str(job), 'card': spec['number'],
+                                'name': spec.get('name', ''), 'title': spec.get('title', ''),
+                                'step': spec['step'], 'late': bool(late) or
+                                (elapsed > planned * 1.25 and elapsed - planned >= 5)})
+            label = 'the ladder review' if spec['step'] == 'ladder' else card_ref(spec)
+            holders.append(label)
         except (OSError, ValueError, TypeError, KeyError):
             continue
     for resource in sorted(set(resources) - matched):
         lockfile = Path(locks) / f'{resource}.lock'
         if busy(lockfile):
-            holders.append(external_holder(lockfile) or f'{resource} lock holder unidentified')
+            holders.append((external_holder(lockfile) if describe_external else None) or 'another local job')
             unknown = True
     if not holders:
         unknown = True
-    reason = 'waiting for ' + '; '.join(holders) if holders else 'lock holder unidentified'
-    if unknown:
-        reason += '; unknown, checking again in 15 min'
-    return compact(reason), max(remaining, default=0), not unknown
+    reason = 'waiting for ' + '; '.join(holders) if holders else 'the slot is still busy'
+    return compact(reason), max(remaining, default=0), not unknown, holder_info
+
+
+def waiting_cards(root, resources, path):
+    cards = {}
+    for file in Path(root).glob('**/jobs/*/late.json'):
+        if file.parent == Path(path) or (file.parent / 'done.json').exists() or busy(file.parent / 'lease'):
+            continue
+        try:
+            state = read(file, {})
+        except (OSError, ValueError):
+            continue
+        if state.get('phase') == 'waiting' and set(resources) & set(state.get('resources', [])):
+            card = state.get('card')
+            if card:
+                cards[card['number']] = card
+    return list(cards.values())
 
 
 def check_late(root, locks, card, step, path, timing, resources=(), queued=(), now=None):
@@ -194,6 +221,9 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
     phase = 'waiting' if waiting else f'running:{started}'
     if state.get('phase') != phase:
         state = {'phase': phase, 'started': now if waiting else started, 'level': state.get('level', 0)}
+    state.update(card={'number': card['number'], 'title': card.get('title', ''),
+                       'name': card.get('name') or timing.get('name', '')},
+                 step=step, queue=timing.get('queue'), resources=list(resources))
     if state['started'] is None:
         return {'late': False}
     elapsed = max(0, (now - state['started']) / 60)
@@ -201,10 +231,21 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
     prior = state.get('notice')
     due = (now > state['deadline'] if prior else elapsed >= 15 if waiting
            else elapsed > planned * 1.25 and elapsed - planned >= 5)
+    holders = []
+    if waiting:
+        reason, wait, known, holders = lock_reason(root, locks, resources, path, now, queued, describe_external=due)
+        state['holders'] = holders
+        covered = [h['job'] for h in holders if h['late']]
+        if covered:
+            state['covered_by'] = covered
+            write(path / 'late.json', state)
+            return {'late': False, 'holders': holders, 'covered_by': covered,
+                    'waiting_started': iso_time(state['started'])}
+        state.pop('covered_by', None)
     if due:
-        known, wait = True, None
+        if not waiting:
+            known, wait = True, None
         if waiting:
-            reason, wait, known = lock_reason(root, locks, resources, path, now, queued)
             minutes = wait + planned if known else 15
         elif step in ('mechanism', 'outcome'):
             reason, minutes, known = batch_progress(spec, elapsed)
@@ -217,6 +258,8 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
         level = state['level'] + 1
         deadline = now + (wait if waiting and known else minutes) * 60
         notice = append_event(path, event_spec, 'late', now,
+                              job=str(path), holders=holders,
+                              waiters=waiting_cards(root, spec.get('resources', []), path) if not waiting else [],
                               event_id=f'{path}:{phase}:{state["started"]}:{level}', level=level,
                               started=iso_time(state['started']), planned_minutes=planned,
                               elapsed_minutes=elapsed, reason=compact(reason), waiting=waiting,
@@ -230,5 +273,5 @@ def check_late(root, locks, card, step, path, timing, resources=(), queued=(), n
     notice = state.get('notice')
     return ({'late': True, **{k: notice[k] for k in ('reason', 'new_eta_minutes', 'new_eta_at',
              'new_start_at', 'eta_known', 'level')}, 'elapsed_minutes': elapsed,
-             'waiting_started': iso_time(state['started']) if waiting else None}
-            if notice else {'late': False})
+             'waiting_started': iso_time(state['started']) if waiting else None, 'holders': holders}
+            if notice else {'late': False, 'holders': holders})
