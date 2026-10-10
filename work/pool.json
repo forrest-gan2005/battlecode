@@ -1,0 +1,38 @@
+{
+  "hunter": {
+    "source": "mybot2",
+    "toggles": {
+      "QUEEN_HUNT": true,
+      "QUEEN_CHASE_DIST": 8
+    }
+  },
+  "rammer": {
+    "source": "mybot2",
+    "toggles": {
+      "AGGRESSIVE_MAX_CELLS": 100000,
+      "TRADE_LOCAL_EDGE": -10
+    }
+  },
+  "assassin": {
+    "source": "mybot2",
+    "toggles": {
+      "ASSASSIN_MOD": 2,
+      "ASSASSIN_MIN": 2,
+      "ASSASSIN_TARGET": 12
+    }
+  },
+  "nostride": {
+    "source": "mybot2",
+    "toggles": {
+      "STRIDE": false
+    }
+  },
+  "v61": {
+    "source": "v61",
+    "toggles": {}
+  },
+  "live": {
+    "source": "mybot2",
+    "toggles": {}
+  }
+}

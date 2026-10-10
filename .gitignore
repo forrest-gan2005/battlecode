@@ -48,6 +48,7 @@ work/share/
 work/symtest/
 work/tdtest/
 work/*.json
+!work/pool.json
 work/*.pkl
 work/*.log
 work/*.txt
