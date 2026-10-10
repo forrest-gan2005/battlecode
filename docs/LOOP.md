@@ -6,7 +6,7 @@ Candidate PR titles start with the card ref: `Candidate #27 passage`.
 PR numbers appear only inside links labeled `PR`; keep following the card number.
 
 The loop takes idea and task cards from the board, builds them, tests them, and brings decisions back to us.
-Task cards go first, then Zhe's ideas, other humans' ideas, and AI ideas last.
+Tasks go first (oldest first), then people take turns (Zhe, QWQ, 준싱); AI gets a slot after every 3 human starts, or when no human idea is ready.
 One GitHub state label tells everyone what happens next, even after a restart.
 People answer questions, check the intended behaviour, and approve releases.
 The loop never uploads by itself or requests ranked games.
@@ -39,11 +39,10 @@ The ladder is the online competition and its game history. After each new batch 
 | Pick order | Cards |
 |---|---|
 | 1 | `type:task`: changes that must preserve play |
-| 2 | `by:zhe`: ideas Zhe is confident are real improvements; always clarify and look together |
-| 3 | Other human idea cards |
-| 4 | `by:ai`: hypotheses from our latest ladder games |
+| 2 | Human ideas: least recently served author first (never served first), oldest card within that author |
+| 3 | `by:ai`: when no humans are ready, plus one slot after 3 human starts |
 
-Within a group, pick the oldest ready card first. Waiting for a person does not block work on other cards.
+Starts (`ready → building` or `ready → needs-info`) update `~/meow-loop-out/fair.json`; the same rotation orders AI and game-batch lock waiters. Zhe still always clarifies and checks replays. Waiting for a person does not block work on other cards.
 
 ## Task cards
 
@@ -55,7 +54,7 @@ The AI implements the task as it will ship and runs the card's check (unit test,
 The runner independently requires replay identity against the current base (latest main release / previous version) on the old 10 maps × 2 seeds, both sides, plus a passing task-specific check.
 Success posts `[check]` after the three plain summary lines and sets `tested`; the author chooses candidate, rejected or inconclusive.
 Identity failure returns to `ready`: “this changes play; make it an idea card or fix it”. Other check failures also return to ready with evidence.
-Tasks have priority over `by:zhe`, other humans and `by:ai`; oldest first within each group.
+Tasks first; human authors rotate by least recent start, oldest within each author; AI gets every fourth idea slot.
 
 ## One state per card
 
