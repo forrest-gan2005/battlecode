@@ -1,190 +1,155 @@
-# meow: UNSW Battlecode 2026
+# meow：UNSW Battlecode 2026
 
-中文版: branch [`qwq/readme-zh`](../../tree/qwq/readme-zh)
+English: branch [`qwq/readme`](../../tree/qwq/readme)
 
-This is the team repository of **meow** (team 1119) for UNSW Battlecode 2026. In this two-week contest, teams write
-autonomous agents for a snake-like game on a wrap-around grid. The agents play each other on a public ladder and then
-in a knockout bracket on maps nobody has seen.
+这是 **meow**（1119 号队伍）参加 UNSW Battlecode 2026 的团队仓库。这是一场为期两周的比赛：各队为一个在环形网格上进行的「贪吃蛇」类游戏编写自主智能体，先在公开天梯上互相对战，再在全新、未公开的地图上打淘汰赛。
 
-This README is written from my side of the project (QWQ, [forrest-gan2005](https://github.com/forrest-gan2005)). I
-built the base bot that the team shipped, the local testing setup that every change went through, and most of the
-strategy work: reading replays, finding why we lost, and deciding what to try next.
+这份 README 从我的角度来写（QWQ，[forrest-gan2005](https://github.com/forrest-gan2005)）。我负责：
+- 团队最终上线的基础 bot；
+- 所有改动都要经过的本地测试体系；
+- 大部分策略工作：看录像、找输的原因、决定下一步试什么。
 
-## At a glance
+## 概览
 
 | | |
 |---|---|
-| Contest | UNSW Battlecode 2026, 2026-09-25 to 2026-10-10 |
-| Team | QWQ (me), jun ([juntegral](https://github.com/juntegral)) and Zhe ([zhex0121](https://github.com/zhex0121)); the team formed on 2026-10-02 |
-| My part | Base bot, local testing rig and A/B method, strategy and replay analysis |
-| Final bot | `one21`: the base bot in `mybot2/` (8,657 lines of C++ on branch `one15-profile`) plus a profile of 49 switch values |
-| Ladder | Peak rank **10**, final rank **38** |
-| Qualifiers | Seed 36. Won 7-0 against Extreme Maestro and 6-1 against Knight Capital, then lost 2-5 to PhoBoDacBiet (seed 29) in the round of 64 |
-| Scale | About 60 uploaded versions (v9 to v61, then the team's `one*` line), about 45,000 recorded local games, hundreds of generated maps for unseen-map testing |
+| 比赛 | UNSW Battlecode 2026，2026-09-25 至 2026-10-10 |
+| 队伍 | QWQ（我）、jun（[juntegral](https://github.com/juntegral)）、Zhe（[zhex0121](https://github.com/zhex0121)）；2026-10-02 组队 |
+| 我的部分 | 基础 bot、本地测试与 A/B 方法、策略与录像分析 |
+| 最终 bot | `one21`：`mybot2/` 里的基础 bot（`one15-profile` 分支上共 8,657 行 C++）加上 49 个开关取值组成的配置 |
+| 天梯 | 最高第 **10** 名，最终第 **38** 名 |
+| 资格赛 | 36 号种子。7-0 胜 Extreme Maestro，6-1 胜 Knight Capital，64 强 2-5 负于 PhoBoDacBiet（29 号种子） |
+| 规模 | 约 60 个上传版本（v9 到 v61，之后是团队的 `one*` 系列）；约 45,000 局有记录的本地对局；几百张用于「未见地图」测试的生成地图 |
 
-## The game in brief
+## 游戏简介
 
-- Each team controls dragons: a head followed by body segments.
-  - A dragon moves one tile per turn and grows by eating pearls.
-  - It can split into two dragons; each part must be at least 2 long.
-  - A sprint covers several tiles in one turn. The first ceil(L/4) steps are free; each later step costs a segment.
-- Moving into a wall, a body or another head kills the dragon, and its body turns into pearls. Head-on kills both.
-- Every map wraps around (a torus). Edges between tiles can be open, kelp (a wall) or a portal. Each dragon sees only
-  a 7x7 window, and teammates can talk only by sonar: one 64-bit message per direction per turn.
-- After the Sprint tournament the rules changed: dragons 0 and 1 became queens. A game not ended by elimination is
-  decided at round 500 by the longer queen, where a dead queen counts as 0. Ties go to the longest dragon, then to
-  total length.
-- Each dragon runs as its own program under a per-turn compute limit. The unit cap is 64 dragons per team.
+- 每队控制若干条龙：一个龙头加若干节身体。
+  - 龙每回合移动一格，吃珍珠变长。
+  - 龙可以分裂成两条，每部分至少 2 长。
+  - 冲刺一回合可以走多格：前 ceil(L/4) 步免费，之后每多走一步消耗一节身体。
+- 撞墙、撞到身体或别的龙头都会死，身体变成珍珠；两个龙头相撞则同归于尽。
+- 所有地图上下、左右相连（环面）。格子之间的边可以是通路、海带（墙）或传送门。每条龙只能看到 7×7 的范围，队友之间只能靠声呐通信：每回合每个方向一条 64 位消息。
+- Sprint 赛之后规则改了：0 号和 1 号龙成为女王。没有在全灭中分出胜负的对局，在第 500 回合比较女王长度，死掉的女王算 0。平局再比最长的龙，最后比总长度。
+- 每条龙都是一个独立程序，每回合有计算量上限。每队最多 64 条龙。
 
-## What I built
+## 我做了什么
 
-### 1. The base bot (`mybot2/`)
+### 1. 基础 bot（`mybot2/`）
 
-The bot the team shipped is my base bot with the team's switches on top. Teammates added behaviour as default-off
-switches; I wrote the core it runs on. One C++ file, one dragon per process, and the same decision loop every turn:
+团队最终上线的 bot，就是我的基础 bot 加上团队各成员的开关。队友把新行为写成默认关闭的开关，底层核心由我编写。整个 bot 是一个 C++ 文件，每条龙一个进程，每回合走同一套决策流程：
 
-1. **Observe and remember** (`observe`, `extend_trail_from_vision`)
-   - Keeps a map memory: when each tile was last seen, edge types, pearls and spawn timers.
-   - Tracks bodies seen in vision and when each body cell will be free again (`enter_time`). Pathing uses this to
-     step into cells that empty in time.
-   - Keeps "ghosts": the last known positions of enemy heads that are now out of sight.
-2. **Infer the map** (`update_symmetry`)
-   - Every map is a mirror or a 180° rotation, and a tile shares its pearl countdown with its mirror tile.
-   - The bot tests the three symmetry hypotheses against what it has seen and keeps the one that survives. It then
-     knows edges and spawn timers on the far side of the map without seeing them.
-3. **Talk** (`hear_sonar`, `broadcast_leader`, `sonar_codec.hpp`)
-   - Sonar messages are sealed with a per-map, per-team key so that enemy messages are rejected.
-   - They carry the current leader (id, length, position), enemy head sightings including the enemy queen, portal
-     mouths, and safe-zone data.
-4. **Survey and score** (`Survey`, `pick_direction`, `score_step`)
-   - For each legal step, the bot runs a breadth-first search of the reachable region. It records:
-     - the distances to the nearest pearl, a soon-to-spawn tile, a fountain, an unseen tile and a portal to scout;
-     - the free room behind the step, and whether the step can reach the tail.
-   - A step's score adds target rewards that fall off with distance to free room and threat terms.
-   - Portal steps are scored through the exit tile.
-5. **Act** (`act`, `take_turn`), in order of priority:
-   - escapes when cornered and sprint escapes;
-   - queen routines;
-   - trades and hunts;
-   - splits, harvest loops and strides (free sprint steps toward the target);
-   - otherwise a single best step.
-6. **Roles** emerge from shared state and do not need a central planner:
-   - The **leader** is the longest dragon. It keeps growing, and late in the game other dragons feed it.
-   - **Feeders** die next to the leader so that their bodies turn into pearls for it.
-   - **Traders** swap a short dragon for a longer enemy in a head-on collision.
-   - **Hunters** go after the enemy queen.
-   - The **queen** follows its own safety rules.
+1. **观察与记忆**（`observe`、`extend_trail_from_vision`）
+   - 维护地图记忆：每格最后一次被看到的时间、边的类型、珍珠和刷新倒计时。
+   - 记录视野中的身体，以及每个身体格什么时候会空出来（`enter_time`）。寻路据此可以走进「到达时已经空出来」的格子。
+   - 记录「幽灵」：已经离开视野的敌方龙头最后出现的位置。
+2. **推断地图**（`update_symmetry`）
+   - 所有地图都是镜像或 180° 旋转对称的，一个格子和它的镜像格共享珍珠倒计时。
+   - bot 用已看到的信息检验三种对称假设，保留唯一成立的那个。这样不用亲眼看到，也能知道地图另一侧的边和刷新倒计时。
+3. **通信**（`hear_sonar`、`broadcast_leader`、`sonar_codec.hpp`）
+   - 声呐消息用按地图、按队伍生成的密钥加密，敌方消息会被丢弃。
+   - 消息内容包括：当前领头龙（编号、长度、位置）、看到的敌方龙头（包括敌方女王）、传送门入口、安全区信息。
+4. **探查与打分**（`Survey`、`pick_direction`、`score_step`）
+   - 对每一步合法走法，bot 对可到达区域做一次广度优先搜索，记录：
+     - 到最近的珍珠、即将刷新的格子、泉眼、未探索的格子、待探查的传送门的距离；
+     - 这一步之后剩余的活动空间，以及能否回到自己的尾巴。
+   - 每步的得分 = 随距离衰减的目标奖励 + 活动空间 + 威胁项。
+   - 传送门的那一步按出口格来打分。
+5. **行动**（`act`、`take_turn`），按优先级：
+   - 被困时逃生，以及冲刺逃生；
+   - 女王专用流程；
+   - 换子和追杀；
+   - 分裂、刷珍珠循环、跨步（朝目标使用免费冲刺步）；
+   - 以上都不适用时，走一步最佳方向。
+6. **角色** 由共享状态自然产生，不需要中央调度：
+   - **领头龙** 是最长的龙，持续变长；后期其他龙给它喂食。
+   - **喂食者** 在领头龙身边死去，让身体变成珍珠给它吃。
+   - **换子者** 用短龙和对方更长的龙对撞。
+   - **猎手** 去追杀敌方女王。
+   - **女王** 遵循自己的一套安全规则。
 
-Every new behaviour is a `constexpr` switch at the top of `main.cpp`, off by default. A build with every switch off
-plays the same games as the build before it. The live bot is the source plus a short profile
-([`work/server_profile.txt`](work/server_profile.txt)), and [`work/server_bot.py`](work/server_bot.py) produces the
-uploaded file from them. This made it possible to ship many versions in the last days without a crash or a doubt about
-what was live.
+所有新行为都是 `main.cpp` 顶部的一个 `constexpr` 开关，默认关闭。所有开关都关闭时，打出的对局和改动前完全相同。线上 bot = 源码 + 一份简短的配置（[`work/server_profile.txt`](work/server_profile.txt)），由 [`work/server_bot.py`](work/server_bot.py) 生成上传文件。正因如此，最后几天上线了很多个版本，既没有崩溃，也始终清楚线上跑的是什么。
 
-`mybot/` is the earlier, simpler bot (3,053 lines). `v60/` and `v61/` are submissions kept as fixed opponents.
+`mybot/` 是更早、更简单的 bot（3,053 行）。`v60/` 和 `v61/` 是保留下来作为固定对手的提交版本。
 
-### 2. Local testing
+### 2. 本地测试
 
-A change was only worth shipping if it won more games than the build before it on the same maps and the same seeds.
-The ladder was too noisy for that, so the measuring was done locally.
+一个改动值得上线，前提是它在同样的地图、同样的种子上比改动前赢得更多。天梯噪声太大，做不了这种比较，所以测量都在本地做。
 
-- **Paired A/B runner** ([`work/ab3.py`](work/ab3.py), [`work/ab2.py`](work/ab2.py))
-  - Builds one variant per `TAG@source:SWITCH=value,...` spec and plays every variant against a fixed opponent on
-    every map, from both sides, with fixed seeds.
-  - Records every game (map, seed, side, result, lengths), so that two runs can be compared game by game
-    ([`work/paired.py`](work/paired.py)).
-  - The Mac build is deterministic, so a game that changes outcome changed because of the switch.
-  - [`work/distq.py`](work/distq.py) spreads games over a second machine. It is not fully deterministic across CPU
-    architectures, so it was kept out of mechanism checks.
-- **Map sets** ([`tune_runs/`](tune_runs))
-  - The official maps (`official127`), and the new ladder maps rebuilt from replays (`newmaps`, by
-    [`work/mkfrom2.py`](work/mkfrom2.py)).
-  - The Sprint maps (`sprintmaps`).
-  - Generated maps of several styles (blobs, islands, mazes, open, portals, rooms, stripes) and sizes, made by
-    [`work/mkgen.py`](work/mkgen.py).
-  - The generated maps are split into a development set (`genmaps`) and held-out sets (`genheld`, `genfresh`). The
-    held-out sets were used only to confirm a result, because the qualifiers were played on unseen maps.
-- **Sparring partners**
-  - Old versions (`v60/`, `v61/`, `baseline/`).
-  - A swarm bot that trades heads one for one (`swarm/`); it reproduced a ladder loss we never saw against our own
-    versions.
-  - A queen hunter that rams queens. Against a passive opponent, queen-safety changes looked useless.
-- **Replay analysis** ([`replay.py`](replay.py) and the scripts in [`work/`](work))
-  - Decodes the engine's packed replays and rebuilds the full game state: bodies, pearls, splits, deaths and causes.
-  - The scripts measure what wins hide:
-    - pearls eaten by round 50 and 100 (more sensitive than wins and deterministic);
-    - queen fates ([`work/qram.py`](work/qram.py));
-    - where pearls are eaten ([`work/tileeat.py`](work/tileeat.py), [`work/eatcmp.py`](work/eatcmp.py));
-    - which spawns can be reached without portals ([`work/reach.py`](work/reach.py));
-    - the ladder loss classifier ([`work/lossan.py`](work/lossan.py)).
-- **Ladder crawling** ([`work/ladfetch.py`](work/ladfetch.py), [`work/crawl.py`](work/crawl.py))
-  - Collects our series and the games among top teams from the public site, so that the analysis could compare us
-    with them on the same maps.
-- **Compute check**
-  - Before an upload, the bot ran in the engine's sandbox on the largest maps, and the worst turn had to stay well
-    under the limit.
+- **配对 A/B 测试**（[`work/ab3.py`](work/ab3.py)、[`work/ab2.py`](work/ab2.py)）
+  - 按 `TAG@源码目录:开关=值,...` 为每个变体编译一份，在每张图上以固定种子、分别从两边对固定对手各打一局。
+  - 记录每一局（地图、种子、方向、胜负、长度），两次运行可以逐局对比（[`work/paired.py`](work/paired.py)）。
+  - Mac 上的构建结果是确定的，所以一局结果变了，就是开关造成的。
+  - [`work/distq.py`](work/distq.py) 可以把对局分到第二台机器上跑；但不同 CPU 架构之间不完全确定，所以机制检查不用它。
+- **地图集**（[`tune_runs/`](tune_runs)）
+  - 官方地图（`official127`），以及从录像重建的天梯新地图（`newmaps`，由 [`work/mkfrom2.py`](work/mkfrom2.py) 生成）。
+  - Sprint 赛地图（`sprintmaps`）。
+  - 多种风格（团块、岛屿、迷宫、开阔、传送门、房间、条纹）和尺寸的生成地图，由 [`work/mkgen.py`](work/mkgen.py) 生成。
+  - 生成地图分为开发集（`genmaps`）和留出集（`genheld`、`genfresh`）。留出集只用来最终确认结果，因为资格赛用的是没见过的地图。
+- **陪练对手**
+  - 旧版本（`v60/`、`v61/`、`baseline/`）。
+  - 一换一对撞的「人海」bot（`swarm/`）。它复现了一种天梯上的输法，而我们自己的旧版本从来打不出这种局面。
+  - 专撞女王的猎手 bot。对被动的对手测试时，女王安全方面的改动看起来毫无作用；换成它才看得出差别。
+- **录像分析**（[`replay.py`](replay.py) 和 [`work/`](work) 里的脚本）
+  - 解码引擎的压缩录像，重建完整的对局状态：身体、珍珠、分裂、死亡和死因。
+  - 这些脚本测量胜负数看不出的东西：
+    - 第 50、100 回合吃到的珍珠数（比胜负灵敏，而且结果确定）；
+    - 女王的结局（[`work/qram.py`](work/qram.py)）；
+    - 珍珠在哪里被吃（[`work/tileeat.py`](work/tileeat.py)、[`work/eatcmp.py`](work/eatcmp.py)）；
+    - 哪些刷新点不经传送门就能走到（[`work/reach.py`](work/reach.py)）；
+    - 天梯输局分类（[`work/lossan.py`](work/lossan.py)）。
+- **天梯爬取**（[`work/ladfetch.py`](work/ladfetch.py)、[`work/crawl.py`](work/crawl.py)）
+  - 从公开网站收集我们的系列赛和顶尖队伍之间的对局，在同样的地图上把我们和他们做对比。
+- **计算量检查**
+  - 上传前，在引擎沙盒里用最大的地图跑一遍，最慢的一回合必须远低于上限。
 
-The rule I learned the hard way: **judge a change by a mechanism metric and paired games, never by a five-game score.**
-Two identical builds once scored 1 to 4 on the same map.
+吃过亏才学到的规则：**判断一个改动，要看机制指标和逐局配对结果，绝不能看五局的比分。** 两个完全相同的构建，曾经在同一张图上打出 1 比 4。
 
-### 3. Strategy
+### 3. 策略
 
-The experiment log is [`work/plan.md`](work/plan.md). The main turns, in order:
+实验记录在 [`work/plan.md`](work/plan.md)。按时间顺序，主要的几个转折：
 
-- **Early ladder (rank ~140 to ~40)**
-  - Scoring fixes for the economy. A steeper target falloff raised early eating by 37%.
-  - Fountain farming: top teams looped over the tiles that refill every round or so.
-  - Portal-safe pathing.
-- **Map knowledge instead of map tables**
-  - A rule for the whole project was no per-map hard-coding.
-  - So the bot learns the map: symmetry inference, mirrored spawn timers, and a check for home regions closed off by
-    portals.
-  - Centre pulls and harvesting are gated by the observed shape of the map, not by its name.
-- **The queen era**
-  - After the rule change, a game left undecided by elimination was a queen contest.
-  - Ladder replays showed that our queen died in most games. It was usually rammed at length 2 to 4 by a small enemy
-    it could see.
-  - Local guards made no difference against our own bots. Only the queen-hunting sparring bot exposed them.
-  - The queen's safety rules and the late feeding of the queen came from this work. jun then carried queen survival
-    much further.
-- **Studying the top teams**
-  - 636 games among the top 14 teams, plus our own series against them. The findings:
-    - Top teams eat 1.3 to 1.7 times more spawn pearls between rounds 100 and 300, and they eat them younger.
-    - They keep splitting all game, treat small dragons as disposable, and start far more head-on trades.
-    - Their income on maps such as Queen of Spades and Trauma is behind portals that they cross on the first possible
-      round.
-- **Things that did not work**, each tested and recorded so that nobody repeated them:
-  - feeding the queen earlier;
-  - a "fortress" rule that keeps the queen at home (it overfitted three maps and failed on held-out maps);
-  - behaviour cloning.
-    - I fitted a softmax model of top teams' single steps from 141,000 decisions in their replays.
-    - Adding it to our scoring made our steps look like theirs: straight moves went from 0.39 to 0.56-0.81.
-    - But it lowered eating and lost games. Their edge was where their dragons went, not the next step.
+- **天梯前期（约第 140 名到第 40 名）**
+  - 修正经济相关的打分。目标奖励随距离衰减得更快之后，早期吃珍珠的数量提高了 37%。
+  - 刷泉眼：顶尖队伍会在几乎每回合都刷新的格子上来回绕。
+  - 安全地使用传送门的寻路。
+- **用地图推断代替地图表**
+  - 整个项目的一条规则是：不针对具体地图写死。
+  - 所以 bot 自己去认识地图：对称推断、镜像的刷新倒计时、检查出生区域是否被传送门隔开。
+  - 中心拉力和刷珍珠行为按观测到的地图形状开关，而不是按地图名字。
+- **女王时代**
+  - 规则改变之后，没有在全灭中分出胜负的对局，比的就是女王。
+  - 天梯录像显示，大多数对局里我们的女王都死了，通常是 2 到 4 长时，被看得见的小型敌龙撞死。
+  - 对我们自己的旧版本测试时，各种防护都看不出差别；只有专撞女王的陪练 bot 才暴露出问题。
+  - 女王的安全规则和后期给女王喂食都来自这部分工作。之后 jun 把女王存活又推进了很多。
+- **研究顶尖队伍**
+  - 分析了天梯前 14 名之间的 636 局，以及我们对他们的系列赛。发现：
+    - 在第 100 到 300 回合之间，顶尖队伍吃到的刷新珍珠是我们的 1.3 到 1.7 倍，而且吃得更早。
+    - 他们全场都在分裂，把小龙当作消耗品，主动对撞的次数也多得多。
+    - 在 Queen of Spades、Trauma 这类地图上，他们的收入来自传送门后面，而且在最早可能的回合就进门。
+- **没成功的尝试**（都测过、都有记录，避免别人重复）：
+  - 更早给女王喂食；
+  - 让女王守在家里的「堡垒」规则（在三张图上过拟合，在留出地图上失败）；
+  - 行为克隆。
+    - 我从顶尖队伍的录像里提取了 141,000 个单步决策，拟合了一个 softmax 模型。
+    - 把它加进打分之后，我们的走法确实变得像他们：直行比例从 0.39 变成 0.56–0.81。
+    - 但吃到的珍珠反而变少，胜场也下降。说明他们的优势在于龙去了哪里，而不在于下一步怎么走。
 
-## Results
+## 成绩
 
-- **Ladder**: we reached rank **10** in early October (v55 to v61, rating about 1914 to 1934) and ended at rank
-  **38** when submissions closed.
-- **Qualifiers** (best of 7, unseen maps)
-  - Round of 256: won 7-0 against Extreme Maestro.
-  - Round of 128: won 6-1 against Knight Capital.
-  - Round of 64: lost 2-5 to PhoBoDacBiet.
+- **天梯**：10 月初最高到第 **10** 名（v55 到 v61，分数约 1914 到 1934），提交截止时为第 **38** 名。
+- **资格赛**（七局四胜，全部是未见过的地图）
+  - 256 强：7-0 胜 Extreme Maestro。
+  - 128 强：6-1 胜 Knight Capital。
+  - 64 强：2-5 负于 PhoBoDacBiet。
 
-## What went wrong
+## 哪里做得不好
 
-1. **Local sparring flattered us.** Our own old versions play the same slow economy as we do. On the ladder we lost
-   the first 100 rounds on unit count, and no local opponent showed it until we built sparring bots that copied what
-   strong teams did.
-2. **The queen problem stayed open.** In our last eight ranked series before the deadline, our queen died in 23 of 24
-   lost games, 15 of them before round 150. Every local fix was neutral, because survival depended on map structure
-   and enemy numbers more than on local rules.
-3. **Portal-locked income.** On maps whose pearls are mostly behind portals, our first crossing came late or never.
-   Only the queen sees the portal early, and the queen is not allowed to use portals. The fix (share portal positions
-   by sonar so that small dragons go) was identified but not built in time.
-4. **Tuning on familiar maps.** Several ideas looked good on the official maps and failed on held-out maps. The
-   held-out sets came later than they should have.
+1. **本地陪练让我们高估了自己。** 我们的旧版本和我们一样经济节奏慢。在天梯上，我们在前 100 回合就在单位数量上落后；直到做出模仿强队打法的陪练 bot，本地才看得到这个问题。
+2. **女王问题始终没解决。** 截止前最后 8 个排位系列里，24 场输局中我们的女王死了 23 次，其中 15 次死在第 150 回合之前。所有局部规则的修改效果都是中性的，因为女王能否存活更多取决于地图结构和敌方数量，而不是局部规则。
+3. **收入被传送门挡住。** 在珍珠大多在传送门后面的地图上，我们第一次进门很晚，甚至从不进门。开局只有女王看得到传送门，而女王又被禁止走传送门。修法（用声呐共享传送门位置，让小龙去走）已经找到，但没来得及实现。
+4. **在熟悉的地图上调参。** 好几个想法在官方地图上看起来不错，在留出地图上却失败了。留出集建得太晚了。
 
-## How to run
+## 如何运行
 
 ```
 cd work
@@ -194,45 +159,40 @@ SEED0=3000 python3 ab3.py "$(cat newset.txt),$(cat official.txt)" v61 2 out.json
 python3 paired.py out.json BASE out.json
 ```
 
-- `ab3.py` builds each variant into `tune_runs/ab2/TAG`, then plays it from both sides with seeds starting at `SEED0`.
-- `KEEP=1` keeps the replays for analysis.
-- In zsh, write `${SRC}:` rather than `$SRC:` inside a spec; zsh reads `:X` after a variable as a modifier.
+- `ab3.py` 把每个变体编译到 `tune_runs/ab2/TAG`，然后从 `SEED0` 开始的种子起，从两边各打一局。
+- `KEEP=1` 会保留录像，供之后分析。
+- 在 zsh 里，规格字符串中要写 `${SRC}:` 而不是 `$SRC:`，因为 zsh 会把变量后面的 `:X` 当作修饰符。
 
-To build the uploaded bot from the source and the profile:
+从源码和配置生成上传用的 bot：
 
 ```
 python3 work/server_bot.py out_dir --src mybot2 --profile work/server_profile.txt
 ```
 
-Conventions:
+约定：
 
-- No comments in the bot code and no per-map hard-coding.
-- Every new behaviour is a default-off switch, and the all-off build must play the same games as before.
-- Commit messages are in English.
+- bot 代码里不写注释，不针对具体地图写死。
+- 每个新行为都是默认关闭的开关；全部关闭时必须和改动前打出相同的对局。
+- 提交信息用英文。
 
-## Repository map
+## 仓库结构
 
-| Path | What it holds |
+| 路径 | 内容 |
 |---|---|
-| `mybot2/` | The base bot and every team switch (the final profile is on branch `one15-profile`) |
-| `mybot/` | The earlier bot |
-| `v60/`, `v61/`, `baseline/` | Fixed opponents for local tests |
-| `swarm/` | Sparring bot that trades heads one for one |
-| `work/` | A/B runner, replay analysis, ladder crawlers, the experiment log `plan.md`, and the team's card loop (`work/loop/`) |
-| `tune_runs/` | Official, rebuilt, Sprint and generated map sets |
-| `maps/`, `tune_maps/` | Original map files |
-| `docs/` | Team workflow and the card loop specification |
-| `candidates/` | Release candidates produced by the card loop |
-| `replay.py` | Replay decoder |
+| `mybot2/` | 基础 bot 和团队的全部开关（最终配置在 `one15-profile` 分支） |
+| `mybot/` | 早期 bot |
+| `v60/`、`v61/`、`baseline/` | 本地测试用的固定对手 |
+| `swarm/` | 一换一对撞的陪练 bot |
+| `work/` | A/B 测试、录像分析、天梯爬虫、实验记录 `plan.md`，以及团队的卡片循环（`work/loop/`） |
+| `tune_runs/` | 官方、重建、Sprint 和生成的地图集 |
+| `maps/`、`tune_maps/` | 原始地图文件 |
+| `docs/` | 团队工作流程和卡片循环的说明 |
+| `candidates/` | 卡片循环产出的候选版本 |
+| `replay.py` | 录像解码器 |
 
-## Authorship
+## 分工与署名
 
-- I wrote the base bot, the local testing setup and most of the strategy analysis. Much of the code and analysis was
-  written by AI coding agents (Claude Code sessions) working to my direction and checked against games and replays.
-  The design, the decisions and the mistakes are mine.
-- jun built the team's collaboration tooling, the card loop that turned ideas into tested switches, the online test
-  harness, and most of the switches in the final profile, including the queen survival work. Their portfolio is at
-  [juntegral/unsw-battlecode-portfolio](https://github.com/juntegral/unsw-battlecode-portfolio).
-- Zhe supplied many of the strategic reads and idea cards. Their portfolio is at
-  [zhex0121/unsw-battlecode-portfolio](https://github.com/zhex0121/unsw-battlecode-portfolio).
-- The engine, the starter code (`helper.hpp`) and the official maps belong to the organisers.
+- 基础 bot、本地测试体系和大部分策略分析由我完成。其中很多代码和分析由 AI 编程助手（Claude Code 会话）按我的指示编写，并用对局和录像核对过。设计、决策和其中的错误都由我负责。
+- jun 搭建了团队的协作工具、把想法变成经过测试的开关的卡片循环和线上测试工具，最终配置里的大部分开关也来自他们，包括女王存活方面的工作。他们的作品集：[juntegral/unsw-battlecode-portfolio](https://github.com/juntegral/unsw-battlecode-portfolio)。
+- Zhe 提供了很多策略判断和想法卡片。他们的作品集：[zhex0121/unsw-battlecode-portfolio](https://github.com/zhex0121/unsw-battlecode-portfolio)。
+- 引擎、起始代码（`helper.hpp`）和官方地图归主办方所有。
