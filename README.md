@@ -1,6 +1,6 @@
 # meow：UNSW Battlecode 2026
 
-English: branch [`qwq/readme`](../../tree/qwq/readme)
+English: [`main`](../../tree/main)
 
 这是 **meow**（1119 号队伍）参加 UNSW Battlecode 2026 的团队仓库。这是一场为期两周的比赛：各队为一个在环形网格上进行的「贪吃蛇」类游戏编写自主智能体，先在公开天梯上互相对战，再在全新、未公开的地图上打淘汰赛。
 
